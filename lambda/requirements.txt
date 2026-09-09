@@ -1,0 +1,25 @@
+# Dependencias de la Lambda PPS
+#
+# IMPORTANTE: boto3 y botocore NO se incluyen aquí a propósito.
+# El runtime de AWS Lambda Python 3.x ya los trae pre-instalados.
+# Incluirlos aumentaría el tamaño del ZIP innecesariamente (~40MB extra)
+# y podría causar conflictos de versión con el runtime.
+#
+# Todo lo demás que usa este proyecto es stdlib de Python 3.x:
+#   - urllib     → llamadas HTTP al FortiGate y a Claude API
+#   - json       → serialización/deserialización
+#   - logging    → logs a CloudWatch
+#   - re         → sanitización de strings para S3 keys
+#   - datetime   → timestamps ISO 8601
+#   - ssl        → contexto TLS para urllib
+#   - os         → lectura de variables de entorno
+#
+# Si en el futuro se agregan dependencias externas, listarlas aquí
+# con versión fija (==) para builds reproducibles. Ejemplo:
+#
+#   httpx==0.27.0
+#   pydantic==2.7.1
+#
+# Y actualizar lambda.tf para que el archive_file incluya
+# el directorio site-packages generado por:
+#   pip install -r requirements.txt -t ./site-packages
