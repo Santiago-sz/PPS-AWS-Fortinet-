@@ -1,0 +1,32 @@
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["lambda"]
+
+[tool.ruff.lint]
+# Reglas razonables por defecto:
+#   E/W  → pycodestyle (estilo)
+#   F    → pyflakes (errores reales: imports sin usar, variables no definidas, etc.)
+#   I    → isort (orden de imports)
+#   UP   → pyupgrade (sintaxis moderna para el target-version declarado)
+#   B    → flake8-bugbear (bugs comunes y malas prácticas)
+select = ["E", "W", "F", "I", "UP", "B"]
+ignore = []
+
+[tool.ruff.lint.isort]
+known-first-party = ["fortigate_client", "analyzer", "reporter", "handler"]
+
+[tool.ruff.lint.per-file-ignores]
+# SYSTEM_PROMPT es contenido de negocio (el prompt real enviado a Claude).
+# Envolver esa línea cambiaría el texto exacto del prompt — decisión de
+# diseño fuera de alcance de esta tarea — así que se ignora E501 solo acá
+# en lugar de tocar el contenido del string.
+"lambda/analyzer.py" = ["E501"]
+
+[tool.pytest.ini_options]
+# Los módulos de lambda/ usan imports "planos" (from fortigate_client import ...)
+# porque así los deposita AWS Lambda en el paquete de despliegue (todos los
+# archivos .py en la raíz del zip, sin paquete). pythonpath agrega lambda/
+# a sys.path para que los tests puedan importarlos igual que en runtime real.
+pythonpath = ["lambda"]
+testpaths = ["lambda/tests"]
