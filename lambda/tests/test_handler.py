@@ -5,11 +5,15 @@ Mockea los 3 módulos colaboradores (fortigate_client, analyzer, reporter)
 y boto3 (Secrets Manager) — nunca llama a servicios reales.
 """
 
+import re
+from pathlib import Path
 from types import SimpleNamespace
 
 from botocore.exceptions import ClientError
 
 import handler
+
+LAMBDA_TF_PATH = Path(__file__).resolve().parents[2] / "terraform" / "lambda.tf"
 
 
 def _lambda_context():
@@ -218,3 +222,53 @@ class TestPartialFailures:
         assert result["analysis_ok"] is False
         assert result["overall_score"] is None
         mock_build_md.assert_called_once()
+
+
+class TestTerraformEnvVarsMatchHandler:
+    """Pre-existing defect (design.md): lambda.tf injected REPORTS_BUCKET but
+    handler.py reads S3_BUCKET via _get_required_env(), and lambda.tf never set
+    FORTIGATE_HOST at all. Local tests never caught this because required_env
+    sets env vars directly, bypassing Terraform entirely — only a real deploy
+    would fail. This test reads the actual lambda.tf environment block so the
+    IaC/code contract is verified in CI, not just at runtime in AWS."""
+
+    @staticmethod
+    def _read_environment_block() -> str:
+        tf_text = LAMBDA_TF_PATH.read_text(encoding="utf-8")
+        match = re.search(
+            r'resource\s+"aws_lambda_function"\s+"assessor"\s*\{(.*?)\n\}\n',
+            tf_text,
+            re.DOTALL,
+        )
+        assert match, "Could not find aws_lambda_function.assessor block in lambda.tf"
+        assessor_block = match.group(1)
+        env_match = re.search(r"variables\s*=\s*\{(.*?)\n\s*\}\n", assessor_block, re.DOTALL)
+        assert env_match, "No environment { variables = {...} } block found for assessor lambda"
+        return env_match.group(1)
+
+    def test_assessor_lambda_supplies_every_env_var_handler_requires(self):
+        env_block = self._read_environment_block()
+
+        required_names = {
+            "FORTIGATE_HOST",
+            "FORTIGATE_SECRET_ARN",
+            "CLAUDE_SECRET_ARN",
+            "S3_BUCKET",
+            "SNS_TOPIC_ARN",
+        }
+        missing = {
+            name for name in required_names if not re.search(rf"\b{name}\b\s*=", env_block)
+        }
+        assert not missing, (
+            f"lambda.tf environment.variables is missing {sorted(missing)}, but "
+            f"handler.py's _get_required_env() requires them — real deploy would "
+            f"fail with statusCode 500/missing_env_vars"
+        )
+
+    def test_assessor_lambda_does_not_reintroduce_reports_bucket_mismatch(self):
+        env_block = self._read_environment_block()
+
+        assert not re.search(r"\bREPORTS_BUCKET\b\s*=", env_block), (
+            "lambda.tf sets 'REPORTS_BUCKET' but handler.py reads os.environ['S3_BUCKET'] "
+            "— rename the Terraform env var key to S3_BUCKET to match handler.py"
+        )

@@ -87,16 +87,26 @@ resource "aws_lambda_function" "assessor" {
 
   environment {
     variables = {
+      FORTIGATE_HOST       = var.fortigate_host
       FORTIGATE_SECRET_ARN = aws_secretsmanager_secret.fortigate_token.arn
       CLAUDE_SECRET_ARN    = aws_secretsmanager_secret.claude_api_key.arn
-      REPORTS_BUCKET       = aws_s3_bucket.reports.bucket
+      S3_BUCKET            = aws_s3_bucket.reports.bucket
       SNS_TOPIC_ARN        = aws_sns_topic.notifications.arn
     }
     # Las variables de entorno son la forma en que Terraform le pasa
     # información de infra al código Python sin hardcodear ARNs.
-    # En handler.py se leen con os.environ["REPORTS_BUCKET"], etc.
+    # En handler.py se leen con os.environ["S3_BUCKET"], os.environ["FORTIGATE_HOST"], etc.
     # Son visibles en texto plano en la consola de Lambda —
     # por eso las credenciales van en Secrets Manager y no acá.
+    #
+    # NOTA (bug fix): este bloque antes seteaba REPORTS_BUCKET y omitía
+    # FORTIGATE_HOST por completo. handler.py._get_required_env() lee S3_BUCKET
+    # y FORTIGATE_HOST, así que un deploy real fallaba con statusCode 500 /
+    # missing_env_vars pese a que la Lambda estaba "desplegada". Los tests
+    # locales nunca lo detectaron porque el fixture required_env setea las
+    # env vars directamente, sin pasar por Terraform. Se renombra la key acá
+    # (en vez de leer REPORTS_BUCKET en handler.py) porque S3_BUCKET es el
+    # nombre que ya usan los tests/fixtures y el resto del código Python.
   }
 
   depends_on = [
