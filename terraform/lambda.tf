@@ -127,23 +127,38 @@ resource "aws_lambda_function" "assessor" {
 # -----------------------------------------------------------------------------
 
 resource "aws_lambda_permission" "eventbridge" {
+  count = var.enable_legacy_nist_schedule ? 1 : 0
+
   statement_id  = "AllowEventBridgeInvoke"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.assessor.function_name
   principal     = "events.amazonaws.com"
-  source_arn    = aws_cloudwatch_event_rule.schedule.arn
+  source_arn    = aws_cloudwatch_event_rule.schedule[0].arn
   # source_arn restringe el permiso: solo ESTA regla de EventBridge puede invocar Lambda.
   # Sin source_arn, cualquier regla de EventBridge en la cuenta podría invocarla.
+  #
+  # count gateado por var.enable_legacy_nist_schedule: este permiso solo
+  # tiene sentido si la regla existe (ver aws_cloudwatch_event_rule.schedule
+  # abajo). Sin este count, apagar el flag rompería el plan/apply porque
+  # source_arn intentaría leer schedule[0] cuando count=0 no lo crea.
 }
 
 
 # -----------------------------------------------------------------------------
-# EVENTBRIDGE RULE — el schedule
-# Define CUÁNDO se activa el sistema. Usa la expresión cron de variables.tf.
-# Por defecto: todos los días a las 6am UTC.
+# EVENTBRIDGE RULE — el schedule (flujo NIST legacy)
+# Define CUÁNDO se activa el assessor NIST CSF original. Usa la expresión
+# cron de variables.tf. Por defecto: todos los días a las 6am UTC.
+#
+# Gateado por var.enable_legacy_nist_schedule (tasks.md 2.8, design.md
+# decisión #9 "NIST rollback flag"): en true durante la migración al flujo
+# policy-driven (policy_generator/audit_executor abajo); pasarlo a false
+# borra únicamente esta regla y su target — la Lambda "assessor" y su
+# código quedan intactos, solo dejan de dispararse por schedule.
 # -----------------------------------------------------------------------------
 
 resource "aws_cloudwatch_event_rule" "schedule" {
+  count = var.enable_legacy_nist_schedule ? 1 : 0
+
   name                = "${local.prefix}-schedule"
   description         = "Triggers PPS assessment on schedule"
   schedule_expression = var.schedule_expression
@@ -153,18 +168,160 @@ resource "aws_cloudwatch_event_rule" "schedule" {
 
 
 # -----------------------------------------------------------------------------
-# EVENTBRIDGE TARGET — conecta el schedule con Lambda
+# EVENTBRIDGE TARGET — conecta el schedule con Lambda (flujo NIST legacy)
 # Le dice a EventBridge: "cuando dispare esta regla, invocá esta Lambda".
 # Sin el Target, la regla dispara pero no hace nada.
 # -----------------------------------------------------------------------------
 
 resource "aws_cloudwatch_event_target" "lambda" {
-  rule      = aws_cloudwatch_event_rule.schedule.name
+  count = var.enable_legacy_nist_schedule ? 1 : 0
+
+  rule      = aws_cloudwatch_event_rule.schedule[0].name
   target_id = "PpsAssessorTarget"
   arn       = aws_lambda_function.assessor.arn
   # target_id es un identificador único dentro de la regla.
   # Una regla puede tener múltiples targets (ej: Lambda + SQS al mismo tiempo).
   # En nuestro caso solo tenemos uno.
+}
+
+
+# =============================================================================
+# LAMBDA LAYER — pps-doc-parsers
+# =============================================================================
+# pypdf + python-docx (+lxml), pineados para manylinux2014_x86_64 / Python
+# 3.12 (ver design.md, decisión #8). Solo se adjunta a policy_generator —
+# audit_executor se mantiene stdlib-only a propósito, para minimizar su
+# superficie de dependencias dado que es el rol con acceso real a FortiGate.
+#
+# El zip lo genera scripts/build_layer.sh — correrlo ANTES de cualquier
+# terraform init/plan/apply que toque este recurso, si no filebase64sha256
+# falla porque el archivo todavía no existe.
+# =============================================================================
+
+resource "aws_lambda_layer_version" "doc_parsers" {
+  layer_name  = "${local.prefix}-doc-parsers"
+  description = "pypdf + python-docx + lxml (manylinux2014_x86_64) para parsing de políticas PDF/DOCX"
+
+  filename         = "${path.module}/../layers/pps-doc-parsers.zip"
+  source_code_hash = filebase64sha256("${path.module}/../layers/pps-doc-parsers.zip")
+
+  compatible_runtimes      = ["python3.12"]
+  compatible_architectures = ["x86_64"]
+}
+
+
+# =============================================================================
+# LAMBDA — POLICY_GENERATOR
+# =============================================================================
+# Entrypoint disparado por la subida de una política a S3 (ver storage.tf,
+# aws_s3_bucket_notification.policies_upload). Extrae texto, arma chunks,
+# hace map/reduce con Claude, valida el script resultante, reintenta si
+# hace falta, y termina invocando audit_executor de forma asíncrona.
+# -----------------------------------------------------------------------------
+
+resource "aws_cloudwatch_log_group" "policy_generator" {
+  name              = "/aws/lambda/${local.prefix}-policy-generator"
+  retention_in_days = 30
+}
+
+resource "aws_lambda_function" "policy_generator" {
+  function_name = "${local.prefix}-policy-generator"
+  description   = "PPS Policy Generator — extracts+chunks an uploaded policy, generates and validates an audit script via Claude, invokes audit_executor"
+
+  filename         = data.archive_file.lambda_zip.output_path
+  source_code_hash = data.archive_file.lambda_zip.output_base64sha256
+  # Reutiliza el mismo zip que "assessor": todos los .py de lambda/ viven
+  # sueltos en la misma carpeta y el runtime de Lambda los deposita todos
+  # en la raíz del paquete desplegado, así que un único archive_file sirve
+  # para las tres funciones — cada una define su propio "handler".
+
+  handler = "handler_generator.lambda_handler"
+  runtime = "python3.12"
+  timeout = var.generator_timeout
+  # 900s — ver variables.tf, generator_timeout.
+  memory_size = 1024
+  # 1024MB (vs. 512MB del assessor legacy): map/reduce contra chunks de
+  # texto largos + parsing de PDF/DOCX vía la layer necesitan más CPU/RAM
+  # que el workload I/O-bound del assessor original.
+
+  layers = [aws_lambda_layer_version.doc_parsers.arn]
+
+  role = aws_iam_role.generator.arn
+  # Rol de mínimo privilegio definido en iam.tf — NO comparte el rol del
+  # assessor legacy ni el de audit_executor.
+
+  environment {
+    variables = {
+      CLAUDE_SECRET_ARN       = aws_secretsmanager_secret.claude_api_key.arn
+      POLICIES_BUCKET         = aws_s3_bucket.policies.bucket
+      S3_BUCKET               = aws_s3_bucket.reports.bucket
+      EXECUTOR_FUNCTION_NAME  = aws_lambda_function.audit_executor.function_name
+      MAX_GENERATION_ATTEMPTS = var.max_generation_attempts
+    }
+    # S3_BUCKET es el bucket de reports/artifacts (prefijo artifacts/*),
+    # mismo nombre de variable que ya usa handler.py, para que s3_io.py
+    # (Fase 6) trate policy_generator y audit_executor de forma uniforme.
+    # POLICIES_BUCKET es el bucket de entrada — solo lectura para esta
+    # función (ver iam.tf, ReadPolicyUploads/ListPolicyUploads).
+  }
+
+  depends_on = [
+    aws_iam_role_policy.generator_permissions,
+    aws_cloudwatch_log_group.policy_generator
+  ]
+}
+
+
+# =============================================================================
+# LAMBDA — AUDIT_EXECUTOR
+# =============================================================================
+# Entrypoint invocado de forma asíncrona por policy_generator. Re-valida el
+# script recibido de forma independiente, lo ejecuta bajo sandbox con el
+# toolkit fgt/report, y publica el reporte final (S3 + SNS).
+# Stdlib-only a propósito — sin layer adjunta (ver design.md, decisión #8).
+# -----------------------------------------------------------------------------
+
+resource "aws_cloudwatch_log_group" "audit_executor" {
+  name              = "/aws/lambda/${local.prefix}-audit-executor"
+  retention_in_days = 30
+}
+
+resource "aws_lambda_function" "audit_executor" {
+  function_name = "${local.prefix}-audit-executor"
+  description   = "PPS Audit Executor — re-validates and sandboxes the generated script, queries FortiGate through the toolkit, publishes the audit report"
+
+  filename         = data.archive_file.lambda_zip.output_path
+  source_code_hash = data.archive_file.lambda_zip.output_base64sha256
+
+  handler = "handler_executor.lambda_handler"
+  runtime = "python3.12"
+  timeout = var.executor_timeout
+  # 300s — ver variables.tf, executor_timeout.
+  memory_size = 512
+
+  role = aws_iam_role.executor.arn
+  # Rol de mínimo privilegio definido en iam.tf — deliberadamente no es
+  # superset ni subset del rol del generador (ver iam.tf).
+
+  environment {
+    variables = {
+      FORTIGATE_HOST             = var.fortigate_host
+      FORTIGATE_SECRET_ARN       = aws_secretsmanager_secret.fortigate_token.arn
+      S3_BUCKET                  = aws_s3_bucket.reports.bucket
+      SNS_TOPIC_ARN              = aws_sns_topic.notifications.arn
+      SANDBOX_WALL_CLOCK_SECONDS = var.sandbox_wall_clock_seconds
+      SANDBOX_MAX_FGT_CALLS      = var.sandbox_max_fgt_calls
+    }
+    # S3_BUCKET es el mismo bucket de reports que usa policy_generator —
+    # audit_executor lee artifacts/* y escribe reports/* dentro de él
+    # (ver iam.tf, ReadGeneratedArtifacts/WriteAuditReports). Nunca toca
+    # el bucket de políticas: su rol no tiene permiso sobre él.
+  }
+
+  depends_on = [
+    aws_iam_role_policy.executor_permissions,
+    aws_cloudwatch_log_group.audit_executor
+  ]
 }
 
 
@@ -180,4 +337,24 @@ output "lambda_function_name" {
 output "lambda_function_arn" {
   value       = aws_lambda_function.assessor.arn
   description = "ARN of the Lambda function"
+}
+
+output "policy_generator_function_name" {
+  value       = aws_lambda_function.policy_generator.function_name
+  description = "Name of the policy_generator Lambda function"
+}
+
+output "policy_generator_function_arn" {
+  value       = aws_lambda_function.policy_generator.arn
+  description = "ARN of the policy_generator Lambda function"
+}
+
+output "audit_executor_function_name" {
+  value       = aws_lambda_function.audit_executor.function_name
+  description = "Name of the audit_executor Lambda function"
+}
+
+output "audit_executor_function_arn" {
+  value       = aws_lambda_function.audit_executor.arn
+  description = "ARN of the audit_executor Lambda function"
 }

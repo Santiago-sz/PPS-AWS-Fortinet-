@@ -123,3 +123,69 @@ variable "lambda_memory" {
   # Con 512MB tenés ~0.5 vCPU equivalente, suficiente para I/O bound como este.
   # Subir a 1024MB no mejora este workload — las esperas son de red, no de CPU.
 }
+
+
+# -----------------------------------------------------------------------------
+# FLUJO POLICY-DRIVEN (policy_generator + audit_executor)
+# -----------------------------------------------------------------------------
+# Variables específicas del nuevo flujo de generación de scripts de
+# auditoría a partir de políticas subidas (PDF/DOCX). Ver design.md para
+# el detalle de arquitectura — acá solo se centraliza lo configurable.
+# -----------------------------------------------------------------------------
+
+variable "enable_legacy_nist_schedule" {
+  description = "Kill switch de migración: habilita el schedule EventBridge legacy que dispara el assessor NIST CSF original (handler.py/analyzer.py)"
+  type        = bool
+  default     = true
+  # true por defecto durante la migración — el flujo legacy sigue corriendo
+  # sin cambios en paralelo al nuevo flujo policy-driven. Una vez validado
+  # el flujo nuevo, pasar a false (borra la regla/target de EventBridge sin
+  # tocar la Lambda "assessor" ni su código) y eventualmente eliminar la
+  # variable y el bloque legacy. Ver design.md, decisión #9 y "Migration/Rollout".
+}
+
+variable "generator_timeout" {
+  description = "Timeout en segundos de la Lambda policy_generator (extract + chunk + map/reduce con Claude + validate + retry)"
+  type        = number
+  default     = 900
+  # 900s = techo máximo de Lambda (15 min). El presupuesto de tiempo del
+  # generador es el más ajustado de las dos funciones — ver design.md,
+  # tabla "Time Budget": extract ≤60s, chunk ≤30s, map ≤240s,
+  # reduce+validate 3×≤180s, write ≤20s.
+}
+
+variable "executor_timeout" {
+  description = "Timeout en segundos de la Lambda audit_executor (re-validate + exec sandboxed + FortiGate + report)"
+  type        = number
+  default     = 300
+  # 300s — re-validate ≤5s, exec hard cutoff 120s (ver sandbox_wall_clock_seconds),
+  # FortiGate ocurre dentro de ese exec, report+SNS ≤30s. Deja margen sobre
+  # el cutoff interno del sandbox.
+}
+
+variable "sandbox_wall_clock_seconds" {
+  description = "Corte de tiempo real para el exec() del script generado dentro del sandbox (signal.setitimer)"
+  type        = number
+  default     = 120
+  # Ver design.md, "Runtime caps": MAX_WALL_CLOCK_S. Denegar While/Try en
+  # el AST hace que este corte sea imposible de capturar/ignorar desde el
+  # script generado.
+}
+
+variable "sandbox_max_fgt_calls" {
+  description = "Cantidad máxima de llamadas a fgt.get() permitidas por ejecución del script dentro del sandbox, antes de abortar con SandboxBudgetExceeded"
+  type        = number
+  default     = 40
+  # Ver design.md, "Runtime caps": MAX_FGT_CALLS. Protege al FortiGate de
+  # un script generado que quede en loop consultando el mismo endpoint.
+}
+
+variable "max_generation_attempts" {
+  description = "Cantidad máxima de intentos de generación (map/reduce + validate) antes de reportar status=generation_failed"
+  type        = number
+  default     = 3
+  # Ver design.md, decisión #7 y "Retry feedback": cada intento fallido
+  # reenvía el script previo + feedback estructurado de la validación.
+  # Agotado el presupuesto, se reporta el fallo explícitamente — nunca un
+  # audit parcial.
+}

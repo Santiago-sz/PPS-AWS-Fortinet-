@@ -152,3 +152,116 @@ output "sns_topic_arn" {
   value       = aws_sns_topic.notifications.arn
   description = "ARN of the SNS notifications topic"
 }
+
+
+# =============================================================================
+# S3 — BUCKET DE POLÍTICAS SUBIDAS (entrada del flujo policy-driven)
+# =============================================================================
+# Bucket separado del de reports/artifacts a propósito — ver design.md,
+# decisión #1. Si policy_generator escribiera sus artifacts acá, o
+# audit_executor sus reports, cada escritura volvería a disparar la
+# notificación de subida de abajo: un loop de auto-invocación. Los
+# artifacts y reports van al bucket "reports" existente (prefijos
+# artifacts/* y reports/*, ver iam.tf); acá solo llegan los .pdf/.docx
+# que sube un humano para ser auditados.
+# =============================================================================
+
+resource "aws_s3_bucket" "policies" {
+  bucket = "${local.prefix}-policies-${data.aws_caller_identity.current.account_id}"
+  # Mismo criterio de nombrado que aws_s3_bucket.reports: account_id
+  # garantiza unicidad global sin sufijos aleatorios.
+  # Resultado: "pps-prod-policies-123456789012"
+}
+
+resource "aws_s3_bucket_versioning" "policies" {
+  bucket = aws_s3_bucket.policies.id
+
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "policies" {
+  bucket = aws_s3_bucket.policies.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+  # Las políticas de la organización subidas acá son tan sensibles como
+  # los reportes que generan — mismo bloqueo total de acceso público.
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "policies" {
+  bucket = aws_s3_bucket.policies.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+# -----------------------------------------------------------------------------
+# NOTIFICACIÓN DE SUBIDA — dispara policy_generator
+# Solo objetos bajo el prefijo policies/ con sufijo .pdf o .docx disparan
+# la Lambda. El filtro evita invocaciones espurias por archivos que no son
+# políticas (ej. notas .txt subidas al mismo bucket por error).
+# aws_s3_bucket_notification no admite múltiples filtros de sufijo en un
+# mismo bloque lambda_function, así que van dos bloques — uno por extensión.
+# -----------------------------------------------------------------------------
+
+resource "aws_s3_bucket_notification" "policies_upload" {
+  bucket = aws_s3_bucket.policies.id
+
+  lambda_function {
+    lambda_function_arn = aws_lambda_function.policy_generator.arn
+    events              = ["s3:ObjectCreated:*"]
+    filter_prefix       = "policies/"
+    filter_suffix       = ".pdf"
+  }
+
+  lambda_function {
+    lambda_function_arn = aws_lambda_function.policy_generator.arn
+    events              = ["s3:ObjectCreated:*"]
+    filter_prefix       = "policies/"
+    filter_suffix       = ".docx"
+  }
+
+  depends_on = [aws_lambda_permission.s3_invoke]
+  # depends_on explícito: S3 exige que el permiso de invocación exista
+  # ANTES de aceptar la configuración de notificación, si no falla el
+  # apply con "Unable to validate the following destination configurations".
+}
+
+# -----------------------------------------------------------------------------
+# PERMISO — S3 puede invocar policy_generator
+# Por defecto nadie puede invocar una Lambda, ni otros servicios AWS.
+# Mismo patrón que aws_lambda_permission.eventbridge en lambda.tf, pero
+# para el principal s3.amazonaws.com en vez de events.amazonaws.com.
+# -----------------------------------------------------------------------------
+
+resource "aws_lambda_permission" "s3_invoke" {
+  statement_id  = "AllowS3InvokePolicyGenerator"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.policy_generator.function_name
+  principal     = "s3.amazonaws.com"
+  source_arn    = aws_s3_bucket.policies.arn
+  # source_arn restringe el permiso: solo ESTE bucket puede invocar la
+  # Lambda. Sin esto, cualquier bucket S3 de la cuenta podría hacerlo.
+}
+
+
+# -----------------------------------------------------------------------------
+# OUTPUTS — bucket de políticas
+# -----------------------------------------------------------------------------
+
+output "policies_bucket_name" {
+  value       = aws_s3_bucket.policies.bucket
+  description = "Name of the S3 bucket where policy documents (PDF/DOCX) are uploaded to trigger generation"
+}
+
+output "policies_bucket_arn" {
+  value       = aws_s3_bucket.policies.arn
+  description = "ARN of the policies S3 bucket"
+}

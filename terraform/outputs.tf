@@ -62,8 +62,11 @@ output "notifications_topic_arn" {
 # -----------------------------------------------------------------------------
 
 output "schedule_rule_name" {
-  value       = aws_cloudwatch_event_rule.schedule.name
-  description = "EventBridge rule name — disable this to pause automated assessments"
+  value       = try(aws_cloudwatch_event_rule.schedule[0].name, null)
+  description = "EventBridge rule name — disable this to pause automated assessments. null when var.enable_legacy_nist_schedule=false"
+  # aws_cloudwatch_event_rule.schedule ahora está gateado por count (ver
+  # lambda.tf, tasks.md 2.8) — try()+índice [0] en vez de acceso directo
+  # porque con count=0 el recurso no existe y .name fallaría el validate.
 }
 
 

@@ -1,0 +1,18 @@
+# Dependencias del Lambda Layer pps-doc-parsers, pineadas para builds
+# reproducibles. Instaladas por scripts/build_layer.sh con:
+#   pip install --platform manylinux2014_x86_64 --python-version 3.12 \
+#     --implementation cp --only-binary=:all: --target <dir> -r <este archivo>
+#
+# pip resuelve automáticamente las dependencias transitivas de cada uno
+# (ej. lxml ya es dependencia de python-docx, pero se pinea acá también de
+# forma explícita porque design.md la lista como paquete propio del layer,
+# no solo como transitiva — así queda una versión fija auditable en vez de
+# la que python-docx elija por default).
+#
+# Para actualizar: chequear compatibilidad con Python 3.12 / Amazon Linux
+# (runtime real de Lambda) antes de subir de versión, y volver a correr
+# scripts/build_layer.sh para regenerar el zip.
+
+pypdf==6.18.0
+python-docx==1.2.0
+lxml==6.1.3

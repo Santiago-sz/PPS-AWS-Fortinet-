@@ -12,6 +12,9 @@ __pycache__/
 **/*.tfvars
 **/*.tfvars.json
 
+# Lambda Layer build output (scripts/build_layer.sh) — regenerable, not source
+layers/
+
 # Already its own independent git repo — never embed/track here
 P-Terraform-Forti-AWS/
 
