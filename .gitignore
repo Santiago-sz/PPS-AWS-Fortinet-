@@ -1,0 +1,12 @@
+# Google Drive sync noise (this whole tree lives under Google Drive Desktop)
+desktop.ini
+
+# Editor
+.cursor/
+
+# Terraform (each subfolder also has its own, more specific .gitignore)
+**/.terraform/
+**/terraform.tfstate
+**/terraform.tfstate.backup
+**/*.tfvars
+**/*.tfvars.json
