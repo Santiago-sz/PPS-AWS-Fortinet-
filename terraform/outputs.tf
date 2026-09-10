@@ -50,19 +50,11 @@ output "notifications_topic_arn" {
 
 # -----------------------------------------------------------------------------
 # SECRETS MANAGER
-# Los ARNs de los secrets — los necesitás para cargar los valores reales
-# con AWS CLI después del primer apply.
+# Los outputs de los ARNs de los secrets viven en secrets.tf, junto al
+# recurso que definen (fortigate_secret_arn, claude_secret_arn) — Terraform
+# no permite declarar el mismo nombre de output en dos archivos, así que no
+# se repiten acá. Ver secrets.tf.
 # -----------------------------------------------------------------------------
-
-output "fortigate_secret_arn" {
-  value       = aws_secretsmanager_secret.fortigate_token.arn
-  description = "ARN of the FortiGate token secret — update this with the real token after apply"
-}
-
-output "claude_secret_arn" {
-  value       = aws_secretsmanager_secret.claude_api_key.arn
-  description = "ARN of the Claude API key secret — update this with the real key after apply"
-}
 
 
 # -----------------------------------------------------------------------------

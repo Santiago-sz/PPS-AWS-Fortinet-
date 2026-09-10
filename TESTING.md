@@ -100,7 +100,40 @@ find .venv -iname "desktop.ini" -delete
 necesario evitarlo permanentemente, solo limpiarlos antes de correr
 checkov si falla con ese error puntual.)
 
-## 5. tflint (pendiente — instalación manual opcional)
+## 5. `terraform validate` / `plan` — OJO con Google Drive
+
+Igual que con checkov, Google Drive Desktop interfiere acá, pero de forma
+más grave: `terraform init` descarga los binarios de los providers
+(`terraform-provider-aws.exe`, etc.) dentro de `.terraform/providers/`, y
+Drive los toca al sincronizarlos — el resultado es que el hash del binario
+en disco no coincide con el que quedó grabado en `.terraform.lock.hcl`, y
+`terraform validate`/`plan` fallan con:
+
+```
+Error: missing or corrupted provider plugins:
+  - registry.terraform.io/hashicorp/aws: the cached package ... does not
+    match any of the checksums recorded in the dependency lock file
+```
+
+Reinicializar (`rm -rf .terraform .terraform.lock.hcl && terraform init`)
+**no alcanza** — Drive vuelve a corromper el binario. La solución real es
+sacar el directorio de trabajo de Terraform (`.terraform/`) de la carpeta
+sincronizada, apuntando `TF_DATA_DIR` a un path local fuera de Google Drive:
+
+```bash
+export TF_DATA_DIR="C:/Users/santi/.terraform-data/pps-audit-pipeline"
+mkdir -p "$TF_DATA_DIR"
+terraform init -backend=false -input=false
+terraform validate
+```
+
+Los archivos `.tf` (código fuente) se quedan en Drive sin problema — el
+único directorio que hay que sacar de ahí es `.terraform/` (los binarios
+descargados), que ya está en `.gitignore` de todas formas. Conviene exportar
+esa variable en tu perfil de shell si vas a correr Terraform seguido en este
+proyecto.
+
+## 6. tflint (pendiente — instalación manual opcional)
 
 `tflint` no está instalado en este entorno: requiere descargar un binario y
 agregarlo al PATH, y no había gestor de paquetes (`choco`/`scoop`/`winget`)
