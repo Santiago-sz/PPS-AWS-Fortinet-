@@ -41,10 +41,36 @@ Sin este segundo `pip install`, los tests de `test_extractor.py` fallan por
 pytest
 ```
 
-Corre toda la suite en `lambda/tests/` (35 tests: `fortigate_client.py`,
-`analyzer.py`, `reporter.py`, `handler.py`). Todos mockean AWS/FortiGate/
-Claude — no hacen llamadas de red reales, se pueden correr sin credenciales
-ni conectividad.
+Corre toda la suite en `lambda/tests/` — **156 tests passed, 1 skipped**
+(skip documentado: `signal.setitimer`/`SIGALRM` no existe en Windows, ver
+`test_sandbox.py::TestWallClockBudgetViaSignalBackstop`). Todos mockean AWS
+(S3/Secrets Manager/SNS/`lambda:InvokeFunction`)/FortiGate/Claude — nunca se
+hace red real, se puede correr sin credenciales ni conectividad.
+
+### Archivos de test — flujo legacy NIST CSF 2.0 (`enable_legacy_nist_schedule=true`, default)
+
+| Archivo | Qué cubre |
+|---|---|
+| `test_fortigate_client.py` | Cliente REST FortiGate — `collect_all()` legacy + `get(endpoint_key)` público memoizado (task 6.3) |
+| `test_analyzer.py` | Prompt building + llamada a Claude del análisis NIST CSF 2.0 hardcodeado |
+| `test_handler.py` | Orquestación del Lambda `assessor` legacy + contrato de env vars con `terraform/lambda.tf` |
+| `test_reporter.py` | Reporte Markdown/JSON/SNS del análisis NIST (funciones legacy, sin cambios) + capa policy-agnostic (ver abajo) |
+
+### Archivos de test — flujo policy-driven audit script generation (Fases 3-8)
+
+| Archivo | Qué cubre |
+|---|---|
+| `test_extractor.py` | Extracción de texto PDF/DOCX; falla explícita ante corrupción/encriptación/sin capa de texto |
+| `test_chunker.py` | Chunking preservando límites de cláusula/sección + retrieval TF-IDF |
+| `test_script_validator.py` | Allowlist AST (happy-path + corpus adversarial RED completo: reflexión, imports, builtins denegados, caps estáticas) |
+| `test_toolkit.py` | Capabilities `fgt`/`report` inyectadas en el sandbox — memoización, resolución server-side de `clause_ref` |
+| `test_sandbox.py` | Namespace restringido + presupuestos duros (wall-clock, call-count, findings) — `SandboxBudgetExceeded` |
+| `test_llm_client.py` | Fase map (chunk group → `PolicyCheck[]`) + fase reduce con reintento acotado (`MAX_GENERATION_ATTEMPTS`) |
+| `test_s3_io.py` | Get/put de policy/script/manifest/report; integridad `script_sha256` end-to-end |
+| `test_reporter.py` (clases `TestBuildPolicyReport*`, `TestDeliverPolicyReport`) | Reporte policy-agnostic keyed en `Finding`/`RunManifest`; distingue `completed` vs `could_not_audit` |
+| `test_handler_generator.py` | Entrypoint S3-triggered `policy_generator` — flujo feliz completo, camino de reintentos agotados (`generation_failed`, no invoca executor), camino sin controles verificables (`no_verifiable_controls`, no invoca executor), fallo de extracción |
+| `test_handler_executor.py` | Entrypoint async `audit_executor` — re-validación independiente exitosa ejecuta y reporta; re-validación fallida NO ejecuta; chequeo de integridad `script_sha256` rechaza ANTES de tocar el AST; tolerancia a fallo parcial de un endpoint FortiGate; presupuesto de sandbox agotado preserva hallazgos parciales |
+| `test_integration_generator_executor.py` | Contrato generator→executor de punta a punta con S3 real (`moto`): el manifest+script que escribe el generador llegan sin cambios al executor; un script alterado en S3 entre ambos handlers se rechaza por integridad |
 
 Útil:
 
@@ -52,6 +78,7 @@ ni conectividad.
 pytest -v                    # verbose, un test por línea
 pytest lambda/tests/test_handler.py   # un solo módulo
 pytest -k "truncat"          # filtrar por nombre
+pytest lambda/tests/test_handler_generator.py lambda/tests/test_handler_executor.py lambda/tests/test_integration_generator_executor.py -v  # solo Fase 8
 ```
 
 La configuración de pytest vive en `pyproject.toml` (`[tool.pytest.ini_options]`):
