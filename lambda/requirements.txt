@@ -23,3 +23,18 @@
 # Y actualizar lambda.tf para que el archive_file incluya
 # el directorio site-packages generado por:
 #   pip install -r requirements.txt -t ./site-packages
+#
+# pypdf / python-docx / lxml (extractor.py, policy_generator únicamente):
+# NO se agregan al archive_file de esta lambda.zip compartida — se
+# distribuyen como el Lambda Layer pps-doc-parsers (ver
+# scripts/layer-requirements.txt y scripts/build_layer.sh), montado solo
+# en policy_generator. audit_executor y el handler legacy siguen
+# stdlib-only. Se listan también acá (sin comentar, mismas versiones
+# pineadas que el layer) para que `pip install -r lambda/requirements.txt`
+# deje al venv de desarrollo con exactamente lo que corre en producción,
+# y los tests de extractor.py/chunker.py ejerciten el comportamiento real
+# del runtime en vez de mocks de estas librerías.
+
+pypdf==6.18.0
+python-docx==1.2.0
+lxml==6.1.3

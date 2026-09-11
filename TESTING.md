@@ -26,7 +26,14 @@ Si el venv no existe todavía (clon nuevo del repo), recrearlo con:
 "/c/Users/santi/AppData/Local/Programs/Python/Python312/python.exe" -m venv .venv
 source .venv/Scripts/activate
 pip install -r requirements-dev.txt
+pip install -r lambda/requirements.txt
 ```
+
+`lambda/requirements.txt` trae `pypdf`/`python-docx`/`lxml` — dependencias de
+runtime de `extractor.py` (policy_generator), pineadas a la misma versión
+que el Lambda Layer `pps-doc-parsers` (ver `scripts/layer-requirements.txt`).
+Sin este segundo `pip install`, los tests de `test_extractor.py` fallan por
+`ModuleNotFoundError`.
 
 ## 2. Correr los tests (pytest)
 
