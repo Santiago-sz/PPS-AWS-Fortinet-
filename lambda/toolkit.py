@@ -13,11 +13,14 @@ objetos, con una superficie deliberadamente mínima:
 manifest — el script jamás puede pasar ni forjar su propio clause_ref
 (design.md Decision #4).
 
-Nota de puente con Phase 6 (fuera de alcance acá): `fortigate_client.py`
-todavía no expone un `get(endpoint_key)` público (task 6.3) — este módulo
-usa el método interno `FortiGateClient._get(path)` como bridge. Cuando 6.3
-aterrice, el llamado interno puede reemplazarse por el método público sin
-cambiar la superficie de `FgtCapability`.
+`FgtCapability.get()` delega en el método público `FortiGateClient.get(
+endpoint_key)` (task 6.3) — la resolución de path y la memoización de bajo
+nivel viven en el cliente. `FgtCapability` mantiene su PROPIA memoización
+y validación de endpoint_key desconocido, porque necesita:
+  1. Invocar `on_call` (el hook de presupuesto del sandbox) en CADA llamada
+     lógica, incluso en un cache hit propio.
+  2. Rechazar un endpoint_key inválido SIN llegar a tocar el cliente real
+     (`client.get()` nunca se invoca para una clave desconocida).
 """
 
 from collections.abc import Callable
@@ -47,7 +50,7 @@ class FgtCapability:
         self._client = client
         self._on_call = on_call or _noop
         self._cache: dict[str, Any] = {}
-        self._path_by_label = {label: path for path, label in fortigate_client.ENDPOINTS}
+        self._known_labels = {label for _, label in fortigate_client.ENDPOINTS}
 
     def get(self, endpoint_key: str) -> Any:
         self._on_call()
@@ -55,16 +58,15 @@ class FgtCapability:
         if endpoint_key in self._cache:
             return self._cache[endpoint_key]
 
-        path = self._path_by_label.get(endpoint_key)
-        if path is None:
+        if endpoint_key not in self._known_labels:
             raise UnknownEndpointError(f"unknown FortiGate endpoint: '{endpoint_key}'")
 
-        value = self._client._get(path)
+        value = self._client.get(endpoint_key)
         self._cache[endpoint_key] = value
         return value
 
     def endpoints(self) -> list[str]:
-        return sorted(self._path_by_label)
+        return sorted(self._known_labels)
 
 
 class ReportCapability:

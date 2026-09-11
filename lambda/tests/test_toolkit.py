@@ -13,15 +13,20 @@ from toolkit import FgtCapability, ReportCapability, UnknownEndpointError
 
 
 class _FakeFortiGateClient:
-    """Doble de FortiGateClient: cuenta llamadas, nunca hace red real."""
+    """Doble de FortiGateClient: cuenta llamadas, nunca hace red real.
+
+    Implementa la superficie PÚBLICA `get(endpoint_key)` (task 6.3) — la
+    misma que expone el `FortiGateClient` real — porque `FgtCapability`
+    delega en ella en vez del método interno `_get(path)`.
+    """
 
     def __init__(self, responses: dict[str, object]):
         self._responses = responses
         self.calls: list[str] = []
 
-    def _get(self, path: str):
-        self.calls.append(path)
-        return self._responses.get(path)
+    def get(self, endpoint_key: str):
+        self.calls.append(endpoint_key)
+        return self._responses.get(endpoint_key)
 
 
 VALID_MANIFEST = {
@@ -35,16 +40,16 @@ VALID_MANIFEST = {
 
 class TestFgtCapability:
     def test_get_resolves_endpoint_key_to_path_and_returns_data(self):
-        client = _FakeFortiGateClient({"system/admin": [{"name": "admin"}]})
+        client = _FakeFortiGateClient({"admins": [{"name": "admin"}]})
         fgt = FgtCapability(client)
 
         result = fgt.get("admins")
 
         assert result == [{"name": "admin"}]
-        assert client.calls == ["system/admin"]
+        assert client.calls == ["admins"]
 
     def test_repeated_get_is_memoized_underlying_fetch_happens_once(self):
-        client = _FakeFortiGateClient({"system/dns": {"primary": "8.8.8.8"}})
+        client = _FakeFortiGateClient({"dns": {"primary": "8.8.8.8"}})
         fgt = FgtCapability(client)
 
         first = fgt.get("dns")
@@ -52,14 +57,14 @@ class TestFgtCapability:
 
         assert first == {"primary": "8.8.8.8"}
         assert second == {"primary": "8.8.8.8"}
-        assert client.calls == ["system/dns"]  # only ONE real fetch
+        assert client.calls == ["dns"]  # only ONE real fetch
 
     def test_on_call_hook_fires_every_logical_call_even_when_memoized(self):
         # The sandbox's call-count budget must see every fgt.get() call, even
         # cache hits — otherwise a flood against one memoized endpoint would
         # never trip MAX_FGT_CALLS.
         call_count = {"n": 0}
-        client = _FakeFortiGateClient({"system/dns": {}})
+        client = _FakeFortiGateClient({"dns": {}})
 
         def _bump():
             call_count["n"] += 1
@@ -71,7 +76,7 @@ class TestFgtCapability:
         fgt.get("dns")
 
         assert call_count["n"] == 3
-        assert client.calls == ["system/dns"]
+        assert client.calls == ["dns"]
 
     def test_unknown_endpoint_fails_safely(self):
         client = _FakeFortiGateClient({})

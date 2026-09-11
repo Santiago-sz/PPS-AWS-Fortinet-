@@ -38,13 +38,16 @@ def _signal_alarm_available() -> bool:
 
 
 class _FakeFortiGateClient:
+    """Doble de FortiGateClient exponiendo la superficie PÚBLICA
+    `get(endpoint_key)` (task 6.3) — la misma que usa `FgtCapability`."""
+
     def __init__(self, responses: dict[str, object] | None = None):
         self._responses = responses or {}
         self.calls: list[str] = []
 
-    def _get(self, path: str):
-        self.calls.append(path)
-        return self._responses.get(path)
+    def get(self, endpoint_key: str):
+        self.calls.append(endpoint_key)
+        return self._responses.get(endpoint_key)
 
 
 VALID_MANIFEST = {
@@ -88,7 +91,7 @@ class TestDisallowedCapabilityCall:
         # AttributeError, and MUST NOT reach the underlying client at all
         # (no network/filesystem/credential reach).
         source = "fgt.destroy()\n"
-        client = _FakeFortiGateClient({"system/admin": []})
+        client = _FakeFortiGateClient({"admins": []})
 
         with pytest.raises(AttributeError):
             execute(source, VALID_MANIFEST, client)
@@ -99,7 +102,7 @@ class TestDisallowedCapabilityCall:
 class TestCallCountBudget:
     def test_call_count_cap_terminates_and_records_reason(self):
         source = "for i in range(10):\n    fgt.get('admins')\n"
-        client = _FakeFortiGateClient({"system/admin": []})
+        client = _FakeFortiGateClient({"admins": []})
         budget = SandboxBudget(max_wall_clock_s=120.0, max_fgt_calls=3, max_findings=500)
 
         with pytest.raises(SandboxBudgetExceeded) as excinfo:
@@ -112,14 +115,14 @@ class TestCallCountBudget:
         # must still count each LOGICAL fgt.get() call, or a flood against
         # one cached endpoint would never trip the cap.
         source = "for i in range(10):\n    fgt.get('admins')\n"
-        client = _FakeFortiGateClient({"system/admin": []})
+        client = _FakeFortiGateClient({"admins": []})
         budget = SandboxBudget(max_wall_clock_s=120.0, max_fgt_calls=5, max_findings=500)
 
         with pytest.raises(SandboxBudgetExceeded) as excinfo:
             execute(source, VALID_MANIFEST, client, budget=budget)
 
         assert excinfo.value.reason == "call_count_exceeded"
-        assert client.calls == ["system/admin"]  # only 1 real fetch, cap still tripped
+        assert client.calls == ["admins"]  # only 1 real fetch, cap still tripped
 
 
 class TestWallClockBudgetViaPerCallGate:
@@ -165,8 +168,8 @@ class TestWallClockBudgetViaSignalBackstop:
             return lambda: None  # uninstall no-op
 
         class _TimeoutTriggeringClient(_FakeFortiGateClient):
-            def _get(self, path):
-                super()._get(path)
+            def get(self, endpoint_key):
+                super().get(endpoint_key)
                 captured["on_timeout"]()  # simulate: signal fires right here
                 return None
 
@@ -175,7 +178,7 @@ class TestWallClockBudgetViaSignalBackstop:
             "fgt.get('admins')\n"
             "report.finding('chk1', 'pass', 'nunca debería llegar acá')\n"
         )
-        client = _TimeoutTriggeringClient({"system/admin": []})
+        client = _TimeoutTriggeringClient({"admins": []})
         budget = SandboxBudget(max_wall_clock_s=120.0, max_fgt_calls=40, max_findings=500)
 
         with pytest.raises(SandboxBudgetExceeded) as excinfo:
@@ -233,7 +236,7 @@ class TestSuccessfulExecution:
             "report.finding('chk1', 'pass', 'ok')\n"
             "report.note('chk1', 'revisado')\n"
         )
-        client = _FakeFortiGateClient({"system/admin": []})
+        client = _FakeFortiGateClient({"admins": []})
 
         result = execute(source, VALID_MANIFEST, client)
 
