@@ -8,7 +8,9 @@ import io
 import json
 import urllib.error
 
-from fortigate_client import ENDPOINTS, FortiGateClient
+import pytest
+
+from fortigate_client import ENDPOINTS, FortiGateClient, UnknownEndpointError
 
 
 def _fake_response(payload: dict):
@@ -135,6 +137,69 @@ class TestGet:
             side_effect=ValueError("boom"),
         )
         assert client._get("system/global") is None
+
+
+class TestPublicGet:
+    """`get(endpoint_key)` -- indexado por la etiqueta pública de ENDPOINTS
+    (no por el path crudo de la API), memoizado. `collect_all()` no cambia."""
+
+    def test_get_resolves_label_to_path_and_returns_results(self, mocker):
+        client = FortiGateClient(host="192.168.1.1", token="dummy-token", verify_ssl=False)
+        mocker.patch(
+            "fortigate_client.urllib.request.urlopen",
+            return_value=_fake_response({"http_status": 200, "results": [{"name": "admin"}]}),
+        )
+
+        result = client.get("admins")
+
+        assert result == [{"name": "admin"}]
+
+    def test_get_memoizes_repeated_calls_same_endpoint(self, mocker):
+        """Llamadas repetidas al mismo endpoint_key no deben repetir el fetch HTTP."""
+        client = FortiGateClient(host="192.168.1.1", token="dummy-token", verify_ssl=False)
+        call_count = {"n": 0}
+
+        def fake_urlopen(req, context=None, timeout=None):
+            call_count["n"] += 1
+            return _fake_response({"http_status": 200, "results": {"primary": "8.8.8.8"}})
+
+        mocker.patch("fortigate_client.urllib.request.urlopen", side_effect=fake_urlopen)
+
+        first = client.get("dns")
+        second = client.get("dns")
+
+        assert first == {"primary": "8.8.8.8"}
+        assert second == {"primary": "8.8.8.8"}
+        assert call_count["n"] == 1  # solo un fetch real, la segunda llamada usa el cache
+
+    def test_get_raises_on_unknown_endpoint_key(self, mocker):
+        client = FortiGateClient(host="192.168.1.1", token="dummy-token", verify_ssl=False)
+        spy = mocker.patch("fortigate_client.urllib.request.urlopen")
+
+        with pytest.raises(UnknownEndpointError):
+            client.get("not_a_real_endpoint")
+
+        spy.assert_not_called()  # nunca se intenta un fetch para una clave inválida
+
+    def test_get_unreachable_endpoint_returns_none_without_affecting_other_endpoints(self, mocker):
+        """Un endpoint inalcanzable no debe abortar ni contaminar la memoización
+        de otro endpoint_key distinto -- cada get() es independiente, y el
+        fallo queda registrado (no silenciado) como None, igual que _get()."""
+        client = FortiGateClient(host="192.168.1.1", token="dummy-token", verify_ssl=False)
+
+        def fake_urlopen(req, context=None, timeout=None):
+            path = req.full_url.split("/api/v2/cmdb/")[1]
+            if path == "system/dns":
+                raise urllib.error.URLError("Network unreachable")
+            return _fake_response({"http_status": 200, "results": [{"name": "admin"}]})
+
+        mocker.patch("fortigate_client.urllib.request.urlopen", side_effect=fake_urlopen)
+
+        unreachable = client.get("dns")
+        reachable = client.get("admins")
+
+        assert unreachable is None
+        assert reachable == [{"name": "admin"}]
 
 
 class TestInit:

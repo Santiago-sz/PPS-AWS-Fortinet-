@@ -17,7 +17,11 @@ from moto import mock_aws
 
 from reporter import (
     build_markdown_report,
+    build_policy_report_json,
+    build_policy_report_markdown,
+    build_policy_sns_message,
     build_sns_message,
+    deliver_policy_report,
     generate_s3_key_prefix,
     publish_to_sns,
     upload_to_s3,
@@ -192,3 +196,261 @@ class TestPublishToSns:
         ok = publish_to_sns(topic_arn="arn:bad", message="msg", subject="subj")
 
         assert ok is False
+
+
+# ─── Policy-agnostic reporting (Phase 7) ────────────────────────────────────
+#
+# The functions above (build_markdown_report / build_sns_message) stay
+# hardcoded to NIST CSF 2.0 on purpose -- they back the legacy path gated by
+# `enable_legacy_nist_schedule` (design.md Decision #9) and MUST keep
+# passing unmodified. The functions below are ADDITIONAL and framework
+# agnostic: they render from `Finding`/`RunManifest` (design.md Interfaces),
+# never from a NIST-shaped `analysis` dict.
+
+# A completely non-NIST policy: an internal access-control/network-hardening
+# normativa with its own check ids and clause structure
+# (design.md ClauseRef = {"chunk_id","heading_path","page","quote"}).
+TRACEABLE_FINDINGS = [
+    {
+        "check_id": "chk-mfa",
+        "clause_ref": {
+            "chunk_id": "c1",
+            "heading_path": ["4. Access Control", "4.2 MFA"],
+            "page": 7,
+            "quote": "MFA is mandatory for all administrative access.",
+        },
+        "status": "fail",
+        "evidence": "No se detectó MFA habilitado en los usuarios admin.",
+        "endpoints_used": ["admins"],
+        "traceable": True,
+    },
+    {
+        "check_id": "chk-dns",
+        "clause_ref": {
+            "chunk_id": "c2",
+            "heading_path": ["6. Network Hardening"],
+            "page": 12,
+            "quote": "DNS servers must be internally managed.",
+        },
+        "status": "pass",
+        "evidence": "DNS primario configurado internamente.",
+        "endpoints_used": ["dns"],
+        "traceable": True,
+    },
+]
+
+# `clause_ref` is None + `traceable=False` — the shape `ReportCapability`
+# produces when `check_id` isn't in the manifest (test_toolkit.py).
+UNTRACEABLE_FINDING = {
+    "check_id": "chk-ghost",
+    "clause_ref": None,
+    "status": "indeterminate",
+    "evidence": "check_id no encontrado en el manifest",
+    "endpoints_used": [],
+    "traceable": False,
+}
+
+# Defensive edge case: toolkit marked it traceable, but the clause_ref
+# itself is malformed (missing "quote") -- the reporter must not trust
+# `traceable=True` blindly; it must validate the clause_ref shape itself.
+INVALID_CLAUSE_FINDING = {
+    "check_id": "chk-broken",
+    "clause_ref": {"page": 3},
+    "status": "pass",
+    "evidence": "evidencia sin cita utilizable",
+    "endpoints_used": [],
+    "traceable": True,
+}
+
+
+class TestBuildPolicyReportMarkdown:
+    def test_non_nist_policy_renders_findings_and_clause_citations(self):
+        md = build_policy_report_markdown(
+            findings=TRACEABLE_FINDINGS,
+            notes=[],
+            status="completed",
+            run_id="run-abc",
+            policy_key="policies/internal-access-control.pdf",
+            timestamp="2025-02-01T00:00:00Z",
+        )
+
+        assert "chk-mfa" in md
+        assert "MFA is mandatory for all administrative access." in md
+        assert "chk-dns" in md
+        assert "DNS servers must be internally managed." in md
+        assert "completed" in md
+        assert "NIST" not in md
+
+    def test_untraceable_finding_is_flagged_not_silently_included(self):
+        md = build_policy_report_markdown(
+            findings=[UNTRACEABLE_FINDING],
+            notes=[],
+            status="completed",
+            run_id="run-abc",
+            policy_key="policies/internal-access-control.pdf",
+            timestamp="2025-02-01T00:00:00Z",
+        )
+
+        assert "chk-ghost" in md
+        # Must be visibly flagged, never rendered as if it had a real citation.
+        assert "no trazable" in md.lower()
+        assert "p. " not in md  # no fabricated page reference
+
+    def test_invalid_clause_ref_missing_quote_is_flagged_untraceable(self):
+        # Even though the input finding says traceable=True, the clause_ref
+        # itself is incomplete -- the reporter must catch this independently.
+        md = build_policy_report_markdown(
+            findings=[INVALID_CLAUSE_FINDING],
+            notes=[],
+            status="completed",
+            run_id="run-abc",
+            policy_key="policies/internal-access-control.pdf",
+            timestamp="2025-02-01T00:00:00Z",
+        )
+
+        assert "chk-broken" in md
+        assert "no trazable" in md.lower()
+
+    def test_could_not_audit_status_visibly_distinguished_from_success(self):
+        md = build_policy_report_markdown(
+            findings=[],
+            notes=[],
+            status="could_not_audit",
+            run_id="run-failed",
+            policy_key="policies/broken.pdf",
+            timestamp="2025-02-01T00:00:00Z",
+            failure_reason="generation_failed",
+        )
+
+        assert "could not audit" in md
+        assert "generation_failed" in md
+        assert "completed" not in md
+
+
+class TestBuildPolicyReportJson:
+    def test_completed_report_includes_status_and_findings(self):
+        report = build_policy_report_json(
+            findings=TRACEABLE_FINDINGS,
+            notes=[],
+            status="completed",
+            run_id="run-abc",
+            policy_key="policies/internal-access-control.pdf",
+            timestamp="2025-02-01T00:00:00Z",
+        )
+
+        assert report["status"] == "completed"
+        assert report["run_id"] == "run-abc"
+        assert len(report["findings"]) == 2
+        assert report["findings"][0]["traceable"] is True
+        assert report["findings"][0]["clause_ref"]["quote"] == (
+            "MFA is mandatory for all administrative access."
+        )
+
+    def test_invalid_clause_ref_marked_untraceable_even_if_input_said_true(self):
+        report = build_policy_report_json(
+            findings=[INVALID_CLAUSE_FINDING],
+            notes=[],
+            status="completed",
+            run_id="run-abc",
+            policy_key="policies/internal-access-control.pdf",
+            timestamp="2025-02-01T00:00:00Z",
+        )
+
+        assert report["findings"][0]["traceable"] is False
+
+    def test_could_not_audit_status_is_distinct_value_with_failure_reason(self):
+        report = build_policy_report_json(
+            findings=[],
+            notes=[],
+            status="could_not_audit",
+            run_id="run-failed",
+            policy_key="policies/broken.pdf",
+            timestamp="2025-02-01T00:00:00Z",
+            failure_reason="no_verifiable_controls",
+        )
+
+        assert report["status"] == "could_not_audit"
+        assert report["status"] != "completed"
+        assert report["failure_reason"] == "no_verifiable_controls"
+
+
+class TestBuildPolicySnsMessage:
+    def test_completed_message_mentions_run_and_report_key(self):
+        msg = build_policy_sns_message(
+            status="completed",
+            run_id="run-abc",
+            findings=TRACEABLE_FINDINGS,
+            s3_key="reports/run-abc/report.md",
+        )
+
+        assert "run-abc" in msg
+        assert "reports/run-abc/report.md" in msg
+
+    def test_could_not_audit_message_visibly_distinguished(self):
+        msg = build_policy_sns_message(
+            status="could_not_audit",
+            run_id="run-failed",
+            findings=[],
+            s3_key="reports/run-failed/report.md",
+            failure_reason="generation_failed",
+        )
+
+        assert "could not audit" in msg
+        assert "generation_failed" in msg
+
+
+class TestDeliverPolicyReport:
+    @mock_aws
+    def test_completed_path_uploads_to_s3_and_publishes_sns(self):
+        bucket = "pps-reports-bucket"
+        s3 = boto3.client("s3", region_name="us-east-1")
+        s3.create_bucket(Bucket=bucket)
+        sns = boto3.client("sns", region_name="us-east-1")
+        topic_arn = sns.create_topic(Name="pps-notifications")["TopicArn"]
+
+        result = deliver_policy_report(
+            bucket=bucket,
+            topic_arn=topic_arn,
+            run_id="run-abc",
+            policy_key="policies/internal-access-control.pdf",
+            findings=TRACEABLE_FINDINGS,
+            notes=[],
+            status="completed",
+            timestamp="2025-02-01T00:00:00Z",
+        )
+
+        assert result["status"] == "completed"
+        assert result["sns_published"] is True
+        assert result["uploaded"]["markdown"] == "reports/run-abc/report.md"
+
+        obj = s3.get_object(Bucket=bucket, Key="reports/run-abc/report.md")
+        body = obj["Body"].read().decode("utf-8")
+        assert "chk-mfa" in body
+        assert "completed" in body
+
+    @mock_aws
+    def test_could_not_audit_path_still_uploads_and_publishes(self):
+        bucket = "pps-reports-bucket"
+        s3 = boto3.client("s3", region_name="us-east-1")
+        s3.create_bucket(Bucket=bucket)
+        sns = boto3.client("sns", region_name="us-east-1")
+        topic_arn = sns.create_topic(Name="pps-notifications")["TopicArn"]
+
+        result = deliver_policy_report(
+            bucket=bucket,
+            topic_arn=topic_arn,
+            run_id="run-failed",
+            policy_key="policies/broken.pdf",
+            findings=[],
+            notes=[],
+            status="could_not_audit",
+            timestamp="2025-02-01T00:00:00Z",
+            failure_reason="generation_failed",
+        )
+
+        assert result["status"] == "could_not_audit"
+        assert result["sns_published"] is True
+
+        obj = s3.get_object(Bucket=bucket, Key="reports/run-failed/report.md")
+        body = obj["Body"].read().decode("utf-8")
+        assert "could not audit" in body

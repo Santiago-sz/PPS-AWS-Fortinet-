@@ -32,6 +32,10 @@ ENDPOINTS = [
 ]
 
 
+class UnknownEndpointError(Exception):
+    """`get()` fue llamado con un endpoint_key fuera del catálogo de ENDPOINTS."""
+
+
 class FortiGateClient:
     """
     Cliente HTTP para la REST API de FortiGate (v2).
@@ -62,6 +66,11 @@ class FortiGateClient:
             self.ssl_context = ssl.create_default_context()
             self.ssl_context.check_hostname = False
             self.ssl_context.verify_mode = ssl.CERT_NONE
+
+        # path_by_label habilita get(endpoint_key): la superficie pública
+        # nunca expone paths crudos de la API, solo las etiquetas de ENDPOINTS.
+        self._path_by_label = {label: path for path, label in ENDPOINTS}
+        self._cache: dict = {}
 
     def _get(self, path: str) -> dict | list | None:
         """
@@ -97,6 +106,34 @@ class FortiGateClient:
         except Exception as e:
             logger.error("Error inesperado consultando %s: %s", path, str(e))
             return None
+
+    def get(self, endpoint_key: str) -> dict | list | None:
+        """
+        GET público, indexado por la etiqueta de ENDPOINTS (no por el path
+        crudo de la API), con memoización -- llamadas repetidas al mismo
+        endpoint_key no repiten la llamada HTTP.
+
+        Un endpoint inalcanzable (HTTP error o red) devuelve None -- igual
+        que `_get()` -- en lugar de abortar; el resto de los endpoint_key
+        siguen siendo consultables de forma independiente.
+
+        Args:
+            endpoint_key: etiqueta pública, ej. "admins", "dns" (segundo
+                          elemento de cada tupla en ENDPOINTS).
+
+        Raises:
+            UnknownEndpointError: si endpoint_key no está en ENDPOINTS.
+        """
+        if endpoint_key not in self._path_by_label:
+            raise UnknownEndpointError(f"unknown FortiGate endpoint: '{endpoint_key}'")
+
+        if endpoint_key in self._cache:
+            return self._cache[endpoint_key]
+
+        path = self._path_by_label[endpoint_key]
+        value = self._get(path)
+        self._cache[endpoint_key] = value
+        return value
 
     def collect_all(self) -> dict:
         """

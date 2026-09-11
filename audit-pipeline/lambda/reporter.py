@@ -352,6 +352,254 @@ def publish_to_sns(topic_arn: str, message: str, subject: str) -> bool:
         return False
 
 
+# ─── Policy-agnostic reporting (policy-driven audit script generation) ─────
+#
+# Everything above this line backs the LEGACY NIST CSF 2.0 path
+# (`analyzer.py` + `handler.py`), kept alive behind the Terraform
+# `enable_legacy_nist_schedule` rollback flag (design.md Decision #9) and
+# left UNCHANGED — same functions, same behavior, same tests.
+#
+# Everything below renders `Finding`/`RunManifest` (design.md Interfaces),
+# never a fixed NIST-shaped `analysis` dict. It reuses `upload_to_s3` /
+# `publish_to_sns` as-is: both already accept an arbitrary dict/string body,
+# so no framework-specific assumption needs to change there.
+#
+# `clause_ref` itself is resolved server-side by `toolkit.ReportCapability`
+# (design.md Decision #4) from the manifest — this module never recomputes
+# or invents it. It only RENDERS it, and independently double-checks its
+# shape before trusting it, because a generator defect could still hand us
+# a `traceable=True` finding whose `clause_ref` is incomplete (missing
+# quote/page/etc.) — see spec.md "Finding cannot be traced".
+
+
+def _finding_is_traceable(finding: dict) -> bool:
+    """A finding is only truly traceable if BOTH the toolkit marked it as
+    such AND its `clause_ref` is a well-formed citation with a real quote.
+
+    We do not trust `finding["traceable"]` blindly: it reflects only
+    whether `check_id` existed in the manifest at record time, not whether
+    the resulting `clause_ref` is actually renderable/citable.
+    """
+    if not finding.get("traceable", False):
+        return False
+    clause_ref = finding.get("clause_ref")
+    if not isinstance(clause_ref, dict):
+        return False
+    quote = clause_ref.get("quote")
+    return isinstance(quote, str) and quote.strip() != ""
+
+
+def _format_clause_ref(clause_ref: dict) -> str:
+    """Renders a well-formed ClauseRef (design.md) as a human citation.
+
+    Only called after `_finding_is_traceable` confirms the shape — never
+    called on a missing/invalid clause_ref.
+    """
+    location_parts = []
+
+    heading_path = clause_ref.get("heading_path")
+    if heading_path:
+        if isinstance(heading_path, list):
+            location_parts.append(" > ".join(str(h) for h in heading_path))
+        else:
+            location_parts.append(str(heading_path))
+
+    page = clause_ref.get("page")
+    if page is not None:
+        location_parts.append(f"p. {page}")
+
+    location = ", ".join(location_parts) if location_parts else "ubicación no especificada"
+    return f'{location} — "{clause_ref["quote"]}"'
+
+
+def build_policy_report_markdown(
+    findings: list[dict],
+    notes: list[dict],
+    status: str,
+    run_id: str,
+    policy_key: str,
+    timestamp: str,
+    failure_reason: str | None = None,
+) -> str:
+    """Renders a framework-agnostic Markdown audit report.
+
+    Unlike `build_markdown_report` (legacy, NIST-shaped `analysis` dict),
+    this takes the raw `findings`/`notes` lists `ReportCapability` accumulates
+    plus the run's `status` — it never assumes any fixed category set.
+    """
+    lines = []
+
+    if status != "completed":
+        lines.append("# ⚠️ Reporte de Auditoría — could not audit\n")
+        lines.append(f"**Run ID:** `{run_id}`")
+        lines.append(f"**Policy:** `{policy_key}`")
+        lines.append(f"**Timestamp:** {timestamp}")
+        lines.append(f"**Status:** could not audit ({failure_reason or status})\n")
+        lines.append(
+            "No se pudo completar la auditoría de esta política. Este reporte "
+            "NO debe interpretarse como un resultado exitoso ni como ausencia "
+            "de hallazgos — la auditoría no llegó a ejecutarse por completo.\n"
+        )
+        return "\n".join(lines)
+
+    lines.append("# ✅ Reporte de Auditoría de Política\n")
+    lines.append(f"**Run ID:** `{run_id}`")
+    lines.append(f"**Policy:** `{policy_key}`")
+    lines.append(f"**Timestamp:** {timestamp}")
+    lines.append("**Status:** completed\n")
+
+    if not findings:
+        lines.append("_Sin hallazgos registrados para esta política._\n")
+    else:
+        lines.append("## Hallazgos\n")
+        lines.append("| Check ID | Estado | Evidencia | Cláusula fuente |")
+        lines.append("|----------|--------|-----------|------------------|")
+        for finding in findings:
+            check_id = finding.get("check_id", "desconocido")
+            finding_status = finding.get("status", "indeterminate")
+            evidence = finding.get("evidence", "")
+            if _finding_is_traceable(finding):
+                clause = _format_clause_ref(finding["clause_ref"])
+            else:
+                clause = "⚠️ no trazable (clause_ref faltante o inválido)"
+            lines.append(f"| `{check_id}` | {finding_status} | {evidence} | {clause} |")
+        lines.append("")
+
+    if notes:
+        lines.append("## Notas\n")
+        for note in notes:
+            lines.append(f"- `{note.get('check_id', '')}`: {note.get('message', '')}")
+        lines.append("")
+
+    untraceable_count = sum(1 for f in findings if not _finding_is_traceable(f))
+    if untraceable_count:
+        lines.append(
+            f"> ⚠️ {untraceable_count} hallazgo(s) sin cláusula trazable — posible "
+            "defecto del generador. No deben tomarse como autoritativos.\n"
+        )
+
+    lines.append("---")
+    lines.append("_Reporte generado automáticamente por PPS — auditoría policy-agnostic_")
+
+    return "\n".join(lines)
+
+
+def build_policy_report_json(
+    findings: list[dict],
+    notes: list[dict],
+    status: str,
+    run_id: str,
+    policy_key: str,
+    timestamp: str,
+    failure_reason: str | None = None,
+) -> dict:
+    """Structured (JSON-serializable) counterpart of `build_policy_report_markdown`.
+
+    Re-derives `traceable` per finding independently (see `_finding_is_traceable`)
+    instead of trusting the input value, so a malformed `clause_ref` is never
+    silently forwarded as authoritative in the persisted report.
+    """
+    annotated_findings = []
+    for finding in findings:
+        annotated = dict(finding)
+        annotated["traceable"] = _finding_is_traceable(finding)
+        annotated_findings.append(annotated)
+
+    report = {
+        "run_id": run_id,
+        "policy_key": policy_key,
+        "timestamp": timestamp,
+        "status": status,
+        "findings": annotated_findings,
+        "notes": list(notes),
+    }
+    if failure_reason is not None:
+        report["failure_reason"] = failure_reason
+    return report
+
+
+def build_policy_sns_message(
+    status: str,
+    run_id: str,
+    findings: list[dict],
+    s3_key: str,
+    failure_reason: str | None = None,
+) -> str:
+    """Short SNS notification for a policy-agnostic audit run.
+
+    Mirrors `build_sns_message` (legacy) in purpose but never assumes NIST
+    function names or a numeric overall score — audits here are pass/fail
+    per check, not scored per framework category.
+    """
+    if status != "completed":
+        return (
+            f"⚠️ could not audit — run {run_id}\n"
+            f"Motivo: {failure_reason or status}\n"
+            f"Reporte: {s3_key}"
+        )
+
+    untraceable_count = sum(1 for f in findings if not _finding_is_traceable(f))
+    lines = [
+        f"✅ Auditoría de política completada — run {run_id}",
+        f"Hallazgos: {len(findings)}",
+    ]
+    if untraceable_count:
+        lines.append(f"⚠️ {untraceable_count} hallazgo(s) no trazable(s)")
+    lines.append(f"Reporte completo: {s3_key}")
+
+    return "\n".join(lines)
+
+
+def deliver_policy_report(
+    bucket: str,
+    topic_arn: str,
+    run_id: str,
+    policy_key: str,
+    findings: list[dict],
+    notes: list[dict],
+    status: str,
+    timestamp: str,
+    failure_reason: str | None = None,
+) -> dict:
+    """Orchestrates build + delivery for a policy-agnostic audit run.
+
+    Reuses `upload_to_s3` / `publish_to_sns` UNCHANGED (spec.md "Report
+    Delivery and Failure Distinction" — both success and failure reports
+    MUST be delivered the same way, never silently dropped). Called for
+    BOTH the completed path and the could-not-audit path.
+    """
+    markdown_report = build_policy_report_markdown(
+        findings, notes, status, run_id, policy_key, timestamp, failure_reason
+    )
+    json_report = build_policy_report_json(
+        findings, notes, status, run_id, policy_key, timestamp, failure_reason
+    )
+
+    uploaded = upload_to_s3(
+        bucket=bucket,
+        s3_key_prefix=f"reports/{run_id}",
+        markdown_report=markdown_report,
+        analysis=json_report,
+        timestamp=timestamp,
+    )
+
+    subject = (
+        "PPS Policy Audit — completed"
+        if status == "completed"
+        else "PPS Policy Audit — could not audit"
+    )
+    sns_message = build_policy_sns_message(
+        status,
+        run_id,
+        findings,
+        uploaded.get("markdown", f"reports/{run_id}/report.md"),
+        failure_reason,
+    )
+    sns_published = publish_to_sns(topic_arn=topic_arn, message=sns_message, subject=subject)
+
+    return {"uploaded": uploaded, "sns_published": sns_published, "status": status}
+
+
 def generate_s3_key_prefix(host: str, timestamp: str) -> str:
     """
     Genera el prefijo de path en S3 para este assessment.
