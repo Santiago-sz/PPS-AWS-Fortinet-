@@ -271,9 +271,14 @@ class TestPartialFortiGateEndpointFailureTolerance:
 
 
 class TestSandboxBudgetExceededDuringExecution:
-    def test_budget_exceeded_preserves_partial_findings_and_still_delivers_report(
+    def test_budget_exceeded_preserves_partial_findings_and_reports_truncated(
         self, executor_env, mocker, mock_secrets_manager
     ):
+        """spec.md 'Script exceeds wall-clock cutoff': partial findings MUST be
+        preserved and reported — but a budget cutoff is NOT the same thing as a
+        clean, fully-completed audit. `status` MUST be the distinct value
+        "truncated", never "completed" (which a report consumer would read as
+        "the whole policy was audited")."""
         script = (
             "report.finding('chk-0001', 'pass', 'evidencia 1')\n"
             "report.finding('chk-0001', 'pass', 'evidencia 2')\n"
@@ -302,11 +307,54 @@ class TestSandboxBudgetExceededDuringExecution:
             _invoke_event(script_sha256=script_sha256), _lambda_context()
         )
 
-        assert result["status"] == "completed"
+        assert result["status"] == "truncated"
         assert result["budget_exceeded"] == "wall_clock_exceeded"
         assert result["findings_count"] == 1
 
+        deliver.assert_called_once()
         _, kwargs = deliver.call_args
-        assert kwargs["status"] == "completed"
+        assert kwargs["status"] == "truncated"
         assert kwargs["findings"] == partial_findings
+        assert kwargs["failure_reason"] == "wall_clock_exceeded"
         assert any(n["check_id"] == "_sandbox" for n in kwargs["notes"])
+
+    def test_call_count_budget_exceeded_with_zero_findings_still_reports_truncated(
+        self, executor_env, mocker, mock_secrets_manager
+    ):
+        """Triangulation: a different budget reason (`call_count_exceeded`) and
+        ZERO partial findings (the cutoff hit before anything was recorded) must
+        still produce `status == "truncated"`, never "completed" and never
+        "could_not_audit" — the run is neither a clean success nor an audit
+        that never ran at all."""
+        script = "report.finding('chk-0001', 'pass', 'evidencia 1')\n"
+        script_sha256 = hashlib.sha256(script.encode("utf-8")).hexdigest()
+        manifest = {**VALID_MANIFEST, "script_sha256": script_sha256}
+
+        mocker.patch("handler_executor.s3_io.get_manifest", return_value=manifest)
+        mocker.patch("handler_executor.s3_io.get_script", return_value=script)
+        mocker.patch("handler_executor.FortiGateClient")
+
+        mocker.patch(
+            "handler_executor.sandbox.execute",
+            side_effect=sandbox.SandboxBudgetExceeded(
+                "call_count_exceeded", "too many fgt.get() calls", [], []
+            ),
+        )
+
+        deliver = mocker.patch(
+            "handler_executor.reporter.deliver_policy_report",
+            return_value={"uploaded": {}, "sns_published": True},
+        )
+
+        result = handler_executor.lambda_handler(
+            _invoke_event(script_sha256=script_sha256), _lambda_context()
+        )
+
+        assert result["status"] == "truncated"
+        assert result["budget_exceeded"] == "call_count_exceeded"
+        assert result["findings_count"] == 0
+
+        _, kwargs = deliver.call_args
+        assert kwargs["status"] == "truncated"
+        assert kwargs["findings"] == []
+        assert kwargs["failure_reason"] == "call_count_exceeded"
