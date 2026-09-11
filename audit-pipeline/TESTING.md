@@ -41,7 +41,7 @@ Sin este segundo `pip install`, los tests de `test_extractor.py` fallan por
 pytest
 ```
 
-Corre toda la suite en `lambda/tests/` — **156 tests passed, 1 skipped**
+Corre toda la suite en `lambda/tests/` — **164 tests passed, 1 skipped**
 (skip documentado: `signal.setitimer`/`SIGALRM` no existe en Windows, ver
 `test_sandbox.py::TestWallClockBudgetViaSignalBackstop`). Todos mockean AWS
 (S3/Secrets Manager/SNS/`lambda:InvokeFunction`)/FortiGate/Claude — nunca se
@@ -67,9 +67,9 @@ hace red real, se puede correr sin credenciales ni conectividad.
 | `test_sandbox.py` | Namespace restringido + presupuestos duros (wall-clock, call-count, findings) — `SandboxBudgetExceeded` |
 | `test_llm_client.py` | Fase map (chunk group → `PolicyCheck[]`) + fase reduce con reintento acotado (`MAX_GENERATION_ATTEMPTS`) |
 | `test_s3_io.py` | Get/put de policy/script/manifest/report; integridad `script_sha256` end-to-end |
-| `test_reporter.py` (clases `TestBuildPolicyReport*`, `TestDeliverPolicyReport`) | Reporte policy-agnostic keyed en `Finding`/`RunManifest`; distingue `completed` vs `could_not_audit` |
+| `test_reporter.py` (clases `TestBuildPolicyReport*`, `TestDeliverPolicyReport`) | Reporte policy-agnostic keyed en `Finding`/`RunManifest`; distingue tres status: `completed` (auditoría íntegra), `truncated` (corte de presupuesto de sandbox, hallazgos parciales SÍ se muestran en tabla, header de advertencia visualmente equivalente a `could_not_audit`) y `could_not_audit` (nada auditable, sin tabla de hallazgos) — JSON incluye flag booleano de primer nivel `truncated` |
 | `test_handler_generator.py` | Entrypoint S3-triggered `policy_generator` — flujo feliz completo, camino de reintentos agotados (`generation_failed`, no invoca executor), camino sin controles verificables (`no_verifiable_controls`, no invoca executor), fallo de extracción |
-| `test_handler_executor.py` | Entrypoint async `audit_executor` — re-validación independiente exitosa ejecuta y reporta; re-validación fallida NO ejecuta; chequeo de integridad `script_sha256` rechaza ANTES de tocar el AST; tolerancia a fallo parcial de un endpoint FortiGate; presupuesto de sandbox agotado preserva hallazgos parciales |
+| `test_handler_executor.py` | Entrypoint async `audit_executor` — re-validación independiente exitosa ejecuta y reporta; re-validación fallida NO ejecuta; chequeo de integridad `script_sha256` rechaza ANTES de tocar el AST; tolerancia a fallo parcial de un endpoint FortiGate; presupuesto de sandbox agotado reporta `status="truncated"` (nunca `"completed"`) preservando los hallazgos parciales recolectados antes del corte |
 | `test_integration_generator_executor.py` | Contrato generator→executor de punta a punta con S3 real (`moto`): el manifest+script que escribe el generador llegan sin cambios al executor; un script alterado en S3 entre ambos handlers se rechaza por integridad |
 
 Útil:

@@ -189,11 +189,16 @@ def lambda_handler(event: dict, context) -> dict:
         sandbox_result = sandbox.execute(script, manifest, fgt_client, budget=budget)
         findings, notes = sandbox_result.findings, sandbox_result.notes
     except sandbox.SandboxBudgetExceeded as e:
-        # Findings/notes parciales SIEMPRE se preservan y se reportan como
-        # "completed" — el corte de presupuesto no invalida los hallazgos ya
-        # recolectados antes del corte (spec.md "Script exceeds wall-clock
-        # cutoff": "partial findings collected so far MUST be preserved and
-        # reported"). La razón de terminación queda registrada como nota.
+        # Findings/notes parciales SIEMPRE se preservan y se reportan (spec.md
+        # "Script exceeds wall-clock cutoff": "partial findings collected so
+        # far MUST be preserved and reported") — pero un corte de presupuesto
+        # NO es una auditoría completa. Reportarlo como "completed" le daría
+        # al consumidor del reporte una falsa sensación de auditoría íntegra
+        # (mismo valor que una corrida que sí terminó de revisar todo). Por
+        # eso usa el status distinto "truncated": ni "completed" (no fue
+        # completa) ni "could_not_audit" (sí se recolectó evidencia parcial
+        # utilizable). La razón de terminación queda registrada como nota Y
+        # como failure_reason de primer nivel.
         logger.warning("Sandbox terminado por presupuesto — run_id=%s reason=%s", run_id, e.reason)
         findings = e.findings
         notes = [
@@ -210,12 +215,12 @@ def lambda_handler(event: dict, context) -> dict:
             policy_key=policy_key,
             findings=findings,
             notes=notes,
-            status="completed",
+            status="truncated",
             timestamp=run_ts,
-            failure_reason=None,
+            failure_reason=e.reason,
         )
         return {
-            "status": "completed",
+            "status": "truncated",
             "run_id": run_id,
             "budget_exceeded": e.reason,
             "findings_count": len(findings),

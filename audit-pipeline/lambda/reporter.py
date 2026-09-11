@@ -426,10 +426,25 @@ def build_policy_report_markdown(
     Unlike `build_markdown_report` (legacy, NIST-shaped `analysis` dict),
     this takes the raw `findings`/`notes` lists `ReportCapability` accumulates
     plus the run's `status` — it never assumes any fixed category set.
+
+    THREE distinct status branches — never collapse them:
+      - "could_not_audit": nothing usable was ever collected (generation
+        exhausted retries, no verifiable controls, integrity/AST rejection).
+        No findings table exists to show — early-return, unchanged.
+      - "truncated": a sandbox budget cutoff (wall-clock or call-count) ended
+        the run early, but partial findings WERE collected and MUST still be
+        shown (spec.md "Script exceeds wall-clock cutoff": "partial findings
+        collected so far MUST be preserved and reported"). Reusing
+        "completed" here would be indistinguishable from a full, clean audit
+        — a false sense of completeness. Reusing "could_not_audit" would
+        silently drop the real findings that WERE collected. Renders an
+        equally-unmissable warning header, THEN the same findings table as
+        "completed" — it never early-returns.
+      - "completed": full, clean run — unchanged.
     """
     lines = []
 
-    if status != "completed":
+    if status == "could_not_audit":
         lines.append("# ⚠️ Reporte de Auditoría — could not audit\n")
         lines.append(f"**Run ID:** `{run_id}`")
         lines.append(f"**Policy:** `{policy_key}`")
@@ -442,11 +457,25 @@ def build_policy_report_markdown(
         )
         return "\n".join(lines)
 
-    lines.append("# ✅ Reporte de Auditoría de Política\n")
-    lines.append(f"**Run ID:** `{run_id}`")
-    lines.append(f"**Policy:** `{policy_key}`")
-    lines.append(f"**Timestamp:** {timestamp}")
-    lines.append("**Status:** completed\n")
+    if status == "truncated":
+        lines.append("# ⚠️ Reporte de Auditoría — TRUNCADA\n")
+        lines.append(f"**Run ID:** `{run_id}`")
+        lines.append(f"**Policy:** `{policy_key}`")
+        lines.append(f"**Timestamp:** {timestamp}")
+        lines.append(f"**Status:** truncated ({failure_reason or 'sandbox budget exceeded'})\n")
+        lines.append(
+            "⚠️ **Esta auditoría fue CORTADA antes de completarse** (se alcanzó "
+            "un límite de tiempo o de cantidad de llamadas del sandbox). Los "
+            "hallazgos listados abajo son PARCIALES — fueron recolectados "
+            "antes del corte, pero NO cubren la totalidad de la política. "
+            "Este reporte NO debe interpretarse como una auditoría completa.\n"
+        )
+    else:
+        lines.append("# ✅ Reporte de Auditoría de Política\n")
+        lines.append(f"**Run ID:** `{run_id}`")
+        lines.append(f"**Policy:** `{policy_key}`")
+        lines.append(f"**Timestamp:** {timestamp}")
+        lines.append("**Status:** completed\n")
 
     if not findings:
         lines.append("_Sin hallazgos registrados para esta política._\n")
@@ -498,6 +527,12 @@ def build_policy_report_json(
     Re-derives `traceable` per finding independently (see `_finding_is_traceable`)
     instead of trusting the input value, so a malformed `clause_ref` is never
     silently forwarded as authoritative in the persisted report.
+
+    Always includes a top-level `"truncated"` boolean (`True` only for
+    `status == "truncated"`). This gives an automated consumer a single,
+    unambiguous field to check — `report["truncated"]` — without needing to
+    special-case the exact spelling of `status` to detect a sandbox-budget
+    cutoff versus a genuinely complete run.
     """
     annotated_findings = []
     for finding in findings:
@@ -510,6 +545,7 @@ def build_policy_report_json(
         "policy_key": policy_key,
         "timestamp": timestamp,
         "status": status,
+        "truncated": status == "truncated",
         "findings": annotated_findings,
         "notes": list(notes),
     }
@@ -530,12 +566,24 @@ def build_policy_sns_message(
     Mirrors `build_sns_message` (legacy) in purpose but never assumes NIST
     function names or a numeric overall score — audits here are pass/fail
     per check, not scored per framework category.
+
+    THREE distinct branches, matching `build_policy_report_markdown`:
+    "could_not_audit" (nothing collected), "truncated" (sandbox budget
+    cutoff, partial findings preserved), "completed" (full clean run).
     """
-    if status != "completed":
+    if status == "could_not_audit":
         return (
             f"⚠️ could not audit — run {run_id}\n"
             f"Motivo: {failure_reason or status}\n"
             f"Reporte: {s3_key}"
+        )
+
+    if status == "truncated":
+        return (
+            f"⚠️ Auditoría TRUNCADA (presupuesto de sandbox agotado) — run {run_id}\n"
+            f"Motivo: {failure_reason or status}\n"
+            f"Hallazgos parciales recolectados: {len(findings)}\n"
+            f"Reporte completo: {s3_key}"
         )
 
     untraceable_count = sum(1 for f in findings if not _finding_is_traceable(f))
@@ -583,11 +631,12 @@ def deliver_policy_report(
         timestamp=timestamp,
     )
 
-    subject = (
-        "PPS Policy Audit — completed"
-        if status == "completed"
-        else "PPS Policy Audit — could not audit"
-    )
+    if status == "completed":
+        subject = "PPS Policy Audit — completed"
+    elif status == "truncated":
+        subject = "PPS Policy Audit — TRUNCATED (partial results)"
+    else:
+        subject = "PPS Policy Audit — could not audit"
     sns_message = build_policy_sns_message(
         status,
         run_id,

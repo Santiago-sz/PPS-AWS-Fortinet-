@@ -15,6 +15,7 @@ import pytest
 from botocore.exceptions import ClientError
 from moto import mock_aws
 
+import reporter
 from reporter import (
     build_markdown_report,
     build_policy_report_json,
@@ -325,6 +326,79 @@ class TestBuildPolicyReportMarkdown:
         assert "could not audit" in md
         assert "generation_failed" in md
         assert "completed" not in md
+        # could_not_audit never had any findings to begin with -- there is no
+        # table to show, so it must NOT render one.
+        assert "## Hallazgos" not in md
+
+
+class TestBuildPolicyReportMarkdownTruncated:
+    """spec.md 'Script exceeds wall-clock cutoff': partial findings collected
+    before a sandbox budget cutoff MUST be preserved and reported -- but
+    truncated MUST look neither like a clean `completed` report nor like a
+    `could_not_audit` report with no findings table at all."""
+
+    def test_truncated_shows_warning_header_and_still_renders_findings_table(self):
+        md = build_policy_report_markdown(
+            findings=TRACEABLE_FINDINGS,
+            notes=[
+                {
+                    "check_id": "_sandbox",
+                    "message": "execution terminated early: wall_clock_exceeded",
+                }
+            ],
+            status="truncated",
+            run_id="run-cutoff",
+            policy_key="policies/internal-access-control.pdf",
+            timestamp="2025-02-01T00:00:00Z",
+            failure_reason="wall_clock_exceeded",
+        )
+
+        # Impossible-to-miss warning, at the same visual emphasis level as
+        # could_not_audit's header (same leading "⚠️" marker).
+        assert "⚠️" in md.splitlines()[0]
+        assert "TRUNCAD" in md.upper()
+        assert "wall_clock_exceeded" in md
+
+        # Unlike could_not_audit, the partial findings that WERE collected
+        # must still show up in a real findings table.
+        assert "## Hallazgos" in md
+        assert "chk-mfa" in md
+        assert "MFA is mandatory for all administrative access." in md
+        assert "chk-dns" in md
+
+    def test_truncated_is_not_confused_with_clean_completed_report(self):
+        md = build_policy_report_markdown(
+            findings=TRACEABLE_FINDINGS,
+            notes=[],
+            status="truncated",
+            run_id="run-cutoff",
+            policy_key="policies/internal-access-control.pdf",
+            timestamp="2025-02-01T00:00:00Z",
+            failure_reason="call_count_exceeded",
+        )
+
+        # The clean-success header/status line must never appear here.
+        assert "✅ Reporte de Auditoría de Política" not in md
+        assert "**Status:** completed" not in md
+
+    def test_truncated_with_zero_findings_still_shows_warning_not_could_not_audit_wording(self):
+        md = build_policy_report_markdown(
+            findings=[],
+            notes=[
+                {
+                    "check_id": "_sandbox",
+                    "message": "execution terminated early: call_count_exceeded",
+                }
+            ],
+            status="truncated",
+            run_id="run-cutoff",
+            policy_key="policies/internal-access-control.pdf",
+            timestamp="2025-02-01T00:00:00Z",
+            failure_reason="call_count_exceeded",
+        )
+
+        assert "TRUNCAD" in md.upper()
+        assert "could not audit" not in md
 
 
 class TestBuildPolicyReportJson:
@@ -373,6 +447,57 @@ class TestBuildPolicyReportJson:
         assert report["status"] != "completed"
         assert report["failure_reason"] == "no_verifiable_controls"
 
+    def test_truncated_status_is_distinct_value_with_top_level_truncated_flag(self):
+        """The truncation signal MUST live in an easy-to-check top-level field
+        for an automated consumer -- not buried in `notes`."""
+        report = build_policy_report_json(
+            findings=TRACEABLE_FINDINGS,
+            notes=[
+                {
+                    "check_id": "_sandbox",
+                    "message": "execution terminated early: wall_clock_exceeded",
+                }
+            ],
+            status="truncated",
+            run_id="run-cutoff",
+            policy_key="policies/internal-access-control.pdf",
+            timestamp="2025-02-01T00:00:00Z",
+            failure_reason="wall_clock_exceeded",
+        )
+
+        assert report["status"] == "truncated"
+        assert report["status"] != "completed"
+        assert report["status"] != "could_not_audit"
+        assert report["failure_reason"] == "wall_clock_exceeded"
+        # Findings collected before the cutoff are preserved, unlike could_not_audit.
+        assert len(report["findings"]) == 2
+        # Top-level, unambiguous boolean signal -- a consumer that only checks
+        # `report["truncated"]` (without special-casing the exact status
+        # string) still gets the correct answer.
+        assert report["truncated"] is True
+
+    def test_completed_and_could_not_audit_have_truncated_false(self):
+        completed = build_policy_report_json(
+            findings=[],
+            notes=[],
+            status="completed",
+            run_id="run-ok",
+            policy_key="policies/x.pdf",
+            timestamp="2025-02-01T00:00:00Z",
+        )
+        failed = build_policy_report_json(
+            findings=[],
+            notes=[],
+            status="could_not_audit",
+            run_id="run-failed",
+            policy_key="policies/x.pdf",
+            timestamp="2025-02-01T00:00:00Z",
+            failure_reason="generation_failed",
+        )
+
+        assert completed["truncated"] is False
+        assert failed["truncated"] is False
+
 
 class TestBuildPolicySnsMessage:
     def test_completed_message_mentions_run_and_report_key(self):
@@ -397,6 +522,21 @@ class TestBuildPolicySnsMessage:
 
         assert "could not audit" in msg
         assert "generation_failed" in msg
+
+    def test_truncated_message_visibly_distinguished_from_completed_and_could_not_audit(self):
+        msg = build_policy_sns_message(
+            status="truncated",
+            run_id="run-cutoff",
+            findings=TRACEABLE_FINDINGS,
+            s3_key="reports/run-cutoff/report.md",
+            failure_reason="wall_clock_exceeded",
+        )
+
+        assert "run-cutoff" in msg
+        assert "wall_clock_exceeded" in msg
+        assert "TRUNCAD" in msg.upper()
+        assert "could not audit" not in msg
+        assert "✅" not in msg
 
 
 class TestDeliverPolicyReport:
@@ -454,3 +594,49 @@ class TestDeliverPolicyReport:
         obj = s3.get_object(Bucket=bucket, Key="reports/run-failed/report.md")
         body = obj["Body"].read().decode("utf-8")
         assert "could not audit" in body
+
+    @mock_aws
+    def test_truncated_path_uploads_findings_table_and_publishes_distinct_subject(self, mocker):
+        bucket = "pps-reports-bucket"
+        s3 = boto3.client("s3", region_name="us-east-1")
+        s3.create_bucket(Bucket=bucket)
+        sns = boto3.client("sns", region_name="us-east-1")
+        topic_arn = sns.create_topic(Name="pps-notifications")["TopicArn"]
+
+        publish_spy = mocker.spy(reporter, "publish_to_sns")
+
+        result = deliver_policy_report(
+            bucket=bucket,
+            topic_arn=topic_arn,
+            run_id="run-cutoff",
+            policy_key="policies/internal-access-control.pdf",
+            findings=TRACEABLE_FINDINGS,
+            notes=[
+                {
+                    "check_id": "_sandbox",
+                    "message": "execution terminated early: wall_clock_exceeded",
+                }
+            ],
+            status="truncated",
+            timestamp="2025-02-01T00:00:00Z",
+            failure_reason="wall_clock_exceeded",
+        )
+
+        assert result["status"] == "truncated"
+        assert result["sns_published"] is True
+
+        obj = s3.get_object(Bucket=bucket, Key="reports/run-cutoff/report.md")
+        body = obj["Body"].read().decode("utf-8")
+        assert "chk-mfa" in body
+        assert "TRUNCAD" in body.upper()
+        assert "could not audit" not in body
+
+        json_obj = s3.get_object(Bucket=bucket, Key="reports/run-cutoff/analysis.json")
+        parsed = json.loads(json_obj["Body"].read().decode("utf-8"))
+        assert parsed["status"] == "truncated"
+        assert parsed["truncated"] is True
+
+        # The SNS subject/message must not read as a silent success.
+        publish_kwargs = publish_spy.call_args.kwargs
+        assert "TRUNCAT" in publish_kwargs["subject"].upper()
+        assert "completed" not in publish_kwargs["subject"]
