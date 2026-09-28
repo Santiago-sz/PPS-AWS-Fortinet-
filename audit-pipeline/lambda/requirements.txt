@@ -1,0 +1,40 @@
+# Dependencias de la Lambda PPS
+#
+# IMPORTANTE: boto3 y botocore NO se incluyen aquí a propósito.
+# El runtime de AWS Lambda Python 3.x ya los trae pre-instalados.
+# Incluirlos aumentaría el tamaño del ZIP innecesariamente (~40MB extra)
+# y podría causar conflictos de versión con el runtime.
+#
+# Todo lo demás que usa este proyecto es stdlib de Python 3.x:
+#   - urllib     → llamadas HTTP al FortiGate y a Claude API
+#   - json       → serialización/deserialización
+#   - logging    → logs a CloudWatch
+#   - re         → sanitización de strings para S3 keys
+#   - datetime   → timestamps ISO 8601
+#   - ssl        → contexto TLS para urllib
+#   - os         → lectura de variables de entorno
+#
+# Si en el futuro se agregan dependencias externas, listarlas aquí
+# con versión fija (==) para builds reproducibles. Ejemplo:
+#
+#   httpx==0.27.0
+#   pydantic==2.7.1
+#
+# Y actualizar lambda.tf para que el archive_file incluya
+# el directorio site-packages generado por:
+#   pip install -r requirements.txt -t ./site-packages
+#
+# pypdf / python-docx / lxml (extractor.py, policy_generator únicamente):
+# NO se agregan al archive_file de esta lambda.zip compartida — se
+# distribuyen como el Lambda Layer pps-doc-parsers (ver
+# scripts/layer-requirements.txt y scripts/build_layer.sh), montado solo
+# en policy_generator. audit_executor y el handler legacy siguen
+# stdlib-only. Se listan también acá (sin comentar, mismas versiones
+# pineadas que el layer) para que `pip install -r lambda/requirements.txt`
+# deje al venv de desarrollo con exactamente lo que corre en producción,
+# y los tests de extractor.py/chunker.py ejerciten el comportamiento real
+# del runtime en vez de mocks de estas librerías.
+
+pypdf==6.18.0
+python-docx==1.2.0
+lxml==6.1.3

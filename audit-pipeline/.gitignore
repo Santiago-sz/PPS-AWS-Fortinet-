@@ -1,0 +1,22 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# Terraform
+**/.terraform/
+**/terraform.tfstate
+**/terraform.tfstate.backup
+**/*.tfvars
+**/*.tfvars.json
+
+# Lambda Layer build output (scripts/build_layer.sh) — regenerable, not source
+layers/
+
+# Already its own independent git repo — never embed/track here
+P-Terraform-Forti-AWS/
+
+# Google Drive sync noise
+desktop.ini

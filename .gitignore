@@ -1,18 +1,12 @@
-# Credentials
-CLI Acces.txt
-Forti-key
-Forti-key.pub
-*.pem
-*.key
-.env
+# Google Drive sync noise (this whole tree lives under Google Drive Desktop)
+desktop.ini
 
-# Terraform state
-*.tfstate
-*.tfstate.*
+# Editor
+.cursor/
 
-# Terraform provider binaries
-.terraform/
-
-# Variable files with real values
-*.tfvars
-*.tfvars.json
+# Terraform (each subfolder also has its own, more specific .gitignore)
+**/.terraform/
+**/terraform.tfstate
+**/terraform.tfstate.backup
+**/*.tfvars
+**/*.tfvars.json

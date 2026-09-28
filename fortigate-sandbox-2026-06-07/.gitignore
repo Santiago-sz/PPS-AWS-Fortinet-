@@ -1,0 +1,18 @@
+# Credentials
+CLI Acces.txt
+Forti-key
+Forti-key.pub
+*.pem
+*.key
+.env
+
+# Terraform state
+*.tfstate
+*.tfstate.*
+
+# Terraform provider binaries
+.terraform/
+
+# Variable files with real values
+*.tfvars
+*.tfvars.json
