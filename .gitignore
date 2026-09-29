@@ -10,3 +10,12 @@ desktop.ini
 **/terraform.tfstate.backup
 **/*.tfvars
 **/*.tfvars.json
+
+# Desktop application / local development
+.venv-gui/
+**/__pycache__/
+**/.pytest_cache/
+**/.ruff_cache/
+desktop/build/
+desktop/dist/
+desktop/*.egg-info/
