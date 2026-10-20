@@ -50,6 +50,7 @@ import fortigate_client
 import llm_client
 import reporter
 import s3_io
+from secret_values import credential_value
 
 log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(
@@ -70,7 +71,7 @@ def _get_required_env(name: str) -> str:
     return value
 
 
-def _get_secret(secret_arn: str) -> str:
+def _get_secret(secret_arn: str, field: str) -> str:
     """Lee un secret de Secrets Manager. Mismo patrón que handler.py (legacy)."""
     sm = boto3.client("secretsmanager")
     try:
@@ -78,7 +79,7 @@ def _get_secret(secret_arn: str) -> str:
         secret = response.get("SecretString")
         if not secret:
             raise ValueError(f"El secret {secret_arn} no tiene SecretString")
-        return secret
+        return credential_value(secret, field)
     except ClientError as e:
         logger.error(
             "No se pudo leer el secret %s — código: %s — %s",
@@ -206,7 +207,7 @@ def lambda_handler(event: dict, context) -> dict:
 
     # ── 2. Chunking ──────────────────────────────────────────────────────────
     chunks = chunker.chunk(text, metadata)
-    claude_api_key = _get_secret(claude_secret_arn)
+    claude_api_key = _get_secret(claude_secret_arn, "api_key")
     endpoint_catalog = _endpoint_catalog()
 
     # ── 3. Map/reduce + retry (llm_client) ──────────────────────────────────

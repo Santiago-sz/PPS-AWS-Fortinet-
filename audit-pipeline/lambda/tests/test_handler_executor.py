@@ -9,6 +9,7 @@ exactamente lo que hay que probar de punta a punta, no solo que se llamen.
 """
 
 import hashlib
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -88,7 +89,9 @@ def executor_env(monkeypatch):
 @pytest.fixture
 def mock_secrets_manager(mocker):
     mock_sm = mocker.MagicMock()
-    mock_sm.get_secret_value.return_value = {"SecretString": "dummy-fortigate-token"}
+    mock_sm.get_secret_value.return_value = {
+        "SecretString": json.dumps({"token": "dummy-fortigate-token"})
+    }
     mocker.patch("handler_executor.boto3.client", return_value=mock_sm)
     return mock_sm
 

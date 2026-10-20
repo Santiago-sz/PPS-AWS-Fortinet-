@@ -31,6 +31,7 @@ from reporter import (
     publish_to_sns,
     upload_to_s3,
 )
+from secret_values import credential_value
 
 # ─── Logging ──────────────────────────────────────────────────────────────────
 # Lambda captura stdout/stderr y los manda a CloudWatch Logs automáticamente.
@@ -61,7 +62,7 @@ def _get_required_env(name: str) -> str:
 
 
 # ─── Secrets Manager ─────────────────────────────────────────────────────────
-def get_secret(secret_arn: str) -> str:
+def get_secret(secret_arn: str, field: str) -> str:
     """
     Lee un secret de AWS Secrets Manager y devuelve su valor como string.
 
@@ -85,7 +86,7 @@ def get_secret(secret_arn: str) -> str:
         secret = response.get("SecretString")
         if not secret:
             raise ValueError(f"El secret {secret_arn} no tiene SecretString")
-        return secret
+        return credential_value(secret, field)
 
     except ClientError as e:
         error_code = e.response["Error"]["Code"]
@@ -141,8 +142,8 @@ def lambda_handler(event: dict, context) -> dict:
     # ── 2. Obtener credenciales ───────────────────────────────────────────────
     logger.info("Leyendo credenciales desde Secrets Manager")
     try:
-        fortigate_token = get_secret(fortigate_secret_arn)
-        claude_api_key = get_secret(claude_secret_arn)
+        fortigate_token = get_secret(fortigate_secret_arn, "token")
+        claude_api_key = get_secret(claude_secret_arn, "api_key")
     except (ClientError, ValueError) as e:
         logger.critical("No se pudieron obtener las credenciales: %s", str(e))
         return {"statusCode": 500, "error": "secrets_error", "detail": str(e)}

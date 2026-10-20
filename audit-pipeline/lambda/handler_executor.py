@@ -40,6 +40,7 @@ import s3_io
 import sandbox
 import script_validator
 from fortigate_client import FortiGateClient
+from secret_values import credential_value
 
 log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(
@@ -60,7 +61,7 @@ def _get_required_env(name: str) -> str:
     return value
 
 
-def _get_secret(secret_arn: str) -> str:
+def _get_secret(secret_arn: str, field: str) -> str:
     """Lee un secret de Secrets Manager. Mismo patrón que handler.py (legacy)."""
     sm = boto3.client("secretsmanager")
     try:
@@ -68,7 +69,7 @@ def _get_secret(secret_arn: str) -> str:
         secret = response.get("SecretString")
         if not secret:
             raise ValueError(f"El secret {secret_arn} no tiene SecretString")
-        return secret
+        return credential_value(secret, field)
     except ClientError as e:
         logger.error(
             "No se pudo leer el secret %s — código: %s — %s",
@@ -182,7 +183,7 @@ def lambda_handler(event: dict, context) -> dict:
         }
 
     # ── 3. Ejecución bajo sandbox ────────────────────────────────────────────
-    fortigate_token = _get_secret(fortigate_secret_arn)
+    fortigate_token = _get_secret(fortigate_secret_arn, "token")
     fgt_client = FortiGateClient(host=fortigate_host, token=fortigate_token, verify_ssl=verify_ssl)
 
     try:

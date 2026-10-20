@@ -53,7 +53,9 @@ def generator_env(monkeypatch):
 @pytest.fixture
 def mock_secrets_manager(mocker):
     mock_sm = mocker.MagicMock()
-    mock_sm.get_secret_value.return_value = {"SecretString": "sk-ant-dummy"}
+    mock_sm.get_secret_value.return_value = {
+        "SecretString": json.dumps({"api_key": "sk-ant-dummy"})
+    }
     return mock_sm
 
 
