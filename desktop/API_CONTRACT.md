@@ -1,8 +1,14 @@
 # Contrato del cliente de escritorio · v1
 
-**Estado: adaptador cliente implementado; servicio AWS pendiente.** Las rutas propuestas
-en la especificación no son endpoints existentes en este repositorio. Este documento fija
-los campos adicionales necesarios para construir y verificar el adaptador remoto.
+**Estado: cliente y API local de desarrollo implementados; servicio autenticado AWS pendiente.**
+La implementación local y sus límites están en [api/README.md](../audit-pipeline/api/README.md).
+Este documento define el contrato remoto objetivo.
+
+En desarrollo explícito, `http://127.0.0.1:8765` ofrece una sesión fija con
+`development=true`, sin Bearer ni OIDC. El PUT temporal guarda los bytes en SQLite;
+la confirmación los valida y encola. Un comando separado envía a S3 y otro recupera
+resultados. Las demás reglas de HTTPS y autorización siguientes corresponden al
+servicio remoto, todavía pendiente. No habilitar esta excepción fuera de loopback.
 
 Todas las rutas reciben `Authorization: Bearer <access_token>` y TLS validado. El servidor
 resuelve usuario, organización y dispositivos autorizados; no confía en roles ni IDs de

@@ -12,7 +12,7 @@ import secrets
 import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, quote, urlencode, urlsplit
-from urllib.request import HTTPRedirectHandler, Request, build_opener
+from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 import webbrowser
 
 
@@ -37,11 +37,31 @@ class NoRedirect(HTTPRedirectHandler):
         return None
 
 
-def request(url, method="GET", data=None, headers=None, timeout=30):
-    https_url(url)
+def local_url(url):
+    parsed = urlsplit(url)
+    if (
+        parsed.scheme != "http"
+        or parsed.hostname != "127.0.0.1"
+        or not parsed.port
+        or parsed.username
+        or parsed.password
+        or parsed.fragment
+    ):
+        raise ValueError("Desarrollo requiere http://127.0.0.1:puerto.")
+    return url
+
+
+def request(url, method="GET", data=None, headers=None, timeout=30, local_origin=None):
+    if local_origin:
+        local_url(url)
+        if urlsplit(url).netloc != urlsplit(local_origin).netloc:
+            raise ValueError("El modo local solo permite solicitudes al mismo servicio.")
+    else:
+        https_url(url)
     req = Request(url, data=data, headers=headers or {}, method=method)
     try:
-        with build_opener(NoRedirect).open(req, timeout=timeout) as response:
+        handlers = [NoRedirect, ProxyHandler({})] if local_origin else [NoRedirect]
+        with build_opener(*handlers).open(req, timeout=timeout) as response:
             result = response.read(25 * 1024 * 1024 + 1)
             if len(result) > 25 * 1024 * 1024:
                 raise ApiError("La respuesta supera el límite permitido.", "response_too_large")
@@ -53,6 +73,7 @@ def request(url, method="GET", data=None, headers=None, timeout=30):
             404: "El recurso no existe o no está autorizado.",
             409: "La operación está en conflicto. Actualizá el estado.",
             413: "El documento supera el tamaño permitido.",
+            422: "El documento o sus metadatos no son válidos para procesar.",
             429: "El servicio está ocupado. Reintentá más tarde.",
         }
         correlation = exc.headers.get("X-Correlation-ID", "")[:100]
@@ -61,7 +82,7 @@ def request(url, method="GET", data=None, headers=None, timeout=30):
         ) from None
     except (URLError, TimeoutError, OSError):
         raise ApiError(
-            "No se pudo conectar con AWS. Verificá tu conexión y la URL del servicio."
+            "No se pudo conectar con la API. Verificá tu conexión y la URL del servicio."
         ) from None
 
 
@@ -143,23 +164,33 @@ def login(config):
 
 
 class ApiClient:
-    def __init__(self, base_url, access_token):
-        self.base_url = https_url(base_url.rstrip("/"))
+    def __init__(self, base_url, access_token, development=False):
+        self.development = development
+        self.base_url = (local_url if development else https_url)(base_url.rstrip("/"))
         if urlsplit(self.base_url).query:
             raise ValueError("La URL base de API no admite query parameters.")
+        if development and (access_token or urlsplit(self.base_url).path):
+            raise ValueError("La API local no admite tokens ni rutas en la URL base.")
         self.token = access_token
+
+    def request(self, *args, **kwargs):
+        if self.development:
+            kwargs["local_origin"] = self.base_url
+        return request(*args, **kwargs)
 
     def call(self, path, method="GET", payload=None, idempotency_key=None, raw=False):
         if not path.startswith("/api/") or ".." in path or "://" in path:
             raise ValueError("Ruta de API inválida.")
-        headers = {"Authorization": "Bearer " + self.token, "Accept": "application/json"}
+        headers = {"Accept": "application/json"}
+        if not self.development:
+            headers["Authorization"] = "Bearer " + self.token
         if idempotency_key:
             headers["Idempotency-Key"] = idempotency_key
         data = None
         if payload is not None:
             headers["Content-Type"] = "application/json"
             data = json.dumps(payload).encode()
-        result = request(self.base_url + path, method, data, headers)
+        result = self.request(self.base_url + path, method, data, headers)
         return result if raw else (json.loads(result) if result else {})
 
     def collection(self, path):
@@ -181,6 +212,10 @@ class ApiClient:
 
     def snapshot(self):
         session = self.call("/api/session")
+        if self.development and session.get("development") is not True:
+            raise ApiError(
+                "El servicio no se identifica como entorno de desarrollo.", "invalid_session"
+            )
         if session.get("role") not in {"admin", "analyst", "reader"}:
             raise ApiError("El servicio no informó un rol reconocido.", "invalid_session")
         if not session.get("organization", {}).get("id") or not session.get("user", {}).get("id"):
@@ -221,7 +256,7 @@ class ApiClient:
         headers = upload.get("headers", {})
         if any(k.lower() in {"authorization", "cookie", "host"} for k in headers):
             raise ApiError("Cabecera de subida no permitida.", "upload_contract")
-        request(upload["url"], "PUT", document, headers, timeout=90)
+        self.request(upload["url"], "PUT", document, headers, timeout=90)
         pid, vid = quote(created["policy_id"], safe=""), quote(created["version_id"], safe="")
         self.call(
             f"/api/policies/{pid}/versions/{vid}/complete-upload",

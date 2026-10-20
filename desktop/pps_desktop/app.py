@@ -382,6 +382,7 @@ class Window(QMainWindow):
         self.policy_status.addItems(
             [
                 "Todos los estados",
+                "pendiente",
                 "cargada",
                 "procesando",
                 "lista",
@@ -554,6 +555,20 @@ class Window(QMainWindow):
         self.login_button = button("Iniciar sesión en el navegador", self.sign_in, True)
         box.addWidget(row(self.login_button, button("Cerrar sesión", self.sign_out)))
         layout.addWidget(frame)
+        frame, box = card("API local de desarrollo")
+        box.addWidget(
+            label(
+                "Conectá el servicio local sin login. Las cargas quedan en cola hasta que "
+                "se envían a AWS; no se generan resultados ficticios.",
+                "notice",
+                True,
+            )
+        )
+        self.local_api_url = QLineEdit("http://127.0.0.1:8765")
+        self.local_api_url.setAccessibleName("URL de API local de desarrollo")
+        self.local_connect_button = button("Conectar API local", self.connect_local)
+        box.addWidget(row(self.local_api_url, self.local_connect_button))
+        layout.addWidget(frame)
         frame, box = card("Preferencias locales")
         self.font_size = QSpinBox()
         self.font_size.setRange(11, 19)
@@ -715,6 +730,22 @@ class Window(QMainWindow):
             self.cache.clear()
         self.settings.remove("cache_identity")
 
+    def connect_local(self):
+        try:
+            client = api.ApiClient(self.local_api_url.text().strip(), "", development=True)
+        except ValueError as exc:
+            self.show_error(exc)
+            return
+
+        def connected(snapshot):
+            self.clear_session_cache()
+            self.reset_source()
+            self.client, self.snapshot, self.online, self.mode = client, snapshot, True, "connected"
+            self.render()
+            self.refresh()
+
+        self.run_task(client.snapshot, connected)
+
     def sign_in(self):
         config = {key: field.text().strip() for key, field in self.config_fields.items()}
         try:
@@ -840,6 +871,7 @@ class Window(QMainWindow):
         )
         self.refresh_button.setEnabled(bool(self.client) and not self.busy)
         self.login_button.setEnabled(not self.busy)
+        self.local_connect_button.setEnabled(not self.busy)
 
     def render(self):
         session = self.snapshot["session"]
@@ -858,7 +890,14 @@ class Window(QMainWindow):
             "offline": "DATOS SIN ACTUALIZAR · Vista local en caché. Carga, evaluación y seguimiento deshabilitados.",
             "connected": "Fuente: servicio AWS · Las métricas se vinculan a una política, versión y ejecución.",
         }
-        self.mode_notice.setText(notices[self.mode])
+        notice = notices[self.mode]
+        if session.get("development"):
+            notice = "DESARROLLO LOCAL · Sin login. " + (
+                "API conectada; el procesamiento AWS requiere el comando de envío."
+                if self.online
+                else "Sin conexión al servicio; datos sin actualizar."
+            )
+        self.mode_notice.setText(notice)
         previous_device = self.device_filter.currentData()
         self.device_filter.blockSignals(True)
         self.device_filter.clear()

@@ -65,6 +65,14 @@ pertenencia a la organización; la aplicación no deduce permisos de un JWT sin 
 
 ## Alcance real y pendientes de infraestructura
 
+Ya existe una [API local para desarrollo](../audit-pipeline/api/README.md) con
+persistencia SQLite, carga/validación de PDF y DOCX, consultas, exportación y
+reanálisis en cola. Iniciar `python audit-pipeline/api/launch.py serve` desde la
+raíz y usar **Configuración → API local de desarrollo → Conectar API local**.
+No requiere login. El envío a AWS y la recuperación de resultados son comandos
+explícitos; las cargas no generan auditorías ficticias. Esta alternativa local
+no reemplaza los componentes remotos autenticados enumerados a continuación.
+
 Esta entrega implementa **la GUI y el cliente del contrato remoto**. El repositorio original
 no contiene esa API, una base de metadatos multiusuario ni un proveedor de identidad.
 No se han creado recursos AWS ni modificado el pipeline para fingir que existen.
