@@ -4,6 +4,9 @@ desktop.ini
 # Editor
 .cursor/
 
+# Local FortiGate sandbox repository (kept outside parent Git tracking)
+/P-Terraform-Forti-AWS/
+
 # Terraform (each subfolder also has its own, more specific .gitignore)
 **/.terraform/
 **/terraform.tfstate
