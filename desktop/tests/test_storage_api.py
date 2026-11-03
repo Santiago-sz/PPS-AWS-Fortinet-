@@ -93,3 +93,41 @@ def test_roles_require_server_session(monkeypatch):
 
 def test_no_redirect_for_credentials():
     assert api.NoRedirect().redirect_request(None, None, 302, "", {}, "https://other") is None
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://example.com:8765",
+        "http://localhost:8765",
+        "http://127.0.0.1.evil:8765",
+        "http://127.0.0.1:8765/api",
+        "http://user:pass@127.0.0.1:8765",
+    ],
+)
+def test_development_client_is_loopback_only(url):
+    with pytest.raises(ValueError):
+        api.ApiClient(url, "", development=True)
+
+
+def test_development_client_requires_opt_in_and_never_sends_token(monkeypatch):
+    with pytest.raises(ValueError):
+        api.ApiClient("http://127.0.0.1:8765", "")
+    with pytest.raises(ValueError):
+        api.ApiClient("http://127.0.0.1:8765", "token", development=True)
+    calls = []
+
+    def fake(url, method, data, headers, **kwargs):
+        calls.append((headers, kwargs))
+        return b"{}"
+
+    monkeypatch.setattr(api, "request", fake)
+    client = api.ApiClient("http://127.0.0.1:8765", "", development=True)
+    client.call("/api/session")
+    assert "Authorization" not in calls[0][0]
+    assert calls[0][1]["local_origin"] == client.base_url
+
+
+def test_development_transport_rejects_different_origin():
+    with pytest.raises(ValueError):
+        api.request("http://127.0.0.1:9999/uploads/x", local_origin="http://127.0.0.1:8765")

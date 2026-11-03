@@ -36,6 +36,38 @@ def test_demo_has_real_computed_metrics_and_no_remote_writes(window):
     assert not window.reaudit_button.isEnabled()
 
 
+def test_local_connection_is_explicit_and_distinguished_from_aws(window, monkeypatch):
+    from pps_desktop import api
+
+    seen = []
+
+    def snapshot(client):
+        seen.append(client)
+        return {
+            "session": {
+                "development": True,
+                "role": "analyst",
+                "environment": "LOCAL",
+                "organization": {"id": "local", "name": "Desarrollo"},
+                "user": {"id": "developer", "name": "Desarrollador"},
+                "devices": [],
+                "capabilities": {"reaudit": True},
+            },
+            "policies": [],
+            "audits": [],
+            "results": {},
+        }
+
+    monkeypatch.setattr(api.ApiClient, "snapshot", snapshot)
+    monkeypatch.setattr(window, "run_task", lambda operation, success: success(operation()))
+    monkeypatch.setattr(window, "refresh", lambda: None)
+    window.connect_local()
+    assert seen[0].development and not seen[0].token
+    assert "DESARROLLO LOCAL" in window.mode_notice.text()
+    assert window.upload_button.isEnabled()
+    assert window.cache is None
+
+
 def test_filter_results_and_keyboard_navigation(window, app):
     window.navigation.setFocus()
     QTest.keyClick(window.navigation, Qt.Key.Key_Down)
