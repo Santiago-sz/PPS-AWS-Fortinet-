@@ -8,6 +8,7 @@ from .service import Service
 def main():
     parser = argparse.ArgumentParser(description="API PPS de desarrollo (solo loopback)")
     parser.add_argument("--database", default=".pps-api/development.sqlite3")
+    parser.add_argument("--env-file", type=Path, default=Path(".env"))
     commands = parser.add_subparsers(dest="command", required=True)
     serve = commands.add_parser("serve")
     serve.add_argument("--port", type=int, default=8765)
@@ -21,8 +22,8 @@ def main():
         "aws", help="Enviar a S3 o recuperar reportes (requiere credenciales AWS)"
     )
     bridge.add_argument("action", choices=["dispatch", "sync"])
-    bridge.add_argument("--policies-bucket", required=True)
-    bridge.add_argument("--reports-bucket", required=True)
+    bridge.add_argument("--policies-bucket")
+    bridge.add_argument("--reports-bucket")
     args = parser.parse_args()
     service = Service(args.database)
     if args.command == "serve":
@@ -48,9 +49,19 @@ def main():
         from botocore.config import Config
 
         from .aws_bridge import Bridge
+        from .config import aws_options, load_settings
 
-        s3 = boto3.client("s3", config=Config(retries={"total_max_attempts": 1}))
-        worker = Bridge(service, s3, args.policies_bucket, args.reports_bucket)
+        try:
+            if args.env_file != Path(".env") and not args.env_file.is_file():
+                raise ValueError("No existe el archivo indicado en --env-file.")
+            options, policies, reports = aws_options(
+                load_settings(args.env_file), args.policies_bucket, args.reports_bucket
+            )
+        except ValueError as exc:
+            parser.error(str(exc))
+        session = boto3.Session(**options)
+        s3 = session.client("s3", config=Config(retries={"total_max_attempts": 1}))
+        worker = Bridge(service, s3, policies, reports)
         print(f"Auditorías procesadas: {getattr(worker, args.action)()}")
 
 

@@ -17,6 +17,9 @@ desktop.ini
 # Desktop application / local development
 .venv-gui/
 .pps-api/
+.env
+.env.*
+!.env.example
 **/__pycache__/
 **/.pytest_cache/
 **/.ruff_cache/

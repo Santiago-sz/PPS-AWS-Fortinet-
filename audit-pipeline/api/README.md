@@ -63,6 +63,46 @@ El seguimiento de hallazgos está deshabilitado (`follow_up=false`).
 
 ## Procesamiento real con el pipeline AWS existente
 
+### Configurar `.env`
+
+En la raíz del repositorio se usa `.env` (ignorado por Git). La plantilla versionada
+es `.env.example`; si falta el archivo local, copiarla sin sobrescribir credenciales
+existentes. Completar:
+
+```dotenv
+AWS_ACCESS_KEY_ID=
+AWS_SECRET_ACCESS_KEY=
+AWS_SESSION_TOKEN=
+AWS_PROFILE=
+AWS_REGION=
+PPS_POLICIES_BUCKET=
+PPS_REPORTS_BUCKET=
+```
+
+Usar claves de acceso programático, no la contraseña de la consola AWS. Para claves
+temporales también completar `AWS_SESSION_TOKEN`. Alternativamente, dejar las tres
+credenciales vacías y usar `AWS_PROFILE` con un perfil/SSO ya configurado. Las claves
+explícitas tienen prioridad sobre el perfil. Si no se indican claves ni perfil,
+boto3 mantiene su cadena habitual de credenciales.
+
+Los nombres de buckets deben ser los reales del despliegue, sin `s3://`. La región
+debe corresponder al entorno desplegado. Las variables de entorno no vacías prevalecen
+sobre `.env`; los argumentos `--policies-bucket` y `--reports-bucket` prevalecen sobre
+ambos. El lector acepta comentarios en líneas separadas y valores literales con o sin
+comillas; no ejecuta comandos ni expande `$VARIABLE`. Solo acepta las variables AWS
+y de buckets enumeradas en la plantilla, además de `AWS_DEFAULT_REGION`.
+
+Con el `.env` completado, desde la raíz:
+
+```powershell
+.\.venv-gui\Scripts\python audit-pipeline/api/launch.py aws dispatch
+.\.venv-gui\Scripts\python audit-pipeline/api/launch.py aws sync
+```
+
+Para otro archivo, usar `--env-file ruta/al/archivo` antes de `aws`. Las credenciales
+se cargan únicamente en los comandos AWS, no en el servidor HTTP ni en la GUI.
+El envío sigue siendo explícito: `serve` no sube automáticamente a S3.
+
 La carga HTTP **no llama a AWS**. Queda pendiente hasta ejecutar el comando de envío.
 El puente usa credenciales de la cadena habitual de boto3 (por ejemplo un perfil
 temporal), nunca credenciales enviadas desde la GUI.
