@@ -25,7 +25,10 @@ RUN_STATUSES = {
     "no_verifiable_controls": "Sin controles verificables",
     "pending": "Pendiente",
     "running": "En proceso",
+    "awaiting_approval": "Pendiente de aprobación",
 }
+REMEDIATION_DISCLAIMER = "Propuesta generada por IA. No se aplicó ningún cambio en el dispositivo."
+ACTIONABLE = {"fail", "indeterminate"}
 TERMINAL = {
     "completed",
     "truncated",
@@ -79,6 +82,23 @@ def redact(value):
         )
         value = re.sub(r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b", "[OCULTO]", value)
     return value
+
+
+def normalize_remediation(value):
+    """Propuesta redactada o None cuando no hay resumen, pasos ni CLI. Nunca se ejecuta."""
+    if not isinstance(value, dict):
+        return None
+    summary = value.get("summary")
+    steps = value.get("steps")
+    cli = value.get("fortigate_cli")
+    result = {
+        "summary": redact(str(summary)) if summary else None,
+        "steps": [redact(str(step)) for step in steps if step] if isinstance(steps, list) else [],
+        "fortigate_cli": redact(str(cli)) if cli else None,
+    }
+    if not (result["summary"] or result["steps"] or result["fortigate_cli"]):
+        return None
+    return result
 
 
 def section(check):
@@ -164,6 +184,9 @@ def normalize(manifest, report, context=None):
                 "finding_id": finding.get("id"),
                 "definitions": redact([c for c in checks if c["check_id"] == cid]),
                 "follow_up": finding.get("follow_up", {}),
+                "remediation": normalize_remediation(
+                    finding.get("remediation") or check.get("remediation")
+                ),
             }
         )
     unknown = [redact(f) for f in findings if f["check_id"] not in expected]
@@ -193,6 +216,11 @@ def normalize(manifest, report, context=None):
         "compliance_percent": 100 * counts["pass"] / applicable if applicable else None,
         "partial": partial,
         "rows": rows,
+        # Solo se cuentan propuestas de controles fallidos o indeterminados: es lo que
+        # la interfaz muestra. Un control aprobado no requiere remediación.
+        "remediation_count": sum(
+            1 for r in rows if r["remediation"] and r["status"] in ACTIONABLE
+        ),
         "groups": dict(groups),
         "anomalies": anomalies,
         "unknown_findings": unknown,

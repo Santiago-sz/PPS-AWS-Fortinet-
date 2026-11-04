@@ -32,7 +32,7 @@ def _fake_response(payload: dict):
 
 class TestCollectAll:
     def test_collect_all_calls_every_endpoint(self, mocker):
-        """collect_all() debe llamar exactamente los 11 endpoints definidos en ENDPOINTS."""
+        """collect_all() debe llamar exactamente los 31 endpoints definidos en ENDPOINTS."""
         client = FortiGateClient(host="192.168.1.1", token="dummy-token", verify_ssl=False)
 
         called_paths = []
@@ -47,7 +47,7 @@ class TestCollectAll:
 
         result = client.collect_all()
 
-        assert len(called_paths) == len(ENDPOINTS) == 11
+        assert len(called_paths) == len(ENDPOINTS) == 31
         assert set(called_paths) == {path for path, _ in ENDPOINTS}
         # Cada key del dict de resultados corresponde a la etiqueta definida en ENDPOINTS,
         # y contiene la data del path correspondiente (no mezclada entre endpoints).

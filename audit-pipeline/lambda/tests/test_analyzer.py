@@ -1,29 +1,27 @@
 """
 Tests para analyzer.py.
 
-Mockea la llamada HTTP a la API de Claude (urllib.request.urlopen) —
-nunca se llama a la API real de Anthropic.
+Mockea el cliente `bedrock-runtime` (via `bedrock_client.get_client`) —
+nunca se llama a Amazon Bedrock real.
 """
 
 import json
-import urllib.error
 
-from analyzer import CLAUDE_MODEL, MAX_DATA_CHARS, _build_user_prompt, analyze
-from tests.conftest import claude_http_response_body
+from botocore.exceptions import ClientError
+
+import bedrock_client
+from analyzer import MAX_DATA_CHARS, MAX_OUTPUT_TOKENS, SYSTEM_PROMPT, _build_user_prompt, analyze
+from tests.conftest import bedrock_converse_response, bedrock_json_response
 
 
-def _fake_response(body: bytes):
-    class _Resp:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *exc):
-            return False
-
-        def read(self):
-            return body
-
-    return _Resp()
+def _mock_bedrock(mocker, response=None, side_effect=None):
+    client = mocker.MagicMock()
+    if side_effect is not None:
+        client.converse.side_effect = side_effect
+    else:
+        client.converse.return_value = response
+    mocker.patch("bedrock_client.get_client", return_value=client)
+    return client
 
 
 class TestBuildUserPrompt:
@@ -67,82 +65,61 @@ class TestBuildUserPrompt:
 
 
 class TestAnalyze:
-    def test_analyze_builds_correct_payload_and_parses_response(
+    def test_analyze_builds_correct_request_and_parses_response(
         self, mocker, sample_fortigate_data, sample_device_info, sample_claude_analysis
     ):
-        captured_request = {}
+        client = _mock_bedrock(mocker, response=bedrock_json_response(sample_claude_analysis))
 
-        def fake_urlopen(req, timeout=None):
-            captured_request["url"] = req.full_url
-            captured_request["headers"] = req.headers
-            captured_request["body"] = json.loads(req.data.decode("utf-8"))
-            return _fake_response(claude_http_response_body(sample_claude_analysis))
+        result = analyze(fortigate_data=sample_fortigate_data, device_info=sample_device_info)
 
-        mocker.patch("analyzer.urllib.request.urlopen", side_effect=fake_urlopen)
-
-        result = analyze(
-            fortigate_data=sample_fortigate_data,
-            device_info=sample_device_info,
-            claude_api_key="sk-ant-dummy",
-        )
-
-        # Request armado correctamente
-        assert captured_request["url"] == "https://api.anthropic.com/v1/messages"
-        assert captured_request["headers"]["X-api-key"] == "sk-ant-dummy"
-        body = captured_request["body"]
-        assert body["model"] == CLAUDE_MODEL
-        assert body["system"][0]["cache_control"] == {"type": "ephemeral"}
-        assert sample_device_info["host"] in body["messages"][0]["content"]
+        # Request armada correctamente (Converse)
+        client.converse.assert_called_once()
+        request = client.converse.call_args.kwargs
+        assert request["modelId"] == bedrock_client.resolve_model_id()
+        assert request["inferenceConfig"] == {"maxTokens": MAX_OUTPUT_TOKENS}
+        assert request["system"][0] == {"text": SYSTEM_PROMPT}
+        assert {"cachePoint": {"type": "default"}} in request["system"]
+        assert sample_device_info["host"] in request["messages"][0]["content"][0]["text"]
 
         # Respuesta parseada correctamente
         assert result == sample_claude_analysis
 
-    def test_analyze_returns_error_dict_on_http_error(
+    def test_analyze_honours_bedrock_model_id_env(
+        self, mocker, monkeypatch, sample_fortigate_data, sample_device_info, sample_claude_analysis
+    ):
+        monkeypatch.setenv("BEDROCK_MODEL_ID", "eu.anthropic.claude-sonnet-4-6")
+        client = _mock_bedrock(mocker, response=bedrock_json_response(sample_claude_analysis))
+
+        analyze(fortigate_data=sample_fortigate_data, device_info=sample_device_info)
+
+        assert client.converse.call_args.kwargs["modelId"] == "eu.anthropic.claude-sonnet-4-6"
+
+    def test_analyze_returns_error_dict_on_bedrock_error(
         self, mocker, sample_fortigate_data, sample_device_info
     ):
-        import io
-
-        mocker.patch(
-            "analyzer.urllib.request.urlopen",
-            side_effect=urllib.error.HTTPError(
-                url="https://api.anthropic.com/v1/messages",
-                code=529,
-                msg="Overloaded",
-                hdrs=None,
-                fp=io.BytesIO(b'{"error": "overloaded"}'),
+        _mock_bedrock(
+            mocker,
+            side_effect=ClientError(
+                {"Error": {"Code": "ThrottlingException", "Message": "overloaded"}},
+                "Converse",
             ),
         )
 
-        result = analyze(
-            fortigate_data=sample_fortigate_data,
-            device_info=sample_device_info,
-            claude_api_key="sk-ant-dummy",
-        )
+        result = analyze(fortigate_data=sample_fortigate_data, device_info=sample_device_info)
 
-        assert result["error"] == "HTTP 529"
+        assert result["error"] == "bedrock_error"
+        assert "ThrottlingException" in result["detail"]
         assert "overloaded" in result["detail"]
 
     def test_analyze_returns_error_dict_on_invalid_json_response(
         self, mocker, sample_fortigate_data, sample_device_info
     ):
-        """Claude respondió texto que no es JSON válido -> analyze no debe crashear,
+        """El modelo respondió texto que no es JSON válido -> analyze no debe crashear,
         debe devolver un dict de error con el texto crudo."""
         raw_text = "Lo siento, no puedo generar el análisis ahora mismo."
-        payload = {
-            "content": [{"type": "text", "text": raw_text}],
-            "usage": {"input_tokens": 10, "output_tokens": 5},
-        }
-        payload_bytes = json.dumps(payload).encode("utf-8")
-        mocker.patch(
-            "analyzer.urllib.request.urlopen",
-            side_effect=lambda req, timeout=None: _fake_response(payload_bytes),
-        )
+        _mock_bedrock(mocker, response=bedrock_converse_response(raw_text))
 
-        result = analyze(
-            fortigate_data=sample_fortigate_data,
-            device_info=sample_device_info,
-            claude_api_key="sk-ant-dummy",
-        )
+        result = analyze(fortigate_data=sample_fortigate_data, device_info=sample_device_info)
 
         assert result["error"] == "json_parse_error"
         assert result["raw"] == raw_text
@@ -150,13 +127,9 @@ class TestAnalyze:
     def test_analyze_returns_error_dict_on_unexpected_exception(
         self, mocker, sample_fortigate_data, sample_device_info
     ):
-        mocker.patch("analyzer.urllib.request.urlopen", side_effect=RuntimeError("network down"))
+        mocker.patch("bedrock_client.get_client", side_effect=RuntimeError("network down"))
 
-        result = analyze(
-            fortigate_data=sample_fortigate_data,
-            device_info=sample_device_info,
-            claude_api_key="sk-ant-dummy",
-        )
+        result = analyze(fortigate_data=sample_fortigate_data, device_info=sample_device_info)
 
         assert result["error"] == "unexpected"
         assert "network down" in result["detail"]

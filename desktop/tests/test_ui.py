@@ -82,6 +82,32 @@ def test_filter_results_and_keyboard_navigation(window, app):
     assert window.result_table.rowCount() == 12
 
 
+def test_remediation_column_detail_and_dashboard_count(window):
+    headers = [
+        window.result_table.horizontalHeaderItem(i).text()
+        for i in range(window.result_table.columnCount())
+    ]
+    assert headers == ["CONTROL", "RESULTADO", "SECCIÓN", "EVIDENCIA", "REMEDIACIÓN", "REFERENCIA"]
+    window.navigation.setCurrentRow(3)
+    cells = {
+        window.result_rows[i]["check_id"]: window.result_table.item(i, 4).text()
+        for i in range(window.result_table.rowCount())
+    }
+    assert cells["CHK-001"] == "Sí" and cells["CHK-006"] == "Sí" and cells["CHK-002"] == "—"
+    assert window.remediation_summary.text() == "Remediaciones propuestas: 3"
+    rows = {r["check_id"]: r for r in window.current["rows"]}
+    detail = window.finding_detail(rows["CHK-001"], window.current)
+    assert "REMEDIACIÓN PROPUESTA" in detail
+    assert "1. Definir trusthost" in detail and "set trusthost1" in detail
+    assert "Propuesta generada por IA. No se aplicó ningún cambio en el dispositivo." in detail
+    assert detail.index("CLÁUSULA DE LA POLÍTICA") < detail.index("REMEDIACIÓN PROPUESTA")
+    assert detail.index("REMEDIACIÓN PROPUESTA") < detail.index("PROCEDENCIA")
+    assert "REMEDIACIÓN PROPUESTA" not in window.finding_detail(rows["CHK-002"], window.current)
+    assert "REMEDIACIÓN PROPUESTA" not in window.finding_detail(rows["CHK-010"], window.current)
+    window.sign_out()
+    assert window.remediation_summary.text() == "Remediaciones propuestas: —"
+
+
 def test_narrow_window_reflows_cards(window, app):
     window.resize(790, 720)
     app.processEvents()

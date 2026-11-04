@@ -35,6 +35,7 @@ from datetime import UTC, datetime
 import boto3
 from botocore.exceptions import ClientError
 
+import observability
 import reporter
 import s3_io
 import sandbox
@@ -104,12 +105,34 @@ def _report_failure(
     )
 
 
+def _finish(
+    result: dict,
+    findings: list[dict],
+    clock: observability.Timer,
+    *,
+    failure_reason: str | None = None,
+) -> dict:
+    """Emite el evento terminal `executor_result` y devuelve `result` sin cambios."""
+    observability.log_event(
+        "executor_result",
+        run_id=result.get("run_id"),
+        status=result.get("status"),
+        findings_count=len(findings),
+        fail_count=sum(1 for f in findings if f.get("status") == "fail"),
+        remediation_count=reporter.count_remediations(findings),
+        wall_clock_ms=round(clock.elapsed_ms, 1),
+        failure_reason=failure_reason or result.get("failure_reason"),
+    )
+    return result
+
+
 def lambda_handler(event: dict, context) -> dict:
     """Entry point de AWS Lambda para `audit_executor`.
 
     `event` es el puntero exacto que envía policy_generator:
     `{run_id, manifest_key, script_key, script_sha256}`.
     """
+    clock = observability.Timer()
     run_ts = datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
     run_id = event["run_id"]
     manifest_key = event["manifest_key"]
@@ -154,12 +177,16 @@ def lambda_handler(event: dict, context) -> dict:
             timestamp=run_ts,
             failure_reason="integrity_check_failed",
         )
-        return {
-            "status": "could_not_audit",
-            "run_id": run_id,
-            "failure_reason": "integrity_check_failed",
-            **delivery,
-        }
+        return _finish(
+            {
+                "status": "could_not_audit",
+                "run_id": run_id,
+                "failure_reason": "integrity_check_failed",
+                **delivery,
+            },
+            [],
+            clock,
+        )
 
     # ── 2. Re-validación INDEPENDIENTE — desde cero, nunca cacheada ─────────
     validation = script_validator.validate(script, manifest)
@@ -175,12 +202,16 @@ def lambda_handler(event: dict, context) -> dict:
             timestamp=run_ts,
             failure_reason=failure_reason,
         )
-        return {
-            "status": "could_not_audit",
-            "run_id": run_id,
-            "failure_reason": failure_reason,
-            **delivery,
-        }
+        return _finish(
+            {
+                "status": "could_not_audit",
+                "run_id": run_id,
+                "failure_reason": failure_reason,
+                **delivery,
+            },
+            [],
+            clock,
+        )
 
     # ── 3. Ejecución bajo sandbox ────────────────────────────────────────────
     fortigate_token = _get_secret(fortigate_secret_arn, "token")
@@ -220,13 +251,18 @@ def lambda_handler(event: dict, context) -> dict:
             timestamp=run_ts,
             failure_reason=e.reason,
         )
-        return {
-            "status": "truncated",
-            "run_id": run_id,
-            "budget_exceeded": e.reason,
-            "findings_count": len(findings),
-            **delivery,
-        }
+        return _finish(
+            {
+                "status": "truncated",
+                "run_id": run_id,
+                "budget_exceeded": e.reason,
+                "findings_count": len(findings),
+                **delivery,
+            },
+            findings,
+            clock,
+            failure_reason=e.reason,
+        )
     except Exception as e:
         # Cualquier otra excepción (ej. AttributeError de una capability
         # inexistente, NameError de un builtin no inyectado) NUNCA debe
@@ -241,12 +277,16 @@ def lambda_handler(event: dict, context) -> dict:
             timestamp=run_ts,
             failure_reason=failure_reason,
         )
-        return {
-            "status": "could_not_audit",
-            "run_id": run_id,
-            "failure_reason": failure_reason,
-            **delivery,
-        }
+        return _finish(
+            {
+                "status": "could_not_audit",
+                "run_id": run_id,
+                "failure_reason": failure_reason,
+                **delivery,
+            },
+            [],
+            clock,
+        )
 
     delivery = reporter.deliver_policy_report(
         bucket=reports_bucket,
@@ -260,9 +300,13 @@ def lambda_handler(event: dict, context) -> dict:
         failure_reason=None,
     )
     logger.info("=== Audit Executor completado — run_id=%s findings=%d ===", run_id, len(findings))
-    return {
-        "status": "completed",
-        "run_id": run_id,
-        "findings_count": len(findings),
-        **delivery,
-    }
+    return _finish(
+        {
+            "status": "completed",
+            "run_id": run_id,
+            "findings_count": len(findings),
+            **delivery,
+        },
+        findings,
+        clock,
+    )

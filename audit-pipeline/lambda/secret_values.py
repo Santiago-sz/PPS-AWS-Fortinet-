@@ -10,7 +10,7 @@ def credential_value(secret: str, field: str) -> str:
     try:
         payload = json.loads(secret)
     except json.JSONDecodeError:
-        if secret.lstrip().startswith(("{", "[", '\"')):
+        if secret.lstrip().startswith(("{", "[", '"')):
             raise ValueError("SecretString contains invalid JSON") from None
         value = secret
     else:

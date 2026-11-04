@@ -3,12 +3,13 @@ Policy Generator — entrypoint disparado por evento S3 (Fase 8, tasks.md 8.1).
 
 Orquesta el flujo completo descripto en design.md "Data Flow":
 
-    S3 policies/ --evento--> extract -> chunk -> map/reduce (llm_client)
+    S3 policies/ --evento--> extract -> chunk -> map/reduce (llm_client/Bedrock)
                                               |
                               validate falla -- feedback (<=3, DENTRO de
                               llm_client.generate_script_with_retries)
                                               |
                     S3 artifacts/{run_id}/ --async invoke--> audit_executor
+                                              (solo si AUTO_EXECUTE=true)
 
 Responsabilidad de este archivo: SOLO orquestación + I/O. Toda la lógica
 de negocio (extracción, chunking, generación/validación/reintento) ya vive
@@ -19,6 +20,11 @@ Camino de fallo explícito (spec.md "Bounded Self-Correcting Retry" /
 controles verificables, o un documento no extraíble producen un reporte
 explícito y NUNCA invocan a audit_executor — jamás se ofrece un script
 parcial/no confiable para ejecución.
+
+Compuerta humana mínima (`AUTO_EXECUTE`): con `AUTO_EXECUTE=false` el
+handler escribe igual script + manifest (firmados con `script_sha256`) pero
+NO invoca al executor; devuelve `status="awaiting_approval"` con el puntero
+completo para que un operador lo invoque manualmente tras revisarlo.
 
 Nota de alcance IAM (desviación deliberada de la redacción literal de
 design.md "Retry feedback" — "Exhaustion -> ... report to S3+SNS"): el rol
@@ -32,6 +38,9 @@ fallaría con AccessDenied en un deploy real). `audit_executor` sí tiene
 ambos permisos (S3 write a `reports/*` + `sns:Publish`) y es quien reporta
 S3+SNS para sus propios resultados — éxito y fallo de re-validación o
 ejecución (ver handler_executor.py).
+
+El modelo se alcanza vía Amazon Bedrock con la identidad IAM del rol; no
+existe ninguna API key que leer de Secrets Manager en este handler.
 """
 
 import hashlib
@@ -42,15 +51,14 @@ import uuid
 from datetime import UTC, datetime
 
 import boto3
-from botocore.exceptions import ClientError
 
 import chunker
 import extractor
 import fortigate_client
 import llm_client
+import observability
 import reporter
 import s3_io
-from secret_values import credential_value
 
 log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(
@@ -58,6 +66,8 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+_TRUTHY = {"1", "true", "yes", "y", "on"}
 
 
 def _get_required_env(name: str) -> str:
@@ -71,23 +81,10 @@ def _get_required_env(name: str) -> str:
     return value
 
 
-def _get_secret(secret_arn: str, field: str) -> str:
-    """Lee un secret de Secrets Manager. Mismo patrón que handler.py (legacy)."""
-    sm = boto3.client("secretsmanager")
-    try:
-        response = sm.get_secret_value(SecretId=secret_arn)
-        secret = response.get("SecretString")
-        if not secret:
-            raise ValueError(f"El secret {secret_arn} no tiene SecretString")
-        return credential_value(secret, field)
-    except ClientError as e:
-        logger.error(
-            "No se pudo leer el secret %s — código: %s — %s",
-            secret_arn,
-            e.response["Error"]["Code"],
-            e.response["Error"]["Message"],
-        )
-        raise
+def _auto_execute_enabled() -> bool:
+    """`AUTO_EXECUTE` (default true): true/1/yes habilitan la invocación
+    automática del executor; cualquier otro valor la desactiva."""
+    return os.environ.get("AUTO_EXECUTE", "true").strip().lower() in _TRUTHY
 
 
 def _content_type_for_key(key: str) -> str:
@@ -166,6 +163,20 @@ def _write_failure_report(
     )
 
 
+def _log_result(
+    run_id: str, status: str, *, checks_count: int = 0, map_calls: int = 0, **extra
+) -> None:
+    """Evento terminal `generator_result` -- uno por invocación, siempre."""
+    observability.log_event(
+        "generator_result",
+        run_id=run_id,
+        status=status,
+        checks_count=checks_count,
+        map_calls=map_calls,
+        **extra,
+    )
+
+
 def lambda_handler(event: dict, context) -> dict:
     """Entry point de AWS Lambda para `policy_generator`.
 
@@ -176,12 +187,12 @@ def lambda_handler(event: dict, context) -> dict:
     run_id = uuid.uuid4().hex
     logger.info("=== Policy Generator iniciado — run_id=%s ts=%s ===", run_id, run_ts)
 
-    claude_secret_arn = _get_required_env("CLAUDE_SECRET_ARN")
     reports_bucket = _get_required_env("S3_BUCKET")
     executor_function_name = _get_required_env("EXECUTOR_FUNCTION_NAME")
     max_attempts = int(
         os.environ.get("MAX_GENERATION_ATTEMPTS", llm_client.MAX_GENERATION_ATTEMPTS)
     )
+    auto_execute = _auto_execute_enabled()
 
     policies_bucket, policy_key = _extract_event_object(event)
     logger.info("Política subida: s3://%s/%s", policies_bucket, policy_key)
@@ -203,17 +214,20 @@ def lambda_handler(event: dict, context) -> dict:
             timestamp=run_ts,
             failure_reason=failure_reason,
         )
+        _log_result(run_id, "could_not_audit", failure_reason=failure_reason)
         return {"status": "could_not_audit", "run_id": run_id, "failure_reason": failure_reason}
 
     # ── 2. Chunking ──────────────────────────────────────────────────────────
     chunks = chunker.chunk(text, metadata)
-    claude_api_key = _get_secret(claude_secret_arn, "api_key")
     endpoint_catalog = _endpoint_catalog()
+    # Cantidad de llamadas de map que requiere esta política (agrupación
+    # pura, sin I/O) -- solo para observabilidad.
+    map_calls = len(llm_client.group_chunks_for_map(chunks))
 
-    # ── 3. Map/reduce + retry (llm_client) ──────────────────────────────────
+    # ── 3. Map/reduce + retry (llm_client sobre Bedrock) ────────────────────
     try:
         result = llm_client.generate_audit_script(
-            chunks, endpoint_catalog, claude_api_key, max_attempts=max_attempts
+            chunks, endpoint_catalog, max_attempts=max_attempts
         )
     except (
         llm_client.MapCallBudgetExceededError,
@@ -229,6 +243,7 @@ def lambda_handler(event: dict, context) -> dict:
             timestamp=run_ts,
             failure_reason=failure_reason,
         )
+        _log_result(run_id, "could_not_audit", map_calls=map_calls, failure_reason=failure_reason)
         return {"status": "could_not_audit", "run_id": run_id, "failure_reason": failure_reason}
 
     if result["status"] == "no_verifiable_controls":
@@ -240,6 +255,7 @@ def lambda_handler(event: dict, context) -> dict:
             timestamp=run_ts,
             failure_reason="no_verifiable_controls",
         )
+        _log_result(run_id, "no_verifiable_controls", map_calls=map_calls)
         return {"status": "no_verifiable_controls", "run_id": run_id}
 
     if result["status"] == "generation_failed":
@@ -255,13 +271,19 @@ def lambda_handler(event: dict, context) -> dict:
             timestamp=run_ts,
             failure_reason="generation_failed",
         )
+        _log_result(
+            run_id,
+            "generation_failed",
+            map_calls=map_calls,
+            attempts=result["attempts"],
+        )
         return {
             "status": "generation_failed",
             "run_id": run_id,
             "attempts": result["attempts"],
         }
 
-    # ── 4. status == "ok" -> escribir artifacts + invocar executor ─────────
+    # ── 4. status == "ok" -> escribir artifacts (+ invocar executor) ───────
     script = result["script"]
     checks = result["checks"]
     attempts = result["attempts"]
@@ -278,22 +300,40 @@ def lambda_handler(event: dict, context) -> dict:
         script_sha256=script_sha256,
         checks=checks,
         attempts=attempts,
-        model=llm_client.CLAUDE_MODEL,
+        model=llm_client.current_model_id(),
         generated_at=run_ts,
     )
     s3_io.put_manifest(reports_bucket, manifest_key, manifest)
 
-    lambda_client = boto3.client("lambda")
-    invoke_payload = {
+    pointer = {
         "run_id": run_id,
         "manifest_key": manifest_key,
         "script_key": script_key,
         "script_sha256": script_sha256,
     }
+
+    if not auto_execute:
+        # Compuerta humana: artifacts escritos y firmados, ejecución pendiente
+        # de aprobación manual. Nunca se invoca al executor desde acá.
+        logger.warning(
+            "AUTO_EXECUTE=false — run_id=%s queda pendiente de aprobación (no se invoca executor)",
+            run_id,
+        )
+        observability.log_event("awaiting_approval", **pointer, checks_count=len(checks))
+        _log_result(
+            run_id,
+            "awaiting_approval",
+            checks_count=len(checks),
+            map_calls=map_calls,
+            attempts=attempts,
+        )
+        return {"status": "awaiting_approval", **pointer, "attempts": attempts}
+
+    lambda_client = boto3.client("lambda")
     lambda_client.invoke(
         FunctionName=executor_function_name,
         InvocationType="Event",
-        Payload=json.dumps(invoke_payload).encode("utf-8"),
+        Payload=json.dumps(pointer).encode("utf-8"),
     )
 
     logger.info(
@@ -301,11 +341,5 @@ def lambda_handler(event: dict, context) -> dict:
         run_id,
         attempts,
     )
-    return {
-        "status": "invoked",
-        "run_id": run_id,
-        "manifest_key": manifest_key,
-        "script_key": script_key,
-        "script_sha256": script_sha256,
-        "attempts": attempts,
-    }
+    _log_result(run_id, "invoked", checks_count=len(checks), map_calls=map_calls, attempts=attempts)
+    return {"status": "invoked", **pointer, "attempts": attempts}

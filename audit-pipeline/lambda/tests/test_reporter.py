@@ -499,6 +499,128 @@ class TestBuildPolicyReportJson:
         assert failed["truncated"] is False
 
 
+REMEDIATION = {
+    "summary": "Habilitar MFA para todas las cuentas administrativas.",
+    "steps": ["System > Administrators > editar admin", "Activar two-factor authentication"],
+    "fortigate_cli": (
+        "config system admin\n    edit admin\n        set two-factor fortitoken\n    next\nend"
+    ),
+}
+
+FAIL_WITH_REMEDIATION = {**TRACEABLE_FINDINGS[0], "remediation": REMEDIATION}
+PASS_WITH_REMEDIATION = {**TRACEABLE_FINDINGS[1], "remediation": REMEDIATION}
+INDETERMINATE_WITH_REMEDIATION = {
+    **UNTRACEABLE_FINDING,
+    "remediation": {"summary": "Revisar manualmente la configuracion DNS.", "steps": []},
+}
+EMPTY_REMEDIATION = {"summary": None, "steps": [], "fortigate_cli": None}
+
+
+class TestRemediationSectionMarkdown:
+    def _render(self, findings):
+        return build_policy_report_markdown(
+            findings=findings,
+            notes=[],
+            status="completed",
+            run_id="run-rem",
+            policy_key="policies/internal-access-control.pdf",
+            timestamp="2025-02-01T00:00:00Z",
+        )
+
+    def test_fail_finding_renders_summary_steps_and_fenced_cli_with_disclaimer(self):
+        md = self._render([FAIL_WITH_REMEDIATION])
+
+        assert "## Remediaciones propuestas" in md
+        assert reporter.REMEDIATION_DISCLAIMER in md
+        assert "### `chk-mfa` (fail)" in md
+        assert REMEDIATION["summary"] in md
+        assert "1. System > Administrators > editar admin" in md
+        assert "2. Activar two-factor authentication" in md
+        # fenced CLI block, explicitly marked as not executed
+        assert "NO ejecutada" in md
+        assert "```\nconfig system admin\n" in md
+        assert "set two-factor fortitoken" in md
+        assert "\nend\n```" in md
+
+    def test_pass_finding_with_remediation_is_not_listed(self):
+        md = self._render([PASS_WITH_REMEDIATION])
+
+        assert "## Remediaciones propuestas" not in md
+        assert "set two-factor fortitoken" not in md
+
+    def test_indeterminate_finding_listed_only_when_it_has_a_proposal(self):
+        with_proposal = self._render([INDETERMINATE_WITH_REMEDIATION])
+        assert "## Remediaciones propuestas" in with_proposal
+        assert "### `chk-ghost` (indeterminate)" in with_proposal
+        assert "Revisar manualmente la configuracion DNS." in with_proposal
+
+        without_proposal = self._render([{**UNTRACEABLE_FINDING, "remediation": EMPTY_REMEDIATION}])
+        assert "## Remediaciones propuestas" not in without_proposal
+
+    def test_fail_finding_without_proposal_is_listed_with_explicit_placeholder(self):
+        md = self._render([TRACEABLE_FINDINGS[0]])  # fail, no remediation key at all
+
+        assert "### `chk-mfa` (fail)" in md
+        assert "Sin propuesta de remediacion disponible" in md
+
+    def test_section_comes_after_findings_table(self):
+        md = self._render([FAIL_WITH_REMEDIATION])
+
+        assert md.index("## Hallazgos") < md.index("## Remediaciones propuestas")
+
+    def test_could_not_audit_never_renders_remediations(self):
+        md = build_policy_report_markdown(
+            findings=[],
+            notes=[],
+            status="could_not_audit",
+            run_id="run-failed",
+            policy_key="policies/broken.pdf",
+            timestamp="2025-02-01T00:00:00Z",
+            failure_reason="generation_failed",
+        )
+        assert "Remediaciones" not in md
+
+
+class TestRemediationInJson:
+    def test_remediation_always_present_and_count_only_counts_real_proposals(self):
+        report = build_policy_report_json(
+            findings=[
+                FAIL_WITH_REMEDIATION,
+                TRACEABLE_FINDINGS[1],  # no remediation key
+                {**UNTRACEABLE_FINDING, "remediation": EMPTY_REMEDIATION},
+            ],
+            notes=[],
+            status="completed",
+            run_id="run-rem",
+            policy_key="policies/x.pdf",
+            timestamp="2025-02-01T00:00:00Z",
+        )
+
+        assert report["findings"][0]["remediation"] == REMEDIATION
+        assert report["findings"][1]["remediation"] is None
+        assert report["findings"][2]["remediation"] == EMPTY_REMEDIATION
+        assert report["remediation_count"] == 1
+
+    def test_count_remediations_helper(self):
+        assert reporter.count_remediations([]) == 0
+        assert reporter.count_remediations([FAIL_WITH_REMEDIATION, PASS_WITH_REMEDIATION]) == 2
+        assert reporter.count_remediations([{"remediation": "not a dict"}]) == 0
+        assert reporter.count_remediations([{"remediation": {"steps": ["x"]}}]) == 1
+
+    def test_remediation_key_names_survive_the_api_sanitizer_pattern(self):
+        """The local API drops keys matching script|code|password|secret|token|
+        api_key|authorization|private_key. The proposal must use none of them."""
+        import re
+
+        pattern = re.compile(
+            r"^(?:script(?:_.*)?|code)$|password|passwd|secret|token|api.?key|authorization|"
+            r"private.?key",
+            re.I,
+        )
+        for key in ("remediation", *REMEDIATION.keys()):
+            assert not pattern.search(key), key
+
+
 class TestBuildPolicySnsMessage:
     def test_completed_message_mentions_run_and_report_key(self):
         msg = build_policy_sns_message(
@@ -561,12 +683,46 @@ class TestDeliverPolicyReport:
 
         assert result["status"] == "completed"
         assert result["sns_published"] is True
-        assert result["uploaded"]["markdown"] == "reports/run-abc/report.md"
+        assert result["uploaded"] == {
+            "markdown": "reports/run-abc/report.md",
+            "json": "reports/run-abc/report.json",
+        }
 
         obj = s3.get_object(Bucket=bucket, Key="reports/run-abc/report.md")
         body = obj["Body"].read().decode("utf-8")
         assert "chk-mfa" in body
         assert "completed" in body
+
+        json_obj = s3.get_object(Bucket=bucket, Key="reports/run-abc/report.json")
+        assert json_obj["ContentType"] == "application/json; charset=utf-8"
+        parsed = json.loads(json_obj["Body"].read().decode("utf-8"))
+        assert parsed["run_id"] == "run-abc"
+        assert parsed["policy_key"] == "policies/internal-access-control.pdf"
+        # legacy analysis.json must NOT appear on the policy path
+        listed = s3.list_objects_v2(Bucket=bucket, Prefix="reports/run-abc/")
+        assert {o["Key"] for o in listed["Contents"]} == {
+            "reports/run-abc/report.md",
+            "reports/run-abc/report.json",
+        }
+
+    @mock_aws
+    def test_missing_bucket_does_not_raise_and_still_publishes_sns(self, mocker):
+        publish = mocker.patch("reporter.publish_to_sns", return_value=True)
+
+        result = deliver_policy_report(
+            bucket="bucket-que-no-existe",
+            topic_arn="arn:aws:sns:us-east-1:123456789012:pps-notifications",
+            run_id="run-nobucket",
+            policy_key="policies/x.pdf",
+            findings=[],
+            notes=[],
+            status="could_not_audit",
+            timestamp="2025-02-01T00:00:00Z",
+            failure_reason="generation_failed",
+        )
+
+        assert result["uploaded"] == {}
+        publish.assert_called_once()
 
     @mock_aws
     def test_could_not_audit_path_still_uploads_and_publishes(self):
@@ -631,10 +787,14 @@ class TestDeliverPolicyReport:
         assert "TRUNCAD" in body.upper()
         assert "could not audit" not in body
 
-        json_obj = s3.get_object(Bucket=bucket, Key="reports/run-cutoff/analysis.json")
+        # Policy path writes report.json (the key the local API bridge discovers),
+        # never the legacy analysis.json.
+        assert result["uploaded"]["json"] == "reports/run-cutoff/report.json"
+        json_obj = s3.get_object(Bucket=bucket, Key="reports/run-cutoff/report.json")
         parsed = json.loads(json_obj["Body"].read().decode("utf-8"))
         assert parsed["status"] == "truncated"
         assert parsed["truncated"] is True
+        assert "remediation_count" in parsed
 
         # The SNS subject/message must not read as a silent success.
         publish_kwargs = publish_spy.call_args.kwargs

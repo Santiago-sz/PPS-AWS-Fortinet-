@@ -4,8 +4,12 @@ No synthetic progress: only upload acknowledgement and final reports are exposed
 """
 
 import json
+import re
 
 from .service import require
+
+MANIFEST_KEY = re.compile(r"^artifacts/([A-Za-z0-9_-]+)/manifest\.json$")
+REPORT_KEY = re.compile(r"^reports/([A-Za-z0-9_-]+)/report\.json$")
 
 
 class Bridge:
@@ -131,3 +135,68 @@ class Bridge:
             self.service.finish(pending[policy_key]["id"], manifest, report)
             finished += 1
         return finished
+
+    def run_ids(self, prefix, pattern):
+        found = set()
+        for page in self.s3.get_paginator("list_objects_v2").paginate(
+            Bucket=self.reports_bucket, Prefix=prefix
+        ):
+            for obj in page.get("Contents", []):
+                match = pattern.match(obj["Key"])
+                if match:
+                    found.add(match.group(1))
+        return found
+
+    def list_pending(self):
+        """Runs con manifest pero sin reporte: pendientes de aprobación o en ejecución."""
+        with_manifest = self.run_ids("artifacts/", MANIFEST_KEY)
+        return sorted(with_manifest - self.run_ids("reports/", REPORT_KEY))
+
+    def approve(self, run_id, executor_function_name, lambda_client):
+        """Aprobación humana explícita: invoca al ejecutor con el puntero del manifest.
+
+        Solo se reenvían la clave y el hash firmados en el manifest; el ejecutor vuelve a
+        verificar el hash del script antes de ejecutarlo. No descarga ni ejecuta el script.
+        """
+        require(isinstance(run_id, str) and run_id.isalnum(), "invalid_pipeline_run_id", 422)
+        require(
+            isinstance(executor_function_name, str)
+            and bool(re.fullmatch(r"[A-Za-z0-9_:.\-]{1,170}", executor_function_name)),
+            "invalid_executor_function",
+        )
+        manifest_key = f"artifacts/{run_id}/manifest.json"
+        try:
+            manifest = self.read_json(manifest_key)
+        except self.s3.exceptions.NoSuchKey:
+            require(False, "manifest_missing", 404)
+        require(manifest.get("run_id") == run_id, "run_mismatch", 422)
+        script_key, script_sha256 = manifest.get("script_key"), manifest.get("script_sha256")
+        require(
+            isinstance(script_key, str) and script_key.startswith(f"artifacts/{run_id}/"),
+            "manifest_without_script_key",
+            422,
+        )
+        require(
+            isinstance(script_sha256, str) and bool(re.fullmatch(r"[0-9a-f]{64}", script_sha256)),
+            "manifest_without_script_sha256",
+            422,
+        )
+        try:
+            self.s3.head_object(Bucket=self.reports_bucket, Key=f"reports/{run_id}/report.json")
+        except self.s3.exceptions.ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") not in {"404", "NoSuchKey", "NotFound"}:
+                raise
+        else:
+            require(False, "run_already_reported", 409)
+        payload = {
+            "run_id": run_id,
+            "manifest_key": manifest_key,
+            "script_key": script_key,
+            "script_sha256": script_sha256,
+        }
+        response = lambda_client.invoke(
+            FunctionName=executor_function_name,
+            InvocationType="Event",
+            Payload=json.dumps(payload).encode(),
+        )
+        return response["StatusCode"]

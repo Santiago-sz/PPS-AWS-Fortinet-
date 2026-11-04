@@ -29,10 +29,21 @@ class _FakeFortiGateClient:
         return self._responses.get(endpoint_key)
 
 
+REMEDIATION = {
+    "summary": "Habilitar bloqueo de cuenta.",
+    "steps": ["System > Settings"],
+    "fortigate_cli": "config system global\n    set admin-lockout-threshold 3\nend",
+}
+
 VALID_MANIFEST = {
     "run_id": "run-1",
     "checks": [
-        {"check_id": "chk1", "title": "Admin lockout", "clause_ref": {"page": 3, "quote": "..."}},
+        {
+            "check_id": "chk1",
+            "title": "Admin lockout",
+            "clause_ref": {"page": 3, "quote": "..."},
+            "remediation": REMEDIATION,
+        },
         {"check_id": "chk2", "title": "DNS hardening", "clause_ref": {"page": 5, "quote": "..."}},
     ],
 }
@@ -129,6 +140,30 @@ class TestReportCapability:
         assert len(findings) == 1
         assert findings[0]["clause_ref"] is None
         assert findings[0]["traceable"] is False
+        assert findings[0]["remediation"] is None
+
+    def test_finding_resolves_remediation_from_manifest_server_side(self):
+        """La remediacion propuesta viaja desde el manifest al finding por el
+        toolkit -- el script no puede redactarla ni alterarla (misma regla
+        que clause_ref) y nada la ejecuta."""
+        findings: list[dict] = []
+        report = ReportCapability(VALID_MANIFEST, findings, notes=[])
+
+        report.finding("chk1", "fail", "sin bloqueo")
+        report.finding("chk2", "pass", "dns ok")
+
+        assert findings[0]["remediation"] == REMEDIATION
+        # check sin propuesta en el manifest -> None, nunca KeyError
+        assert findings[1]["remediation"] is None
+
+    def test_finding_signature_does_not_accept_a_remediation_argument(self):
+        findings: list[dict] = []
+        report = ReportCapability(VALID_MANIFEST, findings, notes=[])
+
+        with pytest.raises(TypeError):
+            report.finding("chk1", "fail", "x", remediation={"summary": "forjada"})
+
+        assert findings == []
 
     def test_note_appends_without_affecting_findings(self):
         findings: list[dict] = []

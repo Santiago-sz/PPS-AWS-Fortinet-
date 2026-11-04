@@ -91,13 +91,31 @@ Por tanto, una auditoría real desde esta GUI todavía requiere:
 
 El botón «Cargar e iniciar» corresponde al comportamiento actual del pipeline. «Volver a
 analizar» y «Guardar seguimiento» solo se habilitan si el servidor anuncia soporte y el
-rol tiene permisos. No hay aprobación humana simulada, remediación, ranking inventado,
-letras A–F ni severidades/puntuaciones deducidas.
+rol tiene permisos. No hay aprobación humana simulada, ranking inventado, letras A–F ni
+severidades/puntuaciones deducidas; las remediaciones se muestran como propuestas, nunca
+como acciones ejecutadas.
 
 La administración de usuarios/conectores/retención y la aprobación de controles quedan
 en el servicio por implementar. La vista previa de documentos es textual, no un editor
 PDF/DOCX. No hay actualizador automático ni firma de código. La accesibilidad con un lector
 de pantalla real y las pruebas con el IdP institucional requieren validación en destino.
+
+## Remediaciones propuestas
+
+El pipeline puede adjuntar a cada control una propuesta de remediación generada por IA:
+un resumen, pasos sugeridos y, cuando corresponde, un bloque de CLI FortiGate. Son texto
+para que un operador las revise; **ni el pipeline ni la aplicación aplican cambios en el
+dispositivo**. La GUI las muestra únicamente en controles fallidos o indeterminados:
+
+- Resumen: «Remediaciones propuestas: N» en la tarjeta de hallazgos.
+- Resultados: columna **REMEDIACIÓN** (`Sí`/`—`).
+- Detalle del hallazgo: bloque **REMEDIACIÓN PROPUESTA**, después de la cláusula, con la
+  leyenda «Propuesta generada por IA. No se aplicó ningún cambio en el dispositivo».
+
+El texto de la propuesta pasa por la misma redacción de credenciales que la evidencia.
+No hay botón para ejecutar la CLI ni se copia al portapapeles automáticamente. Una
+auditoría en estado `awaiting_approval` («Pendiente de aprobación») espera que alguien
+apruebe la ejecución desde la API local (`pps-api aws approve`); la GUI solo la informa.
 
 ## Cálculos
 

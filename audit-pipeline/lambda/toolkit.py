@@ -9,9 +9,9 @@ objetos, con una superficie deliberadamente mínima:
   report.finding(check_id, status, evidence, endpoints_used=None)
   report.note(check_id, message)
 
-`report.finding` resuelve `clause_ref` del lado del servidor, a partir del
-manifest — el script jamás puede pasar ni forjar su propio clause_ref
-(design.md Decision #4).
+`report.finding` resuelve `clause_ref` (y la `remediation` propuesta) del
+lado del servidor, a partir del manifest — el script jamás puede pasar ni
+forjar su propio clause_ref (design.md Decision #4).
 
 `FgtCapability.get()` delega en el método público `FortiGateClient.get(
 endpoint_key)` (task 6.3) — la resolución de path y la memoización de bajo
@@ -102,6 +102,11 @@ class ReportCapability:
         check = self._checks_by_id.get(check_id)
         traceable = check is not None
         clause_ref = check.get("clause_ref") if traceable else None
+        # La remediacion propuesta tambien se resuelve ACA, desde el manifest
+        # (mismo principio que clause_ref): el script generado nunca la
+        # redacta ni la altera, y el sistema jamas la ejecuta -- solo viaja
+        # al reporte como propuesta para un operador humano.
+        remediation = check.get("remediation") if traceable else None
 
         self._findings.append(
             {
@@ -111,6 +116,7 @@ class ReportCapability:
                 "evidence": evidence,
                 "endpoints_used": list(endpoints_used) if endpoints_used else [],
                 "traceable": traceable,
+                "remediation": remediation,
             }
         )
 

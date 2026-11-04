@@ -179,6 +179,48 @@ def test_results_correlation_and_immutable_reports(service, document):
         service.finish(created["audit_id"], manifest, {**report, "status": "truncated"})
 
 
+def test_results_summary_and_markdown_remediations(service, document):
+    created, _ = upload(service, document)
+    manifest, report = pair(document)
+    remediation = {
+        "summary": "Restringir el acceso administrativo a redes autorizadas.",
+        "steps": ["Definir trusthost para cada administrador.", "Verificar el acceso."],
+        "fortigate_cli": "config system admin\n    edit admin\n    next\nend",
+    }
+    manifest["checks"] = [
+        {"check_id": "C1", "title": "Control", "remediation": {"summary": None, "steps": []}},
+        {"check_id": "C2", "title": "Acceso", "remediation": remediation},
+        {"check_id": "C3", "title": "Reglas", "remediation": remediation},
+        {"check_id": "C4", "title": "Logs", "remediation": None},
+    ]
+    report["findings"] = [
+        {"check_id": "C1", "status": "pass", "evidence": "correcto", "remediation": None},
+        {"check_id": "C2", "status": "fail", "evidence": "abierto", "remediation": remediation},
+        {"check_id": "C3", "status": "indeterminate", "evidence": "?", "remediation": remediation},
+        {"check_id": "C4", "status": "fail", "evidence": "sin registro", "remediation": None},
+    ]
+    service.finish(created["audit_id"], manifest, report)
+    result = service.audit(created["audit_id"], results=True)
+    assert set(result) == {"manifest", "report", "next_cursor", "summary"}
+    assert result["summary"] == {
+        "total": 4,
+        "pass": 1,
+        "fail": 2,
+        "indeterminate": 1,
+        "not_applicable": 0,
+        "with_remediation": 2,
+    }
+    assert result["report"]["findings"][1]["remediation"]["fortigate_cli"].startswith("config")
+    markdown = service.export(created["audit_id"], "md")[0].decode()
+    assert "ninguna fue aplicada" in markdown.splitlines()[5]
+    assert markdown.count("### Remediación propuesta") == 3
+    assert "1. Definir trusthost" in markdown and "```\nconfig system admin" in markdown
+    assert "Sin propuesta de remediación disponible" in markdown.split("## C4")[1]
+    assert "Remediación" not in markdown.split("## C1")[1].split("## C2")[0]
+    exported = json.loads(service.export(created["audit_id"], "json")[0])
+    assert exported["findings"][1]["remediation"] == remediation
+
+
 def test_pagination_has_no_duplicates(service, document):
     for index in range(52):
         service.create_policy(metadata(document), str(index))

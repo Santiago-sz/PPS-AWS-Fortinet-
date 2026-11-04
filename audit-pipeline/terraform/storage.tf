@@ -87,6 +87,66 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "reports" {
 }
 
 # -----------------------------------------------------------------------------
+# CICLO DE VIDA
+# artifacts/* (script + manifest) y reports/* (report.md/json) expiran
+# tras var.artifact_retention_days / var.report_retention_days; las
+# versiones no vigentes (versioning habilitado) se purgan a los 30 días y
+# los multipart uploads abandonados a los 7. Evita que el bucket crezca
+# sin límite con cada corrida.
+# -----------------------------------------------------------------------------
+
+resource "aws_s3_bucket_lifecycle_configuration" "reports" {
+  bucket = aws_s3_bucket.reports.id
+
+  rule {
+    id     = "expire-generated-artifacts"
+    status = "Enabled"
+
+    filter {
+      prefix = "artifacts/"
+    }
+
+    expiration {
+      days = var.artifact_retention_days
+    }
+
+    noncurrent_version_expiration {
+      noncurrent_days = 30
+    }
+  }
+
+  rule {
+    id     = "expire-audit-reports"
+    status = "Enabled"
+
+    filter {
+      prefix = "reports/"
+    }
+
+    expiration {
+      days = var.report_retention_days
+    }
+
+    noncurrent_version_expiration {
+      noncurrent_days = 30
+    }
+  }
+
+  rule {
+    id     = "abort-incomplete-multipart-uploads"
+    status = "Enabled"
+
+    filter {}
+
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
+    }
+  }
+
+  depends_on = [aws_s3_bucket_versioning.reports]
+}
+
+# -----------------------------------------------------------------------------
 # DATA SOURCE — cuenta de AWS actual
 # Necesario para construir el nombre del bucket con el account_id.
 # No crea ningún recurso — solo consulta información de la cuenta.
@@ -130,28 +190,7 @@ resource "aws_sns_topic_subscription" "email" {
   # Para notificaciones humanas, "email" es el más directo.
 }
 
-
-# -----------------------------------------------------------------------------
-# OUTPUTS
-# Exponen los ARNs y nombre del bucket para que otros archivos los referencien.
-# El bucket name lo necesita Lambda para saber dónde subir los reportes.
-# Los ARNs los usa iam.tf para construir los permisos exactos.
-# -----------------------------------------------------------------------------
-
-output "reports_bucket_name" {
-  value       = aws_s3_bucket.reports.bucket
-  description = "Name of the S3 bucket where assessment reports are stored"
-}
-
-output "reports_bucket_arn" {
-  value       = aws_s3_bucket.reports.arn
-  description = "ARN of the reports S3 bucket"
-}
-
-output "sns_topic_arn" {
-  value       = aws_sns_topic.notifications.arn
-  description = "ARN of the SNS notifications topic"
-}
+# Los outputs (bucket de reports, topic SNS) viven en outputs.tf.
 
 
 # =============================================================================
@@ -200,6 +239,30 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "policies" {
       sse_algorithm = "AES256"
     }
   }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "policies" {
+  bucket = aws_s3_bucket.policies.id
+
+  # Las políticas vigentes NO expiran (son la entrada del sistema y el
+  # operador decide cuándo borrarlas); solo se purgan versiones viejas de
+  # re-subidas y multipart uploads abandonados.
+  rule {
+    id     = "expire-noncurrent-policy-versions"
+    status = "Enabled"
+
+    filter {}
+
+    noncurrent_version_expiration {
+      noncurrent_days = 90
+    }
+
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
+    }
+  }
+
+  depends_on = [aws_s3_bucket_versioning.policies]
 }
 
 # -----------------------------------------------------------------------------
@@ -251,17 +314,4 @@ resource "aws_lambda_permission" "s3_invoke" {
   # Lambda. Sin esto, cualquier bucket S3 de la cuenta podría hacerlo.
 }
 
-
-# -----------------------------------------------------------------------------
-# OUTPUTS — bucket de políticas
-# -----------------------------------------------------------------------------
-
-output "policies_bucket_name" {
-  value       = aws_s3_bucket.policies.bucket
-  description = "Name of the S3 bucket where policy documents (PDF/DOCX) are uploaded to trigger generation"
-}
-
-output "policies_bucket_arn" {
-  value       = aws_s3_bucket.policies.arn
-  description = "ARN of the policies S3 bucket"
-}
+# El output del bucket de políticas (policies_bucket) vive en outputs.tf.

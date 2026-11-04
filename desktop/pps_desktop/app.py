@@ -33,6 +33,8 @@ from PySide6.QtWidgets import (
 
 from . import api, demo
 from .domain import (
+    ACTIONABLE,
+    REMEDIATION_DISCLAIMER,
     STATUSES,
     RUN_STATUSES,
     TERMINAL,
@@ -342,6 +344,9 @@ class Window(QMainWindow):
                 True,
             )
         )
+        self.remediation_summary = label("Remediaciones propuestas: —", "cardTitle", True)
+        self.remediation_summary.setAccessibleName("Remediaciones propuestas")
+        box.addWidget(self.remediation_summary)
         self.dashboard_table = table(
             ["CONTROL", "RESULTADO", "DISPOSITIVO", "SECCIÓN", "TRAZABILIDAD"]
         )
@@ -493,11 +498,14 @@ class Window(QMainWindow):
         self.section_filter.currentIndexChanged.connect(self.render_findings)
         layout.addWidget(row(self.result_search, self.result_status))
         layout.addWidget(self.section_filter)
-        self.result_table = table(["CONTROL", "RESULTADO", "SECCIÓN", "EVIDENCIA", "REFERENCIA"])
+        self.result_table = table(
+            ["CONTROL", "RESULTADO", "SECCIÓN", "EVIDENCIA", "REMEDIACIÓN", "REFERENCIA"]
+        )
         self.result_table.setColumnWidth(0, 280)
         self.result_table.setColumnWidth(1, 165)
         self.result_table.setColumnWidth(2, 200)
         self.result_table.setColumnWidth(3, 330)
+        self.result_table.setColumnWidth(4, 120)
         self.result_table.setMinimumHeight(350)
         self.result_table.cellDoubleClicked.connect(lambda *_: self.open_finding())
         layout.addWidget(self.result_table)
@@ -1059,6 +1067,11 @@ class Window(QMainWindow):
             ],
         )
         self.color_results(self.dashboard_table, self.dashboard_rows)
+        self.remediation_summary.setText(
+            f"Remediaciones propuestas: {result.get('remediation_count', 0)}"
+            if result
+            else "Remediaciones propuestas: —"
+        )
         self.coverage_bar.setValue(round(coverage or 0))
         self.coverage_text.setText(
             f"{counts.get('evaluated', 0)} / {counts.get('expected', 0)} controles evaluados"
@@ -1073,6 +1086,10 @@ class Window(QMainWindow):
             f"RUN  {result.get('run_id', '—')}   ·   VERSIÓN  {result.get('policy_version', '—')}\n"
             "Alcance: configuración de FortiGate consultada por el pipeline; no es un inventario AWS."
         )
+
+    @staticmethod
+    def has_proposal(finding):
+        return bool(finding.get("remediation")) and finding["status"] in ACTIONABLE
 
     @staticmethod
     def color_results(widget, rows):
@@ -1137,6 +1154,7 @@ class Window(QMainWindow):
                     STATUSES[r["status"]],
                     r["section"],
                     r["evidence"],
+                    "Sí" if self.has_proposal(r) else "—",
                     "Verificable" if r["traceable"] else "Sin referencia verificable",
                 ]
                 for r in self.result_rows
@@ -1305,6 +1323,13 @@ class Window(QMainWindow):
         if not 0 <= index < len(rows) or not self.current:
             return
         finding, result = rows[index], self.current
+        dialog, layout = self.text_dialog(
+            finding["check_id"] + " · " + finding["title"], self.finding_detail(finding, result)
+        )
+        self._finding_dialog(dialog, layout, finding)
+
+    def finding_detail(self, finding, result):
+        """Texto del detalle; separado del diálogo para poder verificarlo sin bloquear."""
         clause = finding["clause_ref"] if finding["traceable"] else "Sin referencia verificable"
         content = [
             "RESULTADO TÉCNICO · " + STATUSES[finding["status"]],
@@ -1330,6 +1355,15 @@ class Window(QMainWindow):
             )
         else:
             content.append(clause)
+        if self.has_proposal(finding):
+            remediation = finding["remediation"]
+            content.extend(["", "REMEDIACIÓN PROPUESTA"])
+            if remediation["summary"]:
+                content.append(remediation["summary"])
+            content.extend(f"{i}. {step}" for i, step in enumerate(remediation["steps"], 1))
+            if remediation["fortigate_cli"]:
+                content.extend(["CLI FortiGate (no ejecutada):", remediation["fortigate_cli"]])
+            content.append(REMEDIATION_DISCLAIMER)
         content.extend(
             [
                 "",
@@ -1357,9 +1391,9 @@ class Window(QMainWindow):
                     ),
                 ]
             )
-        dialog, layout = self.text_dialog(
-            finding["check_id"] + " · " + finding["title"], redact("\n".join(content))
-        )
+        return redact("\n".join(content))
+
+    def _finding_dialog(self, dialog, layout, finding):
         form = QFormLayout()
         owner, comment, state = QLineEdit(), QLineEdit(), QComboBox()
         state.addItems(["nuevo", "en revisión", "aceptado", "resuelto"])

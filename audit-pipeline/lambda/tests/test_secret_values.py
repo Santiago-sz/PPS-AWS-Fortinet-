@@ -60,12 +60,18 @@ def test_invalid_secret_is_rejected(decode, secret):
     assert "private-marker" not in str(exc.value)
 
 
+def test_generator_no_longer_reads_any_secret():
+    """El modelo se invoca vía Bedrock con IAM: policy_generator no tiene
+    lector de secrets ni dependencia de secret_values."""
+    assert not hasattr(handler_generator, "_get_secret")
+    assert not hasattr(handler_generator, "credential_value")
+
+
 @pytest.mark.parametrize(
     "module,reader,field",
     [
         (handler, "get_secret", "token"),
         (handler, "get_secret", "api_key"),
-        (handler_generator, "_get_secret", "api_key"),
         (handler_executor, "_get_secret", "token"),
     ],
 )

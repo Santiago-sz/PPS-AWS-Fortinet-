@@ -119,10 +119,47 @@ def snapshot():
             "",
         ),
     ]
+    # Propuestas de ejemplo: solo texto para revisión humana, nunca se aplican.
+    remediations = {
+        "CHK-001": {
+            "summary": "Restringir la administración HTTPS a las redes de gestión autorizadas.",
+            "steps": [
+                "Definir trusthost para cada cuenta administrativa.",
+                "Deshabilitar el acceso administrativo en interfaces expuestas.",
+                "Verificar el acceso desde una red no autorizada.",
+            ],
+            "fortigate_cli": (
+                "config system admin\n"
+                "    edit admin\n"
+                "        set trusthost1 10.10.0.0 255.255.255.0\n"
+                "    next\n"
+                "end"
+            ),
+        },
+        "CHK-004": {
+            "summary": "Exigir una longitud mínima de doce caracteres en la política de contraseñas.",
+            "steps": ["Habilitar la política de contraseñas.", "Fijar la longitud mínima en 12."],
+            "fortigate_cli": (
+                "config system password-policy\n"
+                "    set status enable\n"
+                "    set minimum-length 12\n"
+                "end"
+            ),
+        },
+        "CHK-006": {
+            "summary": "Confirmar la inspección del tráfico en las políticas del alcance.",
+            "steps": [
+                "Revisar manualmente las políticas de firewall del alcance.",
+                "Asignar perfiles de seguridad a las políticas sin inspección.",
+            ],
+            "fortigate_cli": None,
+        },
+    }
     checks, findings = [], []
     for index, (title, group, status, endpoint, clause, evidence) in enumerate(definitions, 1):
         cid = f"CHK-{index:03d}"
         ref = {"heading_path": [group], "page": 2 + index // 3, "quote": clause}
+        remediation = remediations.get(cid)
         checks.append(
             {
                 "check_id": cid,
@@ -130,6 +167,7 @@ def snapshot():
                 "clause_ref": ref,
                 "endpoints": [endpoint],
                 "intent": clause,
+                "remediation": remediation,
             }
         )
         if status:
@@ -141,6 +179,7 @@ def snapshot():
                     "traceable": True,
                     "clause_ref": ref,
                     "endpoints_used": [endpoint],
+                    "remediation": remediation,
                 }
             )
     manifest = {"run_id": "demo-run-20260928", "checks": checks, "policy_sha256": "a" * 64}
@@ -152,6 +191,7 @@ def snapshot():
         "findings": findings,
         "notes": [],
         "failure_reason": "Se alcanzó el límite de tiempo; 3 controles no fueron evaluados.",
+        "remediation_count": 3,
     }
     result = normalize(
         manifest,

@@ -1,0 +1,224 @@
+{
+  "policy": "politica-acceso-administrativo",
+  "recorded_at": "hand-written",
+  "model_id": "canned",
+  "_comment": "Respuestas en orden de llamada: 1 map + 2 reduce. El primer reduce contiene `import re` a proposito para que script_validator lo rechace (denied_node:Import) y se ejercite el ciclo de reintento: first_attempt_pass=false, attempts_used=2.",
+  "responses": [
+    {
+      "stage": "map",
+      "input_tokens": 2610,
+      "output_tokens": 1180,
+      "cache_write_tokens": 980,
+      "latency_ms": 9800,
+      "json": {
+        "checks": [
+          {
+            "title": "Hosts de confianza configurados en cada administrador",
+            "clause_ref": {
+              "chunk_id": "chunk-0001",
+              "heading_path": ["Política de acceso administrativo al firewall perimetral"],
+              "page": null,
+              "quote": "Toda cuenta de administrador debe tener configurados hosts de confianza (trusted hosts) que restrinjan el origen de las sesiones de administración a las redes de gestión autorizadas."
+            },
+            "endpoints": ["admins"],
+            "severity": "high",
+            "intent": "Verificar que ningún administrador tenga trusthost sin restricción (0.0.0.0/0)",
+            "remediation": {
+              "summary": "Definir trusthost1..N con las redes de gestión en cada cuenta de administrador.",
+              "steps": ["System > Administrators > editar cuenta", "Habilitar 'Restrict login to trusted hosts' y cargar las redes de gestión"],
+              "fortigate_cli": "config system admin\n    edit \"admin\"\n        set trusthost1 10.10.0.0 255.255.255.0\n    next\nend"
+            }
+          },
+          {
+            "title": "Bloqueo de administrador tras 3 intentos fallidos",
+            "clause_ref": {
+              "chunk_id": "chunk-0001",
+              "heading_path": ["Política de acceso administrativo al firewall perimetral"],
+              "page": null,
+              "quote": "Tras un máximo de tres (3) intentos fallidos consecutivos de autenticación, la cuenta de administrador debe bloquearse automáticamente."
+            },
+            "endpoints": ["system_global"],
+            "severity": "high",
+            "intent": "Verificar que admin-lockout-threshold sea menor o igual a 3",
+            "remediation": {
+              "summary": "Bajar el umbral de bloqueo de administradores a 3 intentos.",
+              "steps": ["CLI: config system global / set admin-lockout-threshold 3"],
+              "fortigate_cli": "config system global\n    set admin-lockout-threshold 3\nend"
+            }
+          },
+          {
+            "title": "Duración mínima del bloqueo de administradores de 300 segundos",
+            "clause_ref": {
+              "chunk_id": "chunk-0001",
+              "heading_path": ["Política de acceso administrativo al firewall perimetral"],
+              "page": null,
+              "quote": "La duración del bloqueo por intentos fallidos no debe ser inferior a trescientos (300) segundos."
+            },
+            "endpoints": ["system_global"],
+            "severity": "medium",
+            "intent": "Verificar que admin-lockout-duration sea mayor o igual a 300",
+            "remediation": {
+              "summary": "Configurar la duración del bloqueo en al menos 300 segundos.",
+              "steps": ["CLI: config system global / set admin-lockout-duration 300"],
+              "fortigate_cli": "config system global\n    set admin-lockout-duration 300\nend"
+            }
+          },
+          {
+            "title": "Cierre de sesión administrativa por inactividad a los 10 minutos",
+            "clause_ref": {
+              "chunk_id": "chunk-0001",
+              "heading_path": ["Política de acceso administrativo al firewall perimetral"],
+              "page": null,
+              "quote": "Las sesiones administrativas deben cerrarse automáticamente tras un máximo de diez (10) minutos de inactividad."
+            },
+            "endpoints": ["system_global"],
+            "severity": "medium",
+            "intent": "Verificar que admintimeout (minutos) sea menor o igual a 10",
+            "remediation": {
+              "summary": "Fijar el tiempo de inactividad administrativa en 10 minutos o menos.",
+              "steps": ["System > Settings > Idle timeout = 10"],
+              "fortigate_cli": "config system global\n    set admintimeout 10\nend"
+            }
+          },
+          {
+            "title": "Administración exclusivamente por HTTPS",
+            "clause_ref": {
+              "chunk_id": "chunk-0001",
+              "heading_path": ["Política de acceso administrativo al firewall perimetral"],
+              "page": null,
+              "quote": "La administración del equipo debe realizarse exclusivamente mediante HTTPS; el acceso HTTP sin cifrar a la interfaz de administración debe estar deshabilitado o redirigido a HTTPS."
+            },
+            "endpoints": ["system_global", "interfaces"],
+            "severity": "high",
+            "intent": "Verificar admin-https-redirect=enable y que ninguna interfaz permita http ni telnet en allowaccess",
+            "remediation": {
+              "summary": "Habilitar la redirección HTTP->HTTPS y quitar http/telnet del allowaccess de las interfaces.",
+              "steps": ["System > Settings > Redirect to HTTPS", "Network > Interfaces > Administrative Access: desmarcar HTTP y TELNET"],
+              "fortigate_cli": "config system global\n    set admin-https-redirect enable\nend\nconfig system interface\n    edit \"port1\"\n        set allowaccess ping https ssh\n    next\nend"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "stage": "reduce",
+      "attempt": 1,
+      "input_tokens": 2140,
+      "output_tokens": 910,
+      "cache_read_tokens": 620,
+      "latency_ms": 11200,
+      "lines": [
+        "import re",
+        "",
+        "admins = fgt.get(\"admins\")",
+        "sysglobal = fgt.get(\"system_global\")",
+        "interfaces = fgt.get(\"interfaces\")",
+        "",
+        "",
+        "def value_of(data, key):",
+        "    if isinstance(data, dict) and key in data:",
+        "        return data[key]",
+        "    return None",
+        "",
+        "",
+        "admin_list = admins if isinstance(admins, list) else []",
+        "unrestricted = [str(value_of(a, \"name\")) for a in admin_list if re.match(r\"0\\.0\\.0\\.0\", str(value_of(a, \"trusthost1\")))]",
+        "if unrestricted:",
+        "    report.finding(\"chk-0001\", \"fail\", f\"sin trusted hosts: {unrestricted}\")",
+        "else:",
+        "    report.finding(\"chk-0001\", \"pass\", \"trusted hosts presentes\")",
+        "report.finding(\"chk-0002\", \"indeterminate\", \"pendiente\")",
+        "report.finding(\"chk-0003\", \"indeterminate\", \"pendiente\")",
+        "report.finding(\"chk-0004\", \"indeterminate\", \"pendiente\")",
+        "report.finding(\"chk-0005\", \"indeterminate\", \"pendiente\")"
+      ]
+    },
+    {
+      "stage": "reduce",
+      "attempt": 2,
+      "input_tokens": 3320,
+      "output_tokens": 1240,
+      "cache_read_tokens": 620,
+      "latency_ms": 14100,
+      "lines": [
+        "admins = fgt.get(\"admins\")",
+        "sysglobal = fgt.get(\"system_global\")",
+        "interfaces = fgt.get(\"interfaces\")",
+        "",
+        "",
+        "def value_of(data, key):",
+        "    if isinstance(data, dict) and key in data:",
+        "        return data[key]",
+        "    return None",
+        "",
+        "",
+        "def as_int(value):",
+        "    if isinstance(value, bool):",
+        "        return None",
+        "    if isinstance(value, int):",
+        "        return value",
+        "    return None",
+        "",
+        "",
+        "OPEN_HOSTS = (\"0.0.0.0 0.0.0.0\", \"0.0.0.0/0\", \"\", \"None\")",
+        "",
+        "# chk-0001 - hosts de confianza en cada administrador",
+        "admin_list = admins if isinstance(admins, list) else []",
+        "unrestricted = [",
+        "    str(value_of(a, \"name\"))",
+        "    for a in admin_list",
+        "    if str(value_of(a, \"trusthost1\")) in OPEN_HOSTS",
+        "]",
+        "if admins is None:",
+        "    report.finding(\"chk-0001\", \"indeterminate\", \"system/admin no disponible\", endpoints_used=[\"admins\"])",
+        "elif unrestricted:",
+        "    report.finding(\"chk-0001\", \"fail\", f\"administradores sin trusted hosts: {unrestricted}\", endpoints_used=[\"admins\"])",
+        "else:",
+        "    report.finding(\"chk-0001\", \"pass\", f\"{len(admin_list)} administradores con trusted hosts\", endpoints_used=[\"admins\"])",
+        "",
+        "# chk-0002 - umbral de bloqueo <= 3 intentos",
+        "threshold = as_int(value_of(sysglobal, \"admin-lockout-threshold\"))",
+        "if threshold is None:",
+        "    report.finding(\"chk-0002\", \"indeterminate\", \"admin-lockout-threshold no disponible\", endpoints_used=[\"system_global\"])",
+        "elif threshold <= 3:",
+        "    report.finding(\"chk-0002\", \"pass\", f\"admin-lockout-threshold={threshold}\", endpoints_used=[\"system_global\"])",
+        "else:",
+        "    report.finding(\"chk-0002\", \"fail\", f\"admin-lockout-threshold={threshold} (> 3)\", endpoints_used=[\"system_global\"])",
+        "",
+        "# chk-0003 - duracion del bloqueo >= 300 s",
+        "duration = as_int(value_of(sysglobal, \"admin-lockout-duration\"))",
+        "if duration is None:",
+        "    report.finding(\"chk-0003\", \"indeterminate\", \"admin-lockout-duration no disponible\", endpoints_used=[\"system_global\"])",
+        "elif duration >= 300:",
+        "    report.finding(\"chk-0003\", \"pass\", f\"admin-lockout-duration={duration}\", endpoints_used=[\"system_global\"])",
+        "else:",
+        "    report.finding(\"chk-0003\", \"fail\", f\"admin-lockout-duration={duration} (< 300)\", endpoints_used=[\"system_global\"])",
+        "",
+        "# chk-0004 - inactividad administrativa <= 10 minutos",
+        "timeout_min = as_int(value_of(sysglobal, \"admintimeout\"))",
+        "if timeout_min is None:",
+        "    report.finding(\"chk-0004\", \"indeterminate\", \"admintimeout no disponible\", endpoints_used=[\"system_global\"])",
+        "elif timeout_min <= 10:",
+        "    report.finding(\"chk-0004\", \"pass\", f\"admintimeout={timeout_min} min\", endpoints_used=[\"system_global\"])",
+        "else:",
+        "    report.finding(\"chk-0004\", \"fail\", f\"admintimeout={timeout_min} min (> 10)\", endpoints_used=[\"system_global\"])",
+        "",
+        "# chk-0005 - administracion solo por HTTPS",
+        "redirect = str(value_of(sysglobal, \"admin-https-redirect\"))",
+        "iface_list = interfaces if isinstance(interfaces, list) else []",
+        "insecure_ifaces = [",
+        "    str(value_of(i, \"name\"))",
+        "    for i in iface_list",
+        "    if \" http \" in (\" \" + str(value_of(i, \"allowaccess\")) + \" \")",
+        "    or \" telnet \" in (\" \" + str(value_of(i, \"allowaccess\")) + \" \")",
+        "]",
+        "if sysglobal is None or interfaces is None:",
+        "    report.finding(\"chk-0005\", \"indeterminate\", \"system/global o system/interface no disponibles\", endpoints_used=[\"system_global\", \"interfaces\"])",
+        "elif redirect == \"enable\" and not insecure_ifaces:",
+        "    report.finding(\"chk-0005\", \"pass\", \"admin-https-redirect=enable y sin http/telnet en allowaccess\", endpoints_used=[\"system_global\", \"interfaces\"])",
+        "else:",
+        "    report.finding(\"chk-0005\", \"fail\", f\"admin-https-redirect={redirect}; interfaces con http/telnet: {insecure_ifaces}\", endpoints_used=[\"system_global\", \"interfaces\"])"
+      ]
+    }
+  ]
+}

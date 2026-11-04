@@ -16,7 +16,8 @@ variable "aws_region" {
   type        = string
   default     = "us-east-1"
   # Por qué us-east-1: es la región con mayor disponibilidad de servicios AWS
-  # y menor latencia hacia la API de Anthropic (Claude), que está en US.
+  # y donde el perfil de inferencia cross-region de Amazon Bedrock
+  # (`us.anthropic.*`, ver bedrock_model_id) tiene capacidad para Claude.
   # Si tu FortiGate está en otra región geográfica, evaluá cambiarla.
 }
 
@@ -90,9 +91,19 @@ variable "fortigate_host" {
   #   "203.0.113.45"          → IP pública directa
   #   "firewall.miempresa.com" → hostname con DNS
   #
-  # IMPORTANTE: el certificado del FortiGate suele ser autofirmado.
-  # El cliente Python usa verify=False para no fallar por eso.
-  # En producción real considerá instalar un certificado válido.
+  # IMPORTANTE: el certificado del FortiGate suele ser autofirmado. El
+  # cliente Python verifica TLS por defecto (FORTIGATE_VERIFY_SSL=true);
+  # solo en laboratorios con certificado self-signed poner
+  # fortigate_verify_ssl=false. En producción instalar un certificado válido.
+}
+
+variable "fortigate_verify_ssl" {
+  description = "Verificar el certificado TLS del FortiGate en audit_executor y assessor (env FORTIGATE_VERIFY_SSL). Poner false SOLO en laboratorios con certificado autofirmado; en producción dejar true"
+  type        = bool
+  default     = true
+  # Se inyecta como env FORTIGATE_VERIFY_SSL (string "true"/"false") en las
+  # dos Lambdas que hablan con el FortiGate. Con false el cliente ignora el
+  # certificado (CERT_NONE), lo que habilita un MITM: nunca en producción.
 }
 
 
@@ -134,14 +145,63 @@ variable "lambda_memory" {
 # -----------------------------------------------------------------------------
 
 variable "enable_legacy_nist_schedule" {
-  description = "Kill switch de migración: habilita el schedule EventBridge legacy que dispara el assessor NIST CSF original (handler.py/analyzer.py)"
+  description = "Habilita el schedule EventBridge legacy que dispara el assessor NIST CSF original (handler.py/analyzer.py). false por defecto: el flujo policy-driven es el camino de Fase 1; la Lambda assessor sigue desplegada y puede invocarse a mano o re-habilitarse con true"
+  type        = bool
+  default     = false
+  # false por defecto: la regla/target de EventBridge no se crean, pero la
+  # Lambda "assessor" y su rol siguen existiendo (deployables, invocables a
+  # mano con `aws lambda invoke`). Pasar a true restituye el schedule diario
+  # sin tocar código — es el camino de rollback documentado en design.md,
+  # decisión #9 y "Migration/Rollout".
+}
+
+variable "log_retention_days" {
+  description = "Retención (días) de todos los log groups de CloudWatch del proyecto: las tres Lambdas y el log de invocaciones de Bedrock"
+  type        = number
+  default     = 365
+  # 365 por defecto: los logs son la evidencia de ejecución de cada
+  # auditoría (eventos JSON `generator_result`/`executor_result`, métricas
+  # EMF) y su volumen es bajo. Valores válidos: los que acepta CloudWatch
+  # (1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, ...).
+}
+
+variable "artifact_retention_days" {
+  description = "Días tras los cuales expiran los objetos artifacts/* (script + manifest generados) del bucket de reports"
+  type        = number
+  default     = 365
+}
+
+variable "report_retention_days" {
+  description = "Días tras los cuales expiran los objetos reports/* (report.md/report.json) del bucket de reports"
+  type        = number
+  default     = 365
+  # Los reportes son el entregable de cada auditoría: si se necesita
+  # conservarlos como evidencia a largo plazo, subir este valor o exportarlos
+  # antes de que expiren (la app de escritorio los sincroniza localmente
+  # con `pps-api aws sync`).
+}
+
+variable "executor_subnet_ids" {
+  description = "Subnets (privadas) donde colocar audit_executor para alcanzar un FortiGate por IP privada/VPN. Vacío (default) = sin VPC. Debe definirse junto con executor_security_group_ids"
+  type        = list(string)
+  default     = []
+}
+
+variable "executor_security_group_ids" {
+  description = "Security groups de audit_executor cuando corre dentro de una VPC (egress HTTPS hacia el FortiGate + hacia los endpoints de AWS). Vacío (default) = sin VPC"
+  type        = list(string)
+  default     = []
+}
+
+variable "enable_bedrock_invocation_logging" {
+  description = "Crea la configuración de Model Invocation Logging de Amazon Bedrock hacia CloudWatch Logs (/aws/bedrock/<prefix>-model-invocations). ATENCIÓN: esta configuración es ÚNICA por cuenta y región (account-wide): si la cuenta ya tiene una, este recurso la pisa. Poner en false para no tocarla"
   type        = bool
   default     = true
-  # true por defecto durante la migración — el flujo legacy sigue corriendo
-  # sin cambios en paralelo al nuevo flujo policy-driven. Una vez validado
-  # el flujo nuevo, pasar a false (borra la regla/target de EventBridge sin
-  # tocar la Lambda "assessor" ni su código) y eventualmente eliminar la
-  # variable y el bloque legacy. Ver design.md, decisión #9 y "Migration/Rollout".
+  # Registra prompt + respuesta de CADA invocación del modelo en la cuenta/
+  # región (no solo las de este proyecto). Es la evidencia primaria para la
+  # tesis (qué se le pidió al modelo y qué devolvió), pero el log contiene
+  # el texto de las políticas auditadas: tratar el log group como dato
+  # sensible. Ver bedrock_logging.tf.
 }
 
 variable "generator_timeout" {
@@ -178,6 +238,26 @@ variable "sandbox_max_fgt_calls" {
   default     = 40
   # Ver design.md, "Runtime caps": MAX_FGT_CALLS. Protege al FortiGate de
   # un script generado que quede en loop consultando el mismo endpoint.
+}
+
+variable "bedrock_model_id" {
+  description = "Id del modelo/perfil de inferencia de Amazon Bedrock que usan assessor y policy_generator (env BEDROCK_MODEL_ID). Es un INFERENCE PROFILE cross-region, no un foundation-model id: verificar que exista y tenga acceso habilitado en la cuenta/región con `aws bedrock list-inference-profiles --region <aws_region>`"
+  type        = string
+  default     = "us.anthropic.claude-sonnet-4-6"
+  # El prefijo `us.` indica un perfil de inferencia cross-region (enruta a
+  # las regiones US donde el modelo tenga capacidad). Para desplegar en
+  # otra geografía usar el prefijo correspondiente (`eu.`, `apac.`) o un
+  # perfil de aplicación propio. El acceso al modelo se habilita una sola
+  # vez por cuenta/región en la consola de Bedrock ("Model access"); sin
+  # eso la Lambda falla con AccessDeniedException aunque IAM esté bien.
+}
+
+variable "auto_execute" {
+  description = "Si es true, policy_generator invoca automáticamente a audit_executor tras generar y firmar el script. Si es false, deja script+manifest en S3 y devuelve status=awaiting_approval para que un operador invoque al executor manualmente (compuerta humana)"
+  type        = bool
+  default     = true
+  # Se inyecta como env AUTO_EXECUTE (string "true"/"false"). Útil para
+  # revisar el script generado antes de que toque el FortiGate.
 }
 
 variable "max_generation_attempts" {

@@ -29,6 +29,34 @@ ENDPOINTS = [
     ("ips/sensor", "ips_sensors"),
     ("antivirus/profile", "av_profiles"),
     ("webfilter/profile", "webfilter_profiles"),
+    # --- Ampliación del catálogo (todos GET de solo lectura sobre cmdb) ---
+    # Los evals detectaron cláusulas frecuentes sin endpoint: política de
+    # contraseñas, NTP, logging, perfiles de admin, usuarios de API, HA,
+    # FortiGuard, SNMP y timeouts. Se agrupan por tema:
+    # Identidad y administración
+    ("system/password-policy", "password_policy"),
+    ("system/accprofile", "admin_profiles"),
+    ("system/api-user", "api_users"),
+    ("user/ldap", "ldap_servers"),
+    ("user/radius", "radius_servers"),
+    # Registro y tiempo
+    ("system/ntp", "ntp"),
+    ("log.syslogd/setting", "log_syslogd"),
+    ("log.fortianalyzer/setting", "log_fortianalyzer"),
+    ("log/setting", "log_settings"),
+    ("log.memory/setting", "log_memory"),
+    # Red
+    ("system/ha", "ha"),
+    ("system/settings", "vdom_settings"),
+    ("system/central-management", "central_management"),
+    ("router/static", "static_routes"),
+    ("system/sdwan", "sdwan"),
+    ("system/dhcp/server", "dhcp_servers"),
+    ("system/snmp/sysinfo", "snmp_sysinfo"),
+    # Seguridad
+    ("system/fortiguard", "fortiguard"),
+    ("firewall/address", "firewall_addresses"),
+    ("firewall/ssl-ssh-profile", "ssl_ssh_profiles"),
 ]
 
 

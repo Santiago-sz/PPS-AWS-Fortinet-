@@ -18,6 +18,8 @@ from datetime import datetime
 import boto3
 from botocore.exceptions import ClientError
 
+import s3_io
+
 logger = logging.getLogger(__name__)
 
 # Emojis de scoring para hacer el reporte más legible en el email.
@@ -360,9 +362,9 @@ def publish_to_sns(topic_arn: str, message: str, subject: str) -> bool:
 # left UNCHANGED — same functions, same behavior, same tests.
 #
 # Everything below renders `Finding`/`RunManifest` (design.md Interfaces),
-# never a fixed NIST-shaped `analysis` dict. It reuses `upload_to_s3` /
-# `publish_to_sns` as-is: both already accept an arbitrary dict/string body,
-# so no framework-specific assumption needs to change there.
+# never a fixed NIST-shaped `analysis` dict. It reuses `publish_to_sns`
+# as-is; the S3 write goes through `s3_io.put_report` to the keys the local
+# API bridge discovers (`reports/{run_id}/report.json` + `report.md`).
 #
 # `clause_ref` itself is resolved server-side by `toolkit.ReportCapability`
 # (design.md Decision #4) from the manifest — this module never recomputes
@@ -370,6 +372,80 @@ def publish_to_sns(topic_arn: str, message: str, subject: str) -> bool:
 # shape before trusting it, because a generator defect could still hand us
 # a `traceable=True` finding whose `clause_ref` is incomplete (missing
 # quote/page/etc.) — see spec.md "Finding cannot be traced".
+#
+# `remediation` follows the same principle: resolved by the toolkit from the
+# manifest, rendered here as a PROPOSAL for a human operator. Nothing in
+# this pipeline ever applies it to the FortiGate.
+
+REMEDIATION_DISCLAIMER = (
+    "Propuestas generadas automaticamente para revision de un operador "
+    "humano. Ninguna fue aplicada al FortiGate: este sistema solo lee "
+    "configuracion, nunca la modifica."
+)
+
+
+def _remediation_has_content(remediation) -> bool:
+    """True si la remediacion trae al menos un resumen, un paso o un bloque CLI."""
+    if not isinstance(remediation, dict):
+        return False
+    return bool(
+        remediation.get("summary") or remediation.get("steps") or remediation.get("fortigate_cli")
+    )
+
+
+def count_remediations(findings: list[dict]) -> int:
+    """Cantidad de hallazgos que traen una propuesta de remediacion con contenido."""
+    return sum(1 for f in findings if _remediation_has_content(f.get("remediation")))
+
+
+def _findings_with_remediation_section(findings: list[dict]) -> list[dict]:
+    """Hallazgos que van a la seccion de remediaciones: todo `fail` (con o
+    sin propuesta) y los `indeterminate` que SI traen una propuesta."""
+    selected = []
+    for finding in findings:
+        status = finding.get("status")
+        has_content = _remediation_has_content(finding.get("remediation"))
+        if status == "fail" or (status == "indeterminate" and has_content):
+            selected.append(finding)
+    return selected
+
+
+def _render_remediation_section(findings: list[dict]) -> list[str]:
+    selected = _findings_with_remediation_section(findings)
+    if not selected:
+        return []
+
+    lines = ["## Remediaciones propuestas\n", f"> {REMEDIATION_DISCLAIMER}\n"]
+    for finding in selected:
+        check_id = finding.get("check_id", "desconocido")
+        status = finding.get("status", "indeterminate")
+        remediation = finding.get("remediation")
+        lines.append(f"### `{check_id}` ({status})\n")
+
+        if not _remediation_has_content(remediation):
+            lines.append("_Sin propuesta de remediacion disponible para este control._\n")
+            continue
+
+        summary = remediation.get("summary")
+        if summary:
+            lines.append(f"**Resumen:** {summary}\n")
+
+        steps = remediation.get("steps") or []
+        if steps:
+            lines.append("**Pasos sugeridos:**\n")
+            for i, step in enumerate(steps, start=1):
+                lines.append(f"{i}. {step}")
+            lines.append("")
+
+        cli = remediation.get("fortigate_cli")
+        if cli:
+            lines.append("**CLI FortiGate (propuesta, NO ejecutada):**\n")
+            lines.append("```")
+            lines.append(cli.rstrip("\n"))
+            lines.append("```")
+            lines.append("")
+
+    return lines
 
 
 def _finding_is_traceable(finding: dict) -> bool:
@@ -500,6 +576,8 @@ def build_policy_report_markdown(
             lines.append(f"- `{note.get('check_id', '')}`: {note.get('message', '')}")
         lines.append("")
 
+    lines.extend(_render_remediation_section(findings))
+
     untraceable_count = sum(1 for f in findings if not _finding_is_traceable(f))
     if untraceable_count:
         lines.append(
@@ -538,6 +616,9 @@ def build_policy_report_json(
     for finding in findings:
         annotated = dict(finding)
         annotated["traceable"] = _finding_is_traceable(finding)
+        # Siempre presente (None si el manifest no traia propuesta) para que
+        # el consumidor no tenga que distinguir "ausente" de "sin propuesta".
+        annotated["remediation"] = finding.get("remediation")
         annotated_findings.append(annotated)
 
     report = {
@@ -548,6 +629,7 @@ def build_policy_report_json(
         "truncated": status == "truncated",
         "findings": annotated_findings,
         "notes": list(notes),
+        "remediation_count": count_remediations(findings),
     }
     if failure_reason is not None:
         report["failure_reason"] = failure_reason
@@ -598,6 +680,37 @@ def build_policy_sns_message(
     return "\n".join(lines)
 
 
+def _upload_policy_report(
+    bucket: str, run_id: str, markdown_report: str, json_report: dict
+) -> dict:
+    """Writes the two policy-report objects; returns the keys actually written."""
+    uploaded = {}
+    targets = [
+        (
+            "markdown",
+            f"reports/{run_id}/report.md",
+            markdown_report,
+            "text/markdown; charset=utf-8",
+        ),
+        (
+            "json",
+            f"reports/{run_id}/report.json",
+            json.dumps(json_report, indent=2, ensure_ascii=False),
+            "application/json; charset=utf-8",
+        ),
+    ]
+    for label, key, body, content_type in targets:
+        try:
+            s3_io.put_report(bucket, key, body, content_type=content_type)
+            uploaded[label] = key
+            logger.info("Reporte de política subido: s3://%s/%s", bucket, key)
+        except ClientError as e:
+            logger.error(
+                "Error subiendo %s a S3 (%s): %s", key, label, e.response["Error"]["Message"]
+            )
+    return uploaded
+
+
 def deliver_policy_report(
     bucket: str,
     topic_arn: str,
@@ -611,10 +724,13 @@ def deliver_policy_report(
 ) -> dict:
     """Orchestrates build + delivery for a policy-agnostic audit run.
 
-    Reuses `upload_to_s3` / `publish_to_sns` UNCHANGED (spec.md "Report
-    Delivery and Failure Distinction" — both success and failure reports
-    MUST be delivered the same way, never silently dropped). Called for
-    BOTH the completed path and the could-not-audit path.
+    Writes `reports/{run_id}/report.md` + `reports/{run_id}/report.json`
+    (the exact keys the local API bridge discovers) and reuses
+    `publish_to_sns` UNCHANGED (spec.md "Report Delivery and Failure
+    Distinction" — both success and failure reports MUST be delivered the
+    same way, never silently dropped). Called for BOTH the completed path
+    and the could-not-audit path. An S3 failure is logged and the SNS
+    notification is still attempted, mirroring the legacy `upload_to_s3`.
     """
     markdown_report = build_policy_report_markdown(
         findings, notes, status, run_id, policy_key, timestamp, failure_reason
@@ -623,13 +739,7 @@ def deliver_policy_report(
         findings, notes, status, run_id, policy_key, timestamp, failure_reason
     )
 
-    uploaded = upload_to_s3(
-        bucket=bucket,
-        s3_key_prefix=f"reports/{run_id}",
-        markdown_report=markdown_report,
-        analysis=json_report,
-        timestamp=timestamp,
-    )
+    uploaded = _upload_policy_report(bucket, run_id, markdown_report, json_report)
 
     if status == "completed":
         subject = "PPS Policy Audit — completed"

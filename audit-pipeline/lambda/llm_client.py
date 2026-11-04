@@ -1,8 +1,10 @@
 """
-Cliente Claude para generacion de scripts de auditoria policy-driven.
+Cliente LLM para generacion de scripts de auditoria policy-driven.
 
-Adaptado de analyzer.py (misma llamada HTTP cruda via urllib, sin
-dependencias externas), pero con dos diferencias deliberadas:
+El transporte es Amazon Bedrock (API Converse) a traves de `bedrock_client`;
+este modulo no conoce ni endpoints HTTP ni credenciales -- la autorizacion
+es IAM del rol de la Lambda. Dos diferencias deliberadas respecto del
+analizador NIST legacy (`analyzer.py`):
 
   1. Dos fases separadas (map/reduce), no un unico prompt monolitico:
        map:    chunk group -> PolicyCheck[]   (uno o mas grupos, bound por
@@ -20,9 +22,14 @@ dependencias externas), pero con dos diferencias deliberadas:
 
 Contrato de PolicyCheck (design.md, Interfaces):
     PolicyCheck = {"check_id","title","clause_ref","endpoints":[...],
-                   "severity","intent"}
+                   "severity","intent","remediation"}
 
-El `check_id` es asignado ACA (no por Claude) despues de recolectar los
+`remediation` es una PROPUESTA de accion correctiva para un operador
+humano (`{"summary","steps","fortigate_cli"}`); el sistema solo la muestra
+en el reporte, nunca la ejecuta. `_normalize_check` garantiza que el campo
+exista con esa forma aunque el modelo lo omita o lo devuelva como texto.
+
+El `check_id` es asignado ACA (no por el modelo) despues de recolectar los
 checks de TODOS los grupos de map, para garantizar unicidad global sin
 depender de que cada llamada independiente coordine IDs entre si.
 
@@ -33,18 +40,20 @@ un feedback puntual derivado del PRIMER error de la validacion:
 design.md "Retry feedback"). Agotado `MAX_GENERATION_ATTEMPTS` sin un
 script valido, se devuelve `status: "generation_failed"` -- nunca se
 ejecuta ni se ofrece un script parcial/invalido.
+
+Nota de compatibilidad: la excepcion de transporte conserva el nombre
+`ClaudeCallError` (los handlers la capturan por ese nombre); envuelve a
+`bedrock_client.BedrockCallError`.
 """
 
 import json
 import logging
-import urllib.error
-import urllib.request
 
+import bedrock_client
+import observability
 import script_validator
 
 logger = logging.getLogger(__name__)
-
-CLAUDE_MODEL = "claude-sonnet-4-6"
 
 # Cantidad maxima de llamadas de map permitidas para cubrir TODOS los
 # grupos de chunks de una politica. Si agrupar por presupuesto de prompt
@@ -52,7 +61,7 @@ CLAUDE_MODEL = "claude-sonnet-4-6"
 # grupos a la fuerza (eso equivaldria a truncar contenido).
 MAX_MAP_CALLS = 12
 
-# Presupuesto de caracteres por grupo de map (una llamada a Claude por
+# Presupuesto de caracteres por grupo de map (una llamada al modelo por
 # grupo). Estimado inicial -- calibrar contra una normativa real en el
 # primer E2E run (ver design.md Open Questions).
 MAP_GROUP_MAX_CHARS = 12_000
@@ -60,25 +69,29 @@ MAP_GROUP_MAX_CHARS = 12_000
 # Reintentos acotados de la fase reduce ante script invalido.
 MAX_GENERATION_ATTEMPTS = 3
 
+# Tope de tokens de salida por llamada (siempre explicito en la request).
+MAP_MAX_TOKENS = 4096
+REDUCE_MAX_TOKENS = 4096
+
 
 class ClaudeCallError(Exception):
-    """La llamada HTTP a la API de Claude fallo o la respuesta es inutilizable.
+    """La llamada al modelo (Bedrock) fallo o la respuesta es inutilizable.
 
     A diferencia de analyzer.py (que devuelve un dict `{"error": ...}` y
     sigue), este modulo falla explicitamente -- el caller (generator
-    orchestration, fuera de alcance en esta fase) decide como reportarlo,
-    nunca se sigue con un resultado parcial/silencioso.
+    orchestration) decide como reportarlo, nunca se sigue con un resultado
+    parcial/silencioso. Envuelve `bedrock_client.BedrockCallError`.
     """
 
 
 class MapResponseParseError(Exception):
-    """La respuesta de Claude para un grupo de map no es JSON valido."""
+    """La respuesta del modelo para un grupo de map no es JSON valido."""
 
 
 class MapCallBudgetExceededError(Exception):
     """La politica requiere mas llamadas de map que MAX_MAP_CALLS.
 
-    Se levanta ANTES de hacer ninguna llamada HTTP -- fallar rapido y
+    Se levanta ANTES de hacer ninguna llamada al modelo -- fallar rapido y
     explicito, nunca combinar grupos a la fuerza para entrar en el
     presupuesto (eso seria una forma de truncar contenido en silencio).
     """
@@ -101,6 +114,15 @@ fragmento no contiene ningun control verificable con los endpoints dados,
 devolve una lista vacia -- eso es una respuesta valida y esperada, NO un
 error.
 
+El campo "remediation" de cada control es una PROPUESTA de accion
+correctiva dirigida a un operador humano: describe que cambio de
+configuracion corregiria el incumplimiento si el control falla. El sistema
+NUNCA ejecuta esos pasos ni ese bloque CLI -- solo los muestra en el
+reporte para revision manual. Describi unicamente cambios de configuracion
+reversibles; no incluyas comandos que borren datos, reinicien el equipo ni
+expongan credenciales. Si no hay una accion correctiva clara, usa un
+"summary" breve, "steps": [] y "fortigate_cli": null.
+
 Respondé SOLO con JSON, sin texto antes ni despues, sin markdown fences,
 con exactamente este esquema:
 {
@@ -115,7 +137,12 @@ con exactamente este esquema:
       },
       "endpoints": ["lista de endpoint labels del catalogo dado, los que hagan falta consultar"],
       "severity": "low" | "medium" | "high" | "critical",
-      "intent": "string breve: que se espera verificar y por que"
+      "intent": "string breve: que se espera verificar y por que",
+      "remediation": {
+        "summary": "accion correctiva propuesta, 1-2 frases",
+        "steps": ["pasos concretos en la GUI o CLI de FortiGate"],
+        "fortigate_cli": "bloque config/set/end minimo, o null si no aplica"
+      }
     }
   ]
 }
@@ -157,57 +184,35 @@ despues. Sin markdown fences (nada de ```python ni ```).
 """
 
 
-def _call_claude(system_prompt: str, user_prompt: str, claude_api_key: str, max_tokens: int) -> str:
-    """Llama a la API de Claude y devuelve el texto crudo de la respuesta.
+def current_model_id() -> str:
+    """Model id efectivo de Bedrock, resuelto en el momento de la llamada."""
+    return bedrock_client.resolve_model_id()
 
-    A diferencia de analyzer.analyze(), nunca devuelve un dict de error --
-    levanta ClaudeCallError explicitamente en cualquier falla (HTTP, red,
-    o forma de respuesta inesperada).
+
+def _call_model(
+    system_prompt: str,
+    user_prompt: str,
+    max_tokens: int,
+    *,
+    stage: str,
+    attempt: int | None = None,
+) -> str:
+    """Llama al modelo via Bedrock y devuelve el texto crudo de la respuesta.
+
+    Nunca devuelve un dict de error -- traduce `BedrockCallError` a
+    `ClaudeCallError` para que los callers conserven su manejo de errores.
     """
-    payload = {
-        "model": CLAUDE_MODEL,
-        "max_tokens": max_tokens,
-        "system": [
-            {
-                "type": "text",
-                "text": system_prompt,
-                "cache_control": {"type": "ephemeral"},
-            }
-        ],
-        "messages": [{"role": "user", "content": user_prompt}],
-    }
-
-    body = json.dumps(payload).encode("utf-8")
-
-    req = urllib.request.Request(
-        "https://api.anthropic.com/v1/messages",
-        data=body,
-        headers={
-            "x-api-key": claude_api_key,
-            "anthropic-version": "2023-06-01",
-            "anthropic-beta": "prompt-caching-2024-07-31",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
-
     try:
-        with urllib.request.urlopen(req, timeout=120) as resp:
-            response_body = json.loads(resp.read().decode("utf-8"))
-        return response_body["content"][0]["text"].strip()
-
-    except urllib.error.HTTPError as e:
-        error_body = e.read().decode("utf-8") if e.fp else ""
-        logger.error("Error HTTP %s en Claude API: %s", e.code, error_body)
-        raise ClaudeCallError(f"HTTP {e.code}: {error_body}") from e
-
-    except urllib.error.URLError as e:
-        logger.error("Error de red llamando a Claude API: %s", e.reason)
-        raise ClaudeCallError(f"network error: {e.reason}") from e
-
-    except (KeyError, IndexError, json.JSONDecodeError) as e:
-        logger.error("Respuesta de Claude con forma inesperada: %s", str(e))
-        raise ClaudeCallError(f"unexpected response shape: {e}") from e
+        result = bedrock_client.converse(
+            system_prompt,
+            user_prompt,
+            max_tokens=max_tokens,
+            stage=stage,
+            attempt=attempt,
+        )
+    except bedrock_client.BedrockCallError as e:
+        raise ClaudeCallError(str(e)) from e
+    return result.text
 
 
 def group_chunks_for_map(
@@ -262,32 +267,70 @@ def _assign_check_ids(raw_checks: list[dict]) -> list[dict]:
     return assigned
 
 
-def _map_chunk_group(
-    group: list[dict], endpoint_catalog: list[str], claude_api_key: str
-) -> list[dict]:
+def _clean_text(value) -> str | None:
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
+
+
+def _normalize_remediation(value) -> dict:
+    """Coerciona cualquier `remediation` devuelta por el modelo a la forma
+    `{"summary": str|None, "steps": [str], "fortigate_cli": str|None}`."""
+    if isinstance(value, str):
+        return {"summary": _clean_text(value), "steps": [], "fortigate_cli": None}
+    if not isinstance(value, dict):
+        return {"summary": None, "steps": [], "fortigate_cli": None}
+
+    raw_steps = value.get("steps")
+    if isinstance(raw_steps, str):
+        raw_steps = [raw_steps]
+    steps: list[str] = []
+    if isinstance(raw_steps, list):
+        steps = [s for s in (_clean_text(step) for step in raw_steps) if s is not None]
+
+    return {
+        "summary": _clean_text(value.get("summary")),
+        "steps": steps,
+        "fortigate_cli": _clean_text(value.get("fortigate_cli")),
+    }
+
+
+def _normalize_check(check: dict) -> dict:
+    """Garantiza que un PolicyCheck crudo tenga `remediation` con la forma
+    canonica. No toca ningun otro campo: el resto del contrato lo validan
+    las capas siguientes (validator/toolkit) como hasta ahora."""
+    normalized = dict(check)
+    normalized["remediation"] = _normalize_remediation(check.get("remediation"))
+    return normalized
+
+
+def _map_chunk_group(group: list[dict], endpoint_catalog: list[str]) -> list[dict]:
     user_prompt = _build_map_user_prompt(group, endpoint_catalog)
-    raw_text = _call_claude(MAP_SYSTEM_PROMPT, user_prompt, claude_api_key, max_tokens=4096)
+    raw_text = _call_model(MAP_SYSTEM_PROMPT, user_prompt, MAP_MAX_TOKENS, stage="map")
 
     try:
         parsed = json.loads(raw_text)
     except json.JSONDecodeError as e:
-        raise MapResponseParseError(f"Claude map response is not valid JSON: {e}") from e
+        raise MapResponseParseError(f"model map response is not valid JSON: {e}") from e
 
-    return parsed.get("checks") or []
+    if not isinstance(parsed, dict):
+        raise MapResponseParseError("model map response is not a JSON object")
+
+    raw_checks = parsed.get("checks") or []
+    return [_normalize_check(c) for c in raw_checks if isinstance(c, dict)]
 
 
 def map_chunks_to_checks(
     chunks: list[dict],
     endpoint_catalog: list[str],
-    claude_api_key: str,
     max_map_calls: int = MAX_MAP_CALLS,
     max_group_chars: int = MAP_GROUP_MAX_CHARS,
 ) -> list[dict]:
     """Fase map: chunk group -> PolicyCheck[], acumulado sobre todos los grupos.
 
-    Levanta MapCallBudgetExceededError SIN hacer ninguna llamada HTTP si la
-    politica requiere mas grupos que `max_map_calls` -- fail-fast, nunca
-    silenciosamente combinar/truncar para entrar en el presupuesto.
+    Levanta MapCallBudgetExceededError SIN hacer ninguna llamada al modelo
+    si la politica requiere mas grupos que `max_map_calls` -- fail-fast,
+    nunca silenciosamente combinar/truncar para entrar en el presupuesto.
     """
     groups = group_chunks_for_map(chunks, max_group_chars=max_group_chars)
 
@@ -298,7 +341,7 @@ def map_chunks_to_checks(
 
     raw_checks: list[dict] = []
     for group in groups:
-        raw_checks.extend(_map_chunk_group(group, endpoint_catalog, claude_api_key))
+        raw_checks.extend(_map_chunk_group(group, endpoint_catalog))
 
     return _assign_check_ids(raw_checks)
 
@@ -390,19 +433,44 @@ def _strip_code_fences(text: str) -> str:
 def reduce_checks_to_script(
     checks: list[dict],
     endpoint_catalog: list[str],
-    claude_api_key: str,
     retry_feedback: dict | None = None,
+    *,
+    attempt: int | None = None,
 ) -> str:
-    """Fase reduce: PolicyCheck[] -> script.py (una llamada a Claude)."""
+    """Fase reduce: PolicyCheck[] -> script.py (una llamada al modelo)."""
     user_prompt = _build_reduce_user_prompt(checks, endpoint_catalog, retry_feedback)
-    raw_text = _call_claude(REDUCE_SYSTEM_PROMPT, user_prompt, claude_api_key, max_tokens=4096)
+    raw_text = _call_model(
+        REDUCE_SYSTEM_PROMPT, user_prompt, REDUCE_MAX_TOKENS, stage="reduce", attempt=attempt
+    )
     return _strip_code_fences(raw_text)
+
+
+def _failure_kinds(validation: script_validator.ValidationResult) -> list[str]:
+    kinds: list[str] = []
+    for error in validation.errors:
+        if error.failure_kind not in kinds:
+            kinds.append(error.failure_kind)
+    return kinds
+
+
+def _log_generation_result(
+    *, success: bool, attempts_used: int, failure_kinds_per_attempt: list[list[str]]
+) -> None:
+    observability.log_event(
+        "generation_result",
+        success=success,
+        attempts_used=attempts_used,
+        failure_kinds_per_attempt=failure_kinds_per_attempt,
+    )
+    observability.emit_metric("GenerationAttempts", attempts_used)
+    observability.emit_metric(
+        "GenerationFirstAttemptPass", 1 if (success and attempts_used == 1) else 0
+    )
 
 
 def generate_script_with_retries(
     checks: list[dict],
     endpoint_catalog: list[str],
-    claude_api_key: str,
     max_attempts: int = MAX_GENERATION_ATTEMPTS,
 ) -> dict:
     """Ciclo reduce -> validate -> feedback -> retry, acotado por max_attempts.
@@ -414,20 +482,32 @@ def generate_script_with_retries(
     manifest = {"checks": checks}
     feedback: dict | None = None
     last_validation: script_validator.ValidationResult | None = None
+    failure_kinds_per_attempt: list[list[str]] = []
 
     for attempt in range(1, max_attempts + 1):
         script = reduce_checks_to_script(
-            checks, endpoint_catalog, claude_api_key, retry_feedback=feedback
+            checks, endpoint_catalog, retry_feedback=feedback, attempt=attempt
         )
         validation = script_validator.validate(script, manifest)
 
         if validation.valid:
+            _log_generation_result(
+                success=True,
+                attempts_used=attempt,
+                failure_kinds_per_attempt=failure_kinds_per_attempt,
+            )
             return {"status": "ok", "script": script, "attempts": attempt, "checks": checks}
 
         last_validation = validation
+        failure_kinds_per_attempt.append(_failure_kinds(validation))
         feedback = build_retry_feedback(attempt, script, validation)
         feedback["previous_script"] = script
 
+    _log_generation_result(
+        success=False,
+        attempts_used=max_attempts,
+        failure_kinds_per_attempt=failure_kinds_per_attempt,
+    )
     return {
         "status": "generation_failed",
         "attempts": max_attempts,
@@ -447,7 +527,7 @@ def generate_script_with_retries(
 def generate_audit_script(
     chunks: list[dict],
     endpoint_catalog: list[str],
-    claude_api_key: str,
+    *,
     max_map_calls: int = MAX_MAP_CALLS,
     max_attempts: int = MAX_GENERATION_ATTEMPTS,
 ) -> dict:
@@ -458,13 +538,9 @@ def generate_audit_script(
     un script vacio/no-op (spec: Requirement "No-Verifiable-Controls
     Handling").
     """
-    checks = map_chunks_to_checks(
-        chunks, endpoint_catalog, claude_api_key, max_map_calls=max_map_calls
-    )
+    checks = map_chunks_to_checks(chunks, endpoint_catalog, max_map_calls=max_map_calls)
 
     if not checks:
         return {"status": "no_verifiable_controls", "checks": []}
 
-    return generate_script_with_retries(
-        checks, endpoint_catalog, claude_api_key, max_attempts=max_attempts
-    )
+    return generate_script_with_retries(checks, endpoint_catalog, max_attempts=max_attempts)

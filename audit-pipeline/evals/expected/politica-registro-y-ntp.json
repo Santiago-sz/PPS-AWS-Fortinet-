@@ -1,0 +1,56 @@
+{
+  "policy": "politica-registro-y-ntp",
+  "min_checks": 4,
+  "max_checks": 10,
+  "_comment": "Con el catalogo ampliado (log.fortianalyzer/setting, log.syslogd/setting, log/setting y system/ntp) las clausulas 2.1-2.2 (registro centralizado y canal cifrado) y 4.1 (NTP) ya son verificables. La brecha documentada antes en evals/README.md queda resuelta.",
+  "checks": [
+    {
+      "id": "centralized-logging",
+      "clause": "2.1",
+      "keywords": [["fortianalyzer", "syslog", "centraliz"]],
+      "endpoints_any": ["log_fortianalyzer", "log_syslogd"]
+    },
+    {
+      "id": "log-transport-encrypted",
+      "clause": "2.2",
+      "keywords": [["cifrad", "enc-algorithm", "reliable", "tls"]],
+      "endpoints_any": ["log_fortianalyzer", "log_syslogd"]
+    },
+    {
+      "id": "firewall-policy-logtraffic-all",
+      "clause": "3.1-3.2",
+      "keywords": [["registro de tr", "logtraffic", "log de tr", "registro de sesiones", "logging"]],
+      "endpoints_any": ["firewall_policies"]
+    },
+    {
+      "id": "implicit-deny-logging",
+      "clause": "3.1",
+      "keywords": [["implicit", "implicita", "denegacion implicita"]],
+      "endpoints_any": ["log_settings"]
+    },
+    {
+      "id": "ntp-sync-enabled",
+      "clause": "4.1",
+      "keywords": [["ntp"]],
+      "endpoints_any": ["ntp"]
+    },
+    {
+      "id": "timezone-argentina",
+      "clause": "4.2",
+      "keywords": [["zona horaria", "timezone"]],
+      "endpoints_any": ["system_global"]
+    },
+    {
+      "id": "internal-dns-servers",
+      "clause": "5.1-5.2",
+      "keywords": [["dns"]],
+      "endpoints_any": ["dns"]
+    },
+    {
+      "id": "hostname-prefix",
+      "clause": "6.1",
+      "keywords": [["nombre de host", "hostname"]],
+      "endpoints_any": ["system_global"]
+    }
+  ]
+}

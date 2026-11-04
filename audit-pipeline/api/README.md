@@ -53,7 +53,23 @@ ejecutar todos los comandos desde la raíz para compartir la base.
    detalle por ID, vista previa textual de hasta 100.000 caracteres y descarga original.
 5. `GET /api/audits/{id}/results`: manifest y reporte saneados cuando están disponibles;
    antes responde 409. Exportación `json` o `md`. El Markdown se construye desde el
-   reporte saneado, no es una copia del artefacto Markdown de S3.
+   reporte saneado, no es una copia del artefacto Markdown de S3. La respuesta añade
+   `summary`, calculado al leer desde el reporte almacenado (el resultado guardado
+   sigue siendo inmutable):
+
+   ```json
+   {"manifest": {}, "report": {}, "next_cursor": null,
+    "summary": {"total": 12, "pass": 7, "fail": 2, "indeterminate": 1,
+                "not_applicable": 1, "with_remediation": 2}}
+   ```
+
+   `with_remediation` cuenta hallazgos cuya `remediation` trae resumen, pasos o CLI,
+   sin importar el estado. Cada hallazgo conserva `remediation`
+   (`{"summary", "steps", "fortigate_cli"}` o `null`) tal como lo produce el pipeline;
+   el saneado no la elimina. En el Markdown, cada control `fail` (y cada `indeterminate`
+   con propuesta) incluye un bloque `### Remediación propuesta` con resumen, pasos
+   numerados y la CLI en un bloque de código; el encabezado del archivo aclara que son
+   propuestas y que nada se aplicó al dispositivo.
 6. `POST /api/audits`: encola una nueva ejecución de una versión confirmada con una
    clave de idempotencia nueva, conservando los resultados de las anteriores.
 
@@ -77,7 +93,11 @@ AWS_PROFILE=
 AWS_REGION=
 PPS_POLICIES_BUCKET=
 PPS_REPORTS_BUCKET=
+PPS_EXECUTOR_FUNCTION=
 ```
+
+`PPS_EXECUTOR_FUNCTION` es opcional: nombre o ARN de la Lambda ejecutora, usado solo
+por `aws approve` (ver «Aprobación humana» más abajo).
 
 Usar claves de acceso programático, no la contraseña de la consola AWS. Para claves
 temporales también completar `AWS_SESSION_TOKEN`. Alternativamente, dejar las tres
@@ -123,8 +143,8 @@ seleccionar destinos arbitrarios desde la API; el estado del conector permanece
 
 El perfil necesita `s3:PutObject` en `policies/*` del bucket de políticas,
 `s3:ListBucket` para el prefijo `reports/` y `s3:GetObject` en `reports/*` y
-`artifacts/*/manifest.json` del bucket de reportes. No necesita obtener secretos,
-descargar scripts ni invocar Lambda directamente. La notificación de S3 existente
+`artifacts/*/manifest.json` del bucket de reportes. No necesita obtener secretos ni
+descargar scripts; solo `aws approve` invoca Lambda directamente. La notificación de S3 existente
 dispara el generador al escribir `policies/{audit_id}.pdf|docx`, **después** de la
 validación. El `policy_key` de los reportes permite correlacionar el `run_id` real
 con el `audit_id` persistido. Para fallos anteriores al manifest se proporciona uno
@@ -152,6 +172,37 @@ asociado es inmutable; duplicados que aparezcan después no lo sobrescriben.
 `sync` enumera reportes para reconciliar: está pensado para un sandbox pequeño.
 Un despliegue de producción debe sustituirlo por eventos e índices persistidos,
 instrumentar las fases en las Lambdas y deduplicar sus invocaciones.
+
+### Aprobación humana antes de ejecutar
+
+Con `AUTO_EXECUTE=false` en la Lambda generadora, cada carga produce
+`artifacts/{run_id}/manifest.json` y `artifacts/{run_id}/script.py` pero **no** invoca
+al ejecutor: el run queda `awaiting_approval` y no aparece en `aws sync` hasta que
+alguien lo apruebe. El flujo manual es:
+
+```powershell
+# 1. Runs con manifest pero sin reporte (pendientes de aprobación o en ejecución).
+.\.venv-gui\Scripts\python audit-pipeline/api/launch.py aws list-pending
+
+# 2. Revisar artifacts/{run_id}/manifest.json en el bucket de reportes (controles y
+#    remediaciones propuestas) y, si corresponde, aprobar un run concreto.
+.\.venv-gui\Scripts\python audit-pipeline/api/launch.py aws approve RUN_ID --executor-function NOMBRE_O_ARN
+
+# 3. Incorporar el reporte cuando el ejecutor termine.
+.\.venv-gui\Scripts\python audit-pipeline/api/launch.py aws sync
+```
+
+`approve` lee el manifest, exige que `run_id`, `script_key` (bajo `artifacts/{run_id}/`)
+y `script_sha256` (64 hex) estén presentes, rechaza runs que ya tienen
+`reports/{run_id}/report.json` y envía una única invocación asíncrona
+(`InvocationType=Event`) con `{"run_id", "manifest_key", "script_key", "script_sha256"}`.
+El ejecutor vuelve a calcular el hash del script antes de ejecutarlo; la API nunca
+descarga ni ejecuta el script. Sin reintentos: repetir el comando duplicaría la
+ejecución, por lo que ante una salida ambigua conviene esperar y usar `list-pending`.
+Si se omite `--executor-function`, se usa `PPS_EXECUTOR_FUNCTION` del `.env`.
+El perfil necesita además `lambda:InvokeFunction` sobre esa función y `s3:ListBucket`
+sobre el prefijo `artifacts/`. `list-pending` no distingue un run pendiente de uno
+que ya está ejecutándose; la aprobación no se registra en la base local.
 
 ## Adjuntar reportes existentes
 

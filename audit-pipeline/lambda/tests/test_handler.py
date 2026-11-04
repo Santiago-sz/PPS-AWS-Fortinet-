@@ -28,7 +28,6 @@ class TestRequiredEnvVars:
         for var in (
             "FORTIGATE_HOST",
             "FORTIGATE_SECRET_ARN",
-            "CLAUDE_SECRET_ARN",
             "S3_BUCKET",
             "SNS_TOPIC_ARN",
         ):
@@ -56,6 +55,34 @@ class TestRequiredEnvVars:
         assert result["statusCode"] == 500
         assert result["error"] == "missing_env_vars"
         assert "S3_BUCKET" in result["detail"]
+
+    def test_claude_secret_arn_is_no_longer_required(
+        self, required_env, monkeypatch, mocker, sample_fortigate_data, sample_claude_analysis
+    ):
+        """El modelo se alcanza vía Bedrock con IAM: sin CLAUDE_SECRET_ARN el
+        handler debe correr igual y leer UN solo secret (FortiGate)."""
+        monkeypatch.delenv("CLAUDE_SECRET_ARN", raising=False)
+        mock_sm = mocker.MagicMock()
+        mock_sm.get_secret_value.return_value = {"SecretString": "dummy-token"}
+        mocker.patch("handler.boto3.client", return_value=mock_sm)
+        mock_fgt_instance = mocker.MagicMock()
+        mock_fgt_instance.collect_all.return_value = sample_fortigate_data
+        mocker.patch("handler.FortiGateClient", return_value=mock_fgt_instance)
+        analyze = mocker.patch("handler.analyze", return_value=sample_claude_analysis)
+        mocker.patch("handler.build_markdown_report", return_value="# Reporte")
+        mocker.patch("handler.generate_s3_key_prefix", return_value="reports/x")
+        mocker.patch("handler.upload_to_s3", return_value={"markdown": "reports/x/report.md"})
+        mocker.patch("handler.build_sns_message", return_value="sns body")
+        mocker.patch("handler.publish_to_sns", return_value=True)
+
+        result = handler.lambda_handler({}, _lambda_context())
+
+        assert result["statusCode"] == 200
+        mock_sm.get_secret_value.assert_called_once_with(
+            SecretId=required_env["FORTIGATE_SECRET_ARN"]
+        )
+        _, kwargs = analyze.call_args
+        assert set(kwargs) == {"fortigate_data", "device_info"}
 
 
 class TestHappyPathOrchestration:
@@ -252,13 +279,10 @@ class TestTerraformEnvVarsMatchHandler:
         required_names = {
             "FORTIGATE_HOST",
             "FORTIGATE_SECRET_ARN",
-            "CLAUDE_SECRET_ARN",
             "S3_BUCKET",
             "SNS_TOPIC_ARN",
         }
-        missing = {
-            name for name in required_names if not re.search(rf"\b{name}\b\s*=", env_block)
-        }
+        missing = {name for name in required_names if not re.search(rf"\b{name}\b\s*=", env_block)}
         assert not missing, (
             f"lambda.tf environment.variables is missing {sorted(missing)}, but "
             f"handler.py's _get_required_env() requires them — real deploy would "
@@ -271,4 +295,16 @@ class TestTerraformEnvVarsMatchHandler:
         assert not re.search(r"\bREPORTS_BUCKET\b\s*=", env_block), (
             "lambda.tf sets 'REPORTS_BUCKET' but handler.py reads os.environ['S3_BUCKET'] "
             "— rename the Terraform env var key to S3_BUCKET to match handler.py"
+        )
+
+    def test_assessor_lambda_uses_bedrock_model_id_instead_of_claude_secret(self):
+        """Bedrock migration: the model is reached through IAM, so lambda.tf
+        must stop injecting CLAUDE_SECRET_ARN and expose BEDROCK_MODEL_ID."""
+        env_block = self._read_environment_block()
+
+        assert not re.search(r"\bCLAUDE_SECRET_ARN\b\s*=", env_block), (
+            "lambda.tf still injects CLAUDE_SECRET_ARN but handler.py no longer reads it"
+        )
+        assert re.search(r"\bBEDROCK_MODEL_ID\b\s*=", env_block), (
+            "lambda.tf must inject BEDROCK_MODEL_ID so the model id is configurable per deploy"
         )

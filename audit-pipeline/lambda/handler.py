@@ -5,9 +5,10 @@ Este es el entry point que AWS invoca cuando EventBridge dispara la función.
 Su única responsabilidad es orquestar el flujo completo:
 
   1. Leer configuración desde variables de entorno
-  2. Obtener credenciales desde Secrets Manager
+  2. Obtener el token de FortiGate desde Secrets Manager
   3. Recolectar datos del FortiGate
-  4. Analizar contra NIST CSF 2.0 usando Claude
+  4. Analizar contra NIST CSF 2.0 usando Claude vía Amazon Bedrock (IAM,
+     sin API key)
   5. Generar reporte, subir a S3, publicar en SNS
   6. Devolver resultado estructurado a Lambda
 
@@ -122,7 +123,6 @@ def lambda_handler(event: dict, context) -> dict:
     try:
         fortigate_host = _get_required_env("FORTIGATE_HOST")
         fortigate_secret_arn = _get_required_env("FORTIGATE_SECRET_ARN")
-        claude_secret_arn = _get_required_env("CLAUDE_SECRET_ARN")
         s3_bucket = _get_required_env("S3_BUCKET")
         sns_topic_arn = _get_required_env("SNS_TOPIC_ARN")
         environment = os.environ.get("ENVIRONMENT", "production")
@@ -143,7 +143,6 @@ def lambda_handler(event: dict, context) -> dict:
     logger.info("Leyendo credenciales desde Secrets Manager")
     try:
         fortigate_token = get_secret(fortigate_secret_arn, "token")
-        claude_api_key = get_secret(claude_secret_arn, "api_key")
     except (ClientError, ValueError) as e:
         logger.critical("No se pudieron obtener las credenciales: %s", str(e))
         return {"statusCode": 500, "error": "secrets_error", "detail": str(e)}
@@ -178,12 +177,11 @@ def lambda_handler(event: dict, context) -> dict:
 
     logger.info("%d/%d endpoints con datos", populated_endpoints, len(fortigate_data))
 
-    # ── 4. Analizar con Claude ────────────────────────────────────────────────
-    logger.info("Enviando datos a Claude para análisis NIST CSF 2.0")
+    # ── 4. Analizar con Claude (Bedrock) ──────────────────────────────────────
+    logger.info("Enviando datos al modelo para análisis NIST CSF 2.0")
     analysis = analyze(
         fortigate_data=fortigate_data,
         device_info=device_info,
-        claude_api_key=claude_api_key,
     )
 
     analysis_ok = "error" not in analysis

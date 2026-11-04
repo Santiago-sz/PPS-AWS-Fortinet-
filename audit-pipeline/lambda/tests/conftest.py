@@ -1,12 +1,11 @@
 """
 Fixtures compartidas por la suite de tests de la Lambda PPS.
 
-Todos los tests mockean AWS (boto3/botocore), el FortiGate real y la API
-de Claude — nunca se hacen llamadas de red reales.
+Todos los tests mockean AWS (boto3/botocore — incluido Bedrock) y el
+FortiGate real — nunca se hacen llamadas de red reales.
 """
 
 import json
-from urllib.error import HTTPError
 
 import pytest
 
@@ -19,9 +18,6 @@ def required_env(monkeypatch):
         "FORTIGATE_SECRET_ARN": (
             "arn:aws:secretsmanager:us-east-1:123456789012:secret:fortigate-token"
         ),
-        "CLAUDE_SECRET_ARN": (
-            "arn:aws:secretsmanager:us-east-1:123456789012:secret:claude-api-key"
-        ),
         "S3_BUCKET": "pps-reports-bucket",
         "SNS_TOPIC_ARN": "arn:aws:sns:us-east-1:123456789012:pps-notifications",
         "ENVIRONMENT": "test",
@@ -30,14 +26,6 @@ def required_env(monkeypatch):
     for key, value in env.items():
         monkeypatch.setenv(key, value)
     return env
-
-
-def make_http_error(url: str, code: int, reason: str, body: bytes = b"") -> HTTPError:
-    """Construye un urllib.error.HTTPError utilizable en tests, con .read() funcional."""
-    import io
-
-    err = HTTPError(url=url, code=code, msg=reason, hdrs=None, fp=io.BytesIO(body))
-    return err
 
 
 @pytest.fixture
@@ -95,15 +83,32 @@ def sample_claude_analysis():
     }
 
 
-def claude_http_response_body(analysis: dict) -> bytes:
-    """Simula el body JSON que devuelve la API de Claude (response.content[0].text)."""
-    payload = {
-        "content": [{"type": "text", "text": json.dumps(analysis)}],
+def bedrock_converse_response(
+    text: str,
+    *,
+    input_tokens: int = 1200,
+    output_tokens: int = 400,
+    cache_read: int = 0,
+    cache_write: int = 1200,
+    latency_ms: int = 850,
+    stop_reason: str = "end_turn",
+) -> dict:
+    """Simula la respuesta de `bedrock-runtime.converse()` con `text` como
+    contenido del primer bloque de texto del mensaje del asistente."""
+    return {
+        "output": {"message": {"role": "assistant", "content": [{"text": text}]}},
+        "stopReason": stop_reason,
         "usage": {
-            "input_tokens": 1200,
-            "output_tokens": 400,
-            "cache_read_input_tokens": 0,
-            "cache_creation_input_tokens": 1200,
+            "inputTokens": input_tokens,
+            "outputTokens": output_tokens,
+            "totalTokens": input_tokens + output_tokens,
+            "cacheReadInputTokens": cache_read,
+            "cacheWriteInputTokens": cache_write,
         },
+        "metrics": {"latencyMs": latency_ms},
     }
-    return json.dumps(payload).encode("utf-8")
+
+
+def bedrock_json_response(payload: dict) -> dict:
+    """Respuesta Converse cuyo texto es `payload` serializado como JSON."""
+    return bedrock_converse_response(json.dumps(payload))

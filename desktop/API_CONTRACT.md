@@ -117,8 +117,11 @@ sin alterar reportes anteriores. Debe existir realmente el disparador desacoplad
 {
   "manifest": {"run_id": "run_1", "policy_sha256": "...", "checks": []},
   "report": {"run_id": "run_1", "status": "completed", "truncated": false,
-             "timestamp": "2026-09-28T12:05:00Z", "findings": [], "notes": []},
-  "next_cursor": null
+             "timestamp": "2026-09-28T12:05:00Z", "findings": [], "notes": [],
+             "remediation_count": 1},
+  "next_cursor": null,
+  "summary": {"total": 12, "pass": 7, "fail": 2, "indeterminate": 1,
+              "not_applicable": 1, "with_remediation": 2}
 }
 ```
 
@@ -127,6 +130,19 @@ mismo `run_id`. Manifest completo en la primera página, hallazgos paginados con
 El servicio elimina cualquier script/credencial antes de responder. La GUI no necesita
 `script_key`, `script_sha256` ni el código generado. Ante un fallo anterior a generar
 manifest, el adaptador produce un manifest vacío con el `run_id` real del reporte de error.
+
+Cada `check` y cada `finding` puede traer `remediation`: `null` o
+`{"summary": "texto|null", "steps": ["..."], "fortigate_cli": "texto|null"}`. Es una
+propuesta generada por IA para revisión humana; ningún componente la aplica al
+dispositivo. La GUI la muestra solo en controles `fail` e `indeterminate`, redacta
+credenciales dentro del texto y añade la leyenda «Propuesta generada por IA. No se
+aplicó ningún cambio en el dispositivo». `summary` es informativo: la GUI sigue
+recalculando sus métricas sobre el par completo; `with_remediation` cuenta hallazgos
+con propuesta con contenido, sin importar el estado.
+
+Estados de auditoría: además de los terminales y `pending`/`running`, el servicio puede
+informar `awaiting_approval` cuando el pipeline generó los controles y espera la
+aprobación humana para ejecutarlos; la GUI lo trata como no terminal.
 
 Un finding puede extenderse con `id` opaco y `follow_up`:
 `{"owner_id": "usr_2", "comment": "...", "status": "en revisión", "updated_at": "..."}`.

@@ -4,11 +4,11 @@ Generado con `checkov` 3.2.379, análisis de solo lectura (sin `terraform apply`
 sin fixes automáticos aplicados). Se corrió por separado sobre los dos directorios
 Terraform independientes del proyecto.
 
-Comando usado (desde `G:\Mi unidad\TESIS\PPS prueba\`, con `.venv` activo):
+Comando usado (desde `audit-pipeline/`, con el `.venv` de la raíz del repo activo):
 
 ```bash
 PYTHONUTF8=1 python -m checkov.main -d terraform --output json
-PYTHONUTF8=1 python -m checkov.main -d P-Terraform-Forti-AWS --output json
+PYTHONUTF8=1 python -m checkov.main -d ../fortigate-sandbox-2026-06-07 --output json
 ```
 
 > Nota de entorno: en este equipo hubo que forzar `PYTHONUTF8=1` porque la
@@ -18,7 +18,44 @@ PYTHONUTF8=1 python -m checkov.main -d P-Terraform-Forti-AWS --output json
 
 ---
 
-## 1. `terraform/` (infra del pipeline de auditoría)
+## 0. Corrida 2026-11-04 — `audit-pipeline/terraform/` (hardening Work Unit 3)
+
+Comando (desde `audit-pipeline/`, mismo `checkov` 3.2.379):
+
+```bash
+PYTHONUTF8=1 ../.venv/Scripts/python.exe -m checkov.main -d terraform --framework terraform --compact
+```
+
+**Passed: 109 | Failed: 29 | Skipped: 0** (la corrida anterior sobre este
+mismo directorio daba 29/18 con 17 recursos; ahora hay más recursos — DLQ,
+alarmas, lifecycle, logging de Bedrock — y por eso más checks totales).
+
+Resueltos respecto de la corrida anterior:
+
+| Check | Qué se hizo |
+|---|---|
+| CKV_AWS_338 (retención de logs < 1 año) | `var.log_retention_days` = 365 en los cuatro log groups |
+| CKV2_AWS_61 (bucket sin lifecycle) | `aws_s3_bucket_lifecycle_configuration` en `reports` (expiran `artifacts/*` y `reports/*` a 365 d, no-vigentes a 30 d, multipart a 7 d) y en `policies` (no-vigentes a 90 d) |
+| CKV_AWS_116 (sin DLQ) en `policy_generator` y `audit_executor` | SQS DLQ por función (`monitoring.tf`) + `dead_letter_config` + `sqs:SendMessage` acotado |
+| CKV_AWS_117 (fuera de VPC) en `audit_executor` | `dynamic "vpc_config"` opcional (`executor_subnet_ids` / `executor_security_group_ids`) |
+| Cifrado de las colas SQS nuevas | `sqs_managed_sse_enabled = true` (ningún hallazgo nuevo sobre SQS) |
+
+Pendientes (29), agrupados, con la razón de no cerrarlos en esta iteración:
+
+| Check | Recursos | Motivo |
+|---|---|---|
+| CKV_AWS_26 (SNS sin KMS) | `notifications` | Con la clave administrada `alias/aws/sns` las alarmas de CloudWatch **no pueden publicar** (requiere una CMK con key policy para `cloudwatch.amazonaws.com`). Cerrarlo implica crear y pagar una CMS; diferido. |
+| CKV_AWS_115 (sin reserved concurrency) | 3 Lambdas | Reservar concurrencia exige ≥ 100 de concurrencia no reservada libre en la cuenta; en cuentas nuevas (límite 10) el apply falla. Diferido hasta confirmar la cuota. |
+| CKV_AWS_116 (sin DLQ) | `assessor` | Flujo legacy, invocación síncrona manual o por schedule; sin reintentos asíncronos que justifiquen DLQ. |
+| CKV_AWS_117 (fuera de VPC) | `assessor`, `policy_generator` | `policy_generator` no habla con el FortiGate; `assessor` es legacy. Solo el executor tiene colocación en VPC opcional. |
+| CKV_AWS_50 (X-Ray), CKV_AWS_272 (code signing), CKV_AWS_173 (env vars con CMK) | 3 Lambdas | Hardening con costo/complejidad adicional (CMK, perfil de firma); no hay secretos en env vars (van por Secrets Manager). Diferido. |
+| CKV_AWS_158 (log groups con KMS), CKV_AWS_145 (S3 con KMS), CKV_AWS_149 (secret con CMK) | log groups, buckets, secret | Todo está cifrado con claves administradas por AWS; pasar a CMK es una decisión de costo/gobierno fuera de alcance. |
+| CKV_AWS_18 (access logging), CKV_AWS_144 (replicación cross-region), CKV2_AWS_62 (notificaciones en `reports`) | buckets | `reports` no debe disparar notificaciones (evita el loop generator↔executor, ver storage.tf). Logging/replicación: diferidos. |
+| CKV2_AWS_57 (rotación del secret) | `fortigate_token` | El token lo emite el FortiGate; no hay rotador automático. Rotación manual documentada en SECRETS.md. |
+
+---
+
+## 1. `terraform/` (infra del pipeline de auditoría) — corrida anterior
 
 **Passed: 29 | Failed: 18 | Skipped: 0 | Resources: 17**
 
@@ -35,11 +72,11 @@ PYTHONUTF8=1 python -m checkov.main -d P-Terraform-Forti-AWS --output json
 | CKV_AWS_117 | Lambda no está dentro de una VPC | `aws_lambda_function.assessor` | lambda.tf:65-109 |
 | CKV_AWS_50 | X-Ray tracing no habilitado en Lambda | `aws_lambda_function.assessor` | lambda.tf:65-109 |
 | CKV_AWS_149 | Secret de Secrets Manager (FortiGate token) sin KMS CMK propia | `aws_secretsmanager_secret.fortigate_token` | secrets.tf:23-32 |
-| CKV_AWS_149 | Secret de Secrets Manager (Claude API key) sin KMS CMK propia | `aws_secretsmanager_secret.claude_api_key` | secrets.tf:58-64 |
+| CKV_AWS_149 | ~~Secret de Secrets Manager (Claude API key) sin KMS CMK propia~~ — resuelto: el recurso se eliminó al migrar el modelo a Amazon Bedrock (acceso vía IAM, sin API key) | `aws_secretsmanager_secret.claude_api_key` (eliminado) | — |
 | CKV_AWS_26 | Topic SNS sin cifrado de datos en reposo | `aws_sns_topic.notifications` | storage.tf:109-112 |
 | CKV2_AWS_62 | Bucket S3 sin notificaciones de eventos habilitadas | `aws_s3_bucket.reports` | storage.tf:23-30 |
 | CKV2_AWS_57 | Secret FortiGate sin rotación automática | `aws_secretsmanager_secret.fortigate_token` | secrets.tf:23-32 |
-| CKV2_AWS_57 | Secret Claude sin rotación automática | `aws_secretsmanager_secret.claude_api_key` | secrets.tf:58-64 |
+| CKV2_AWS_57 | ~~Secret Claude sin rotación automática~~ — resuelto: recurso eliminado (modelo vía Bedrock/IAM) | `aws_secretsmanager_secret.claude_api_key` (eliminado) | — |
 | CKV2_AWS_61 | Bucket S3 sin lifecycle configuration | `aws_s3_bucket.reports` | storage.tf:23-30 |
 | CKV_AWS_18 | Bucket S3 sin access logging habilitado | `aws_s3_bucket.reports` | storage.tf:23-30 |
 | CKV_AWS_144 | Bucket S3 sin cross-region replication | `aws_s3_bucket.reports` | storage.tf:23-30 |
@@ -55,7 +92,7 @@ escalación de privilegios ni exposición de credenciales.
 
 ---
 
-## 2. `P-Terraform-Forti-AWS/` (sandbox FortiGate-on-AWS)
+## 2. `fortigate-sandbox-2026-06-07/` (sandbox FortiGate-on-AWS, antes `P-Terraform-Forti-AWS`)
 
 **Passed: 18 | Failed: 9 | Skipped: 0 | Resources: 10**
 
@@ -75,7 +112,7 @@ escalación de privilegios ni exposición de credenciales.
 
 ### Sobre el Security Group abierto a `0.0.0.0/0` en el puerto 443
 
-**Confirmado en el código** (`P-Terraform-Forti-AWS/main.tf`, recurso
+**Confirmado en el código** (`fortigate-sandbox-2026-06-07/main.tf`, recurso
 `aws_security_group.allow_fgt`):
 
 ```hcl
@@ -121,7 +158,7 @@ metadata service) y EBS sin cifrar (CKV_AWS_8).
 | Directorio | Recursos | Passed | Failed |
 |---|---|---|---|
 | `terraform/` | 17 | 29 | 18 |
-| `P-Terraform-Forti-AWS/` | 10 | 18 | 9 |
+| `fortigate-sandbox-2026-06-07/` | 10 | 18 | 9 |
 
 Ningún FAILED en ninguno de los dos directorios es crítico/bloqueante por sí
 solo (no hay `*` en policies IAM, no hay credenciales hardcodeadas, no hay

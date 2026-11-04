@@ -107,6 +107,60 @@ def sanitize(value):
     return value
 
 
+REMEDIATION_DISCLAIMER = (
+    "Las remediaciones son propuestas generadas automáticamente para revisión humana; "
+    "ninguna fue aplicada al dispositivo."
+)
+
+
+def has_remediation(remediation):
+    """Una remediación cuenta solo si trae resumen, pasos o un bloque CLI."""
+    if not isinstance(remediation, dict):
+        return False
+    return bool(
+        remediation.get("summary") or remediation.get("steps") or remediation.get("fortigate_cli")
+    )
+
+
+def summarize(report):
+    """Totales por estado calculados desde el reporte saneado almacenado."""
+    findings = report.get("findings") if isinstance(report, dict) else None
+    findings = [f for f in (findings or []) if isinstance(f, dict)]
+    counts = {status: 0 for status in ("pass", "fail", "indeterminate", "not_applicable")}
+    for finding in findings:
+        status = finding.get("status")
+        if status in counts:
+            counts[status] += 1
+    return {
+        "total": len(findings),
+        **counts,
+        "with_remediation": sum(1 for f in findings if has_remediation(f.get("remediation"))),
+    }
+
+
+def render_remediation(finding):
+    """Bloque Markdown de la propuesta; vacío cuando no corresponde mostrarla."""
+    remediation = finding.get("remediation")
+    status = finding.get("status")
+    if status != "fail" and not (status == "indeterminate" and has_remediation(remediation)):
+        return []
+    lines = ["", "### Remediación propuesta"]
+    if not has_remediation(remediation):
+        lines.append("Sin propuesta de remediación disponible para este control.")
+        return lines
+    if remediation.get("summary"):
+        lines.append(str(remediation["summary"]))
+    steps = remediation.get("steps") or []
+    if isinstance(steps, list) and steps:
+        lines.append("")
+        lines.extend(f"{i}. {step}" for i, step in enumerate(steps, 1))
+    cli = remediation.get("fortigate_cli")
+    if cli:
+        lines.extend(["", "CLI FortiGate (propuesta, no ejecutada):", "```"])
+        lines.extend([str(cli).rstrip(), "```"])
+    return lines
+
+
 class Service:
     def __init__(self, database, clock=time.time):
         self.database, self.clock = str(database), clock
@@ -395,7 +449,9 @@ class Service:
             require(row is not None, "not_found", 404)
             if results:
                 require(row["result"] is not None, "results_pending", 409)
-                return json.loads(row["result"])
+                result = json.loads(row["result"])
+                # Calculado al leer: el resultado almacenado sigue siendo inmutable.
+                return {**result, "summary": summarize(result.get("report"))}
             return json.loads(row["data"])
 
     def reaudit(self, payload, key):
@@ -505,6 +561,7 @@ class Service:
             f"Estado: {report['status']}",
             "",
             "Exportación de desarrollo desde el reporte saneado.",
+            REMEDIATION_DISCLAIMER,
         ]
         for finding in report["findings"]:
             lines.extend(
@@ -514,4 +571,5 @@ class Service:
                     str(finding.get("evidence", "")),
                 ]
             )
+            lines.extend(render_remediation(finding))
         return "\n".join(lines).encode(), "text/markdown; charset=utf-8"

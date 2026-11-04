@@ -5,8 +5,11 @@
 # Incluirlos aumentaría el tamaño del ZIP innecesariamente (~40MB extra)
 # y podría causar conflictos de versión con el runtime.
 #
+# El modelo (Claude) se invoca vía Amazon Bedrock con el boto3 del runtime
+# (bedrock_client.py, API Converse) — no hay SDK de Anthropic ni API key.
+#
 # Todo lo demás que usa este proyecto es stdlib de Python 3.x:
-#   - urllib     → llamadas HTTP al FortiGate y a Claude API
+#   - urllib     → llamadas HTTP al FortiGate
 #   - json       → serialización/deserialización
 #   - logging    → logs a CloudWatch
 #   - re         → sanitización de strings para S3 keys

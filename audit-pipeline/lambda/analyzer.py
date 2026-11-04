@@ -1,29 +1,32 @@
 """
-Analizador NIST CSF usando Claude API.
+Analizador NIST CSF usando Claude a través de Amazon Bedrock (Converse).
 
 Toma la data cruda del FortiGate, construye un prompt estructurado
 y devuelve un análisis de seguridad mapeado a las 5 funciones del NIST CSF.
+
+Flujo legacy (`handler.py`), conservado detrás del flag
+`enable_legacy_nist_schedule`. El transporte vive en `bedrock_client`: no
+hay API key ni endpoint HTTP acá — la autorización es IAM del rol Lambda.
 """
 
 import json
 import logging
-import urllib.error
-import urllib.request
+
+import bedrock_client
 
 logger = logging.getLogger(__name__)
 
-# Modelo a usar. claude-3-5-sonnet es el balance óptimo entre
-# capacidad de análisis y costo por token para este workload.
-CLAUDE_MODEL = "claude-sonnet-4-6"
-
-# La API de Claude tiene un límite de tokens de entrada.
+# La API tiene un límite de tokens de entrada.
 # Truncamos la data del FortiGate para no excederlo — 80k chars
 # es suficiente para cubrir configuraciones de FortiGate medianos.
 MAX_DATA_CHARS = 80_000
 
-# Prompt del sistema: le dice a Claude qué rol cumple y en qué formato
-# debe responder. Separarlo del prompt de usuario permite cachearlo
-# en la API de Claude (Prompt Caching) — ahorra tokens en cada ejecución.
+# Tope de tokens de salida (siempre explícito en la request a Bedrock).
+MAX_OUTPUT_TOKENS = 4096
+
+# Prompt del sistema: le dice al modelo qué rol cumple y en qué formato
+# debe responder. Separarlo del prompt de usuario permite cachearlo en
+# Bedrock (cachePoint) — ahorra tokens de entrada en cada ejecución.
 SYSTEM_PROMPT = """Sos un experto en ciberseguridad especializado en evaluación de posturas de seguridad
 bajo el framework NIST Cybersecurity Framework (CSF) 2.0.
 
@@ -89,72 +92,46 @@ CONFIGURACIÓN DEL DISPOSITIVO:
 """
 
 
-def analyze(fortigate_data: dict, device_info: dict, claude_api_key: str) -> dict:
+def analyze(fortigate_data: dict, device_info: dict) -> dict:
     """
-    Llama a Claude API y devuelve el análisis NIST CSF como dict.
+    Llama al modelo vía Bedrock y devuelve el análisis NIST CSF como dict.
 
     Args:
         fortigate_data: dict con la data de todos los endpoints del FortiGate.
         device_info:    dict con metadatos del dispositivo (host, region, etc.).
-        claude_api_key: API key de Anthropic, leída desde Secrets Manager.
 
     Returns:
         dict con el análisis estructurado según el esquema NIST CSF definido
-        en SYSTEM_PROMPT. En caso de error devuelve un dict con 'error'.
+        en SYSTEM_PROMPT. En caso de error devuelve un dict con 'error' —
+        esta función nunca levanta excepciones.
     """
-    logger.info("Iniciando análisis Claude — modelo: %s", CLAUDE_MODEL)
+    model_id = bedrock_client.resolve_model_id()
+    logger.info("Iniciando análisis — modelo Bedrock: %s", model_id)
 
     user_prompt = _build_user_prompt(fortigate_data, device_info)
-
-    payload = {
-        "model": CLAUDE_MODEL,
-        "max_tokens": 4096,
-        # system como lista para habilitar Prompt Caching en futuras versiones.
-        # cache_control type "ephemeral" cachea el system prompt por 5 minutos —
-        # en ejecuciones frecuentes reduce el costo de tokens de entrada ~90%.
-        "system": [
-            {
-                "type": "text",
-                "text": SYSTEM_PROMPT,
-                "cache_control": {"type": "ephemeral"},
-            }
-        ],
-        "messages": [{"role": "user", "content": user_prompt}],
-    }
-
-    body = json.dumps(payload).encode("utf-8")
-
-    req = urllib.request.Request(
-        "https://api.anthropic.com/v1/messages",
-        data=body,
-        headers={
-            "x-api-key": claude_api_key,
-            "anthropic-version": "2023-06-01",
-            # Header requerido para activar Prompt Caching
-            "anthropic-beta": "prompt-caching-2024-07-31",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
+    raw_text = ""
 
     try:
-        with urllib.request.urlopen(req, timeout=120) as resp:
-            response_body = json.loads(resp.read().decode("utf-8"))
-
-        # La respuesta de Claude viene en response.content[0].text
-        raw_text = response_body["content"][0]["text"].strip()
+        result = bedrock_client.converse(
+            SYSTEM_PROMPT,
+            user_prompt,
+            max_tokens=MAX_OUTPUT_TOKENS,
+            model_id=model_id,
+            stage="nist",
+        )
+        raw_text = result.text
 
         # Logueamos el uso de tokens para monitorear costos en CloudWatch
-        usage = response_body.get("usage", {})
         logger.info(
-            "Tokens — input: %s (cache_read: %s, cache_create: %s) | output: %s",
-            usage.get("input_tokens"),
-            usage.get("cache_read_input_tokens", 0),
-            usage.get("cache_creation_input_tokens", 0),
-            usage.get("output_tokens"),
+            "Tokens — input: %s (cache_read: %s, cache_write: %s) | output: %s | %.0f ms",
+            result.input_tokens,
+            result.cache_read_tokens,
+            result.cache_write_tokens,
+            result.output_tokens,
+            result.latency_ms,
         )
 
-        # Parseamos el JSON que Claude devolvió
+        # Parseamos el JSON que el modelo devolvió
         analysis = json.loads(raw_text)
         logger.info(
             "Análisis completo — score general: %s/5.0",
@@ -162,15 +139,14 @@ def analyze(fortigate_data: dict, device_info: dict, claude_api_key: str) -> dic
         )
         return analysis
 
-    except urllib.error.HTTPError as e:
-        error_body = e.read().decode("utf-8") if e.fp else ""
-        logger.error("Error HTTP %s en Claude API: %s", e.code, error_body)
-        return {"error": f"HTTP {e.code}", "detail": error_body}
+    except bedrock_client.BedrockCallError as e:
+        logger.error("Error llamando a Bedrock: %s", e)
+        return {"error": "bedrock_error", "detail": str(e)}
 
     except json.JSONDecodeError as e:
-        # Claude respondió algo que no es JSON válido — raro pero posible
-        logger.error("Claude no devolvió JSON válido: %s", str(e))
-        return {"error": "json_parse_error", "raw": raw_text if "raw_text" in dir() else ""}
+        # El modelo respondió algo que no es JSON válido — raro pero posible
+        logger.error("El modelo no devolvió JSON válido: %s", str(e))
+        return {"error": "json_parse_error", "raw": raw_text}
 
     except Exception as e:
         logger.error("Error inesperado en análisis: %s", str(e))

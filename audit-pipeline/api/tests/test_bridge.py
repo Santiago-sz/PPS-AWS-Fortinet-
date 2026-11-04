@@ -5,6 +5,7 @@ import pytest
 from botocore.exceptions import EndpointConnectionError
 from moto import mock_aws
 from pps_api.aws_bridge import Bridge
+from pps_api.service import Error
 from test_api import metadata, pair, upload
 
 
@@ -73,6 +74,72 @@ def test_ambiguous_put_not_retried(bridge, document, monkeypatch):
         bridge.dispatch()
     assert bridge.dispatch() == 0
     assert len(calls) == 1
+
+
+class FakeLambda:
+    def __init__(self):
+        self.calls = []
+
+    def invoke(self, **kwargs):
+        self.calls.append(kwargs)
+        return {"StatusCode": 202}
+
+
+def put_json(bridge, key, value):
+    bridge.s3.put_object(Bucket=bridge.reports_bucket, Key=key, Body=json.dumps(value).encode())
+
+
+def test_list_pending_and_approve_invoke_executor_once(bridge, document):
+    manifest, report = pair(document, run_id="pending1")
+    manifest["script_key"] = "artifacts/pending1/script.py"
+    manifest["script_sha256"] = "ab" * 32
+    put_json(bridge, "artifacts/pending1/manifest.json", manifest)
+    done_manifest, done_report = pair(document, run_id="done2")
+    done_manifest.update(script_key="artifacts/done2/script.py", script_sha256="cd" * 32)
+    put_json(bridge, "artifacts/done2/manifest.json", done_manifest)
+    put_json(bridge, "reports/done2/report.json", done_report)
+    assert bridge.list_pending() == ["pending1"]
+    executor = FakeLambda()
+    assert bridge.approve("pending1", "pps-executor", executor) == 202
+    assert executor.calls == [
+        {
+            "FunctionName": "pps-executor",
+            "InvocationType": "Event",
+            "Payload": json.dumps(
+                {
+                    "run_id": "pending1",
+                    "manifest_key": "artifacts/pending1/manifest.json",
+                    "script_key": "artifacts/pending1/script.py",
+                    "script_sha256": "ab" * 32,
+                }
+            ).encode(),
+        }
+    ]
+    with pytest.raises(Error) as reported:
+        bridge.approve("done2", "pps-executor", executor)
+    assert reported.value.code == "run_already_reported"
+    with pytest.raises(Error) as missing:
+        bridge.approve("absent3", "pps-executor", executor)
+    assert missing.value.status == 404
+    with pytest.raises(Error, match="invalid pipeline run id"):
+        bridge.approve("../etc", "pps-executor", executor)
+    assert len(executor.calls) == 1
+
+
+def test_approve_rejects_manifest_without_signed_script(bridge, document):
+    manifest, _ = pair(document, run_id="unsigned")
+    manifest["script_sha256"] = "not-a-hash"
+    put_json(bridge, "artifacts/unsigned/manifest.json", manifest)
+    executor = FakeLambda()
+    with pytest.raises(Error) as error:
+        bridge.approve("unsigned", "pps-executor", executor)
+    assert error.value.status == 422
+    manifest["script_sha256"] = "cd" * 32
+    manifest["script_key"] = "artifacts/other/script.py"
+    put_json(bridge, "artifacts/unsigned/manifest.json", manifest)
+    with pytest.raises(Error, match="manifest without script key"):
+        bridge.approve("unsigned", "pps-executor", executor)
+    assert executor.calls == []
 
 
 def test_duplicate_pipeline_runs_require_reconciliation(bridge, document):

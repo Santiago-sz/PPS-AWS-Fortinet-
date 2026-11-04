@@ -2,7 +2,14 @@ import json
 
 import pytest
 
-from pps_desktop.domain import normalize, inspect_policy, load_pair, redact
+from pps_desktop.domain import (
+    RUN_STATUSES,
+    normalize,
+    normalize_remediation,
+    inspect_policy,
+    load_pair,
+    redact,
+)
 
 
 def pair(status="completed"):
@@ -112,6 +119,42 @@ def test_policy_hash_and_size(tmp_path):
     assert doc["size"] == path.stat().st_size
     with pytest.raises(ValueError, match="MB"):
         inspect_policy(path, 4)
+
+
+def test_remediation_normalized_redacted_and_counted():
+    manifest, report = pair()
+    proposal = {
+        "summary": "Cerrar el acceso. token=abc123",
+        "steps": ["Configurar trusthost.", "password=hunter2 en el paso"],
+        "fortigate_cli": "config system admin\nend",
+    }
+    manifest["checks"][2]["remediation"] = proposal  # fail, remediation from the check
+    manifest["checks"][3]["remediation"] = {"summary": None, "steps": [], "fortigate_cli": None}
+    report["findings"][3]["remediation"] = {"summary": "Revisar manualmente.", "steps": []}
+    report["findings"][0]["remediation"] = proposal  # pass: retained but not counted
+    result = normalize(manifest, report)
+    rows = {r["check_id"]: r for r in result["rows"]}
+    failed = rows["3"]["remediation"]
+    assert failed["fortigate_cli"] == "config system admin\nend"
+    assert "abc123" not in failed["summary"] and "hunter2" not in failed["steps"][1]
+    assert failed["steps"][0] == "Configurar trusthost."
+    assert rows["4"]["remediation"] == {
+        "summary": "Revisar manualmente.",
+        "steps": [],
+        "fortigate_cli": None,
+    }
+    assert rows["2"]["remediation"] is None and rows["6"]["remediation"] is None
+    assert rows["1"]["remediation"] is not None
+    assert result["remediation_count"] == 2
+    assert normalize_remediation({"summary": "", "steps": [], "fortigate_cli": None}) is None
+    assert normalize_remediation("texto") is None
+
+
+def test_awaiting_approval_has_label_and_is_not_terminal():
+    from pps_desktop.domain import TERMINAL
+
+    assert RUN_STATUSES["awaiting_approval"] == "Pendiente de aprobación"
+    assert "awaiting_approval" not in TERMINAL
 
 
 def test_redaction():
