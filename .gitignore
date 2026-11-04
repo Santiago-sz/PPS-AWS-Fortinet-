@@ -41,3 +41,6 @@ desktop/*.egg-info/
 # Terraform plan output (never commit a plan: it can embed variable values)
 tfplan
 *.tfplan
+
+# draw.io autosave temp files
+.$*.dtmp
