@@ -1,0 +1,59 @@
+name: Verify
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: ${{ matrix.profile }} / ${{ matrix.os }} / Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {profile: harness, os: ubuntu-latest, python: '3.12'}
+          - {profile: pipeline, os: ubuntu-latest, python: '3.12'}
+          - {profile: api, os: ubuntu-latest, python: '3.12'}
+          - {profile: desktop, os: windows-latest, python: '3.11'}
+          - {profile: iac, os: ubuntu-latest, python: '3.12'}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install harness tools
+        run: python -m pip install -r scripts/requirements-harness.txt
+      - name: Install test tools
+        if: matrix.profile == 'pipeline' || matrix.profile == 'api' || matrix.profile == 'desktop'
+        run: python -m pip install -r scripts/requirements-tests.txt
+      - name: Install pipeline dependencies
+        if: matrix.profile == 'pipeline'
+        run: python -m pip install -r audit-pipeline/lambda/requirements.txt
+      - name: Install API dependencies
+        if: matrix.profile == 'api'
+        run: python -m pip install -e ./audit-pipeline/api -e ./desktop
+      - name: Install desktop dependencies
+        if: matrix.profile == 'desktop'
+        run: python -m pip install -e ./desktop
+      - uses: hashicorp/setup-terraform@v3
+        if: matrix.profile == 'iac'
+        with:
+          terraform_version: '1.9.8'
+          terraform_wrapper: false
+      - name: Verify
+        run: python scripts/verify.py ${{ matrix.profile }}
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verification-${{ matrix.profile }}-${{ matrix.os }}
+          path: .harness/reports/
+          if-no-files-found: warn
+          retention-days: 14

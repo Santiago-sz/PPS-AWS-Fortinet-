@@ -1,0 +1,5 @@
+# Compartido por CI y el bootstrap local; no es una dependencia de runtime.
+pytest==8.3.5
+pytest-mock==3.14.0
+moto[s3,secretsmanager]==5.1.4
+boto3==1.43.103

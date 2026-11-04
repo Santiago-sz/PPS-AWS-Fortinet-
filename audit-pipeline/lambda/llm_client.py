@@ -41,8 +41,17 @@ import urllib.error
 import urllib.request
 
 import script_validator
+from audit_agents import load_agents
 
 logger = logging.getLogger(__name__)
+
+AGENTS = load_agents()
+POLICY_INTERPRETER = AGENTS["policy_interpreter"]
+AUDIT_SCRIPT_GENERATOR = AGENTS["audit_script_generator"]
+
+# Alias conservados para consumidores del cliente anterior.
+MAP_SYSTEM_PROMPT = POLICY_INTERPRETER.system_prompt
+REDUCE_SYSTEM_PROMPT = AUDIT_SCRIPT_GENERATOR.system_prompt
 
 CLAUDE_MODEL = "claude-sonnet-4-6"
 
@@ -50,7 +59,7 @@ CLAUDE_MODEL = "claude-sonnet-4-6"
 # grupos de chunks de una politica. Si agrupar por presupuesto de prompt
 # arroja mas grupos que esto, se falla explicitamente -- nunca se combinan
 # grupos a la fuerza (eso equivaldria a truncar contenido).
-MAX_MAP_CALLS = 12
+MAX_MAP_CALLS = POLICY_INTERPRETER.default_call_budget
 
 # Presupuesto de caracteres por grupo de map (una llamada a Claude por
 # grupo). Estimado inicial -- calibrar contra una normativa real en el
@@ -58,7 +67,7 @@ MAX_MAP_CALLS = 12
 MAP_GROUP_MAX_CHARS = 12_000
 
 # Reintentos acotados de la fase reduce ante script invalido.
-MAX_GENERATION_ATTEMPTS = 3
+MAX_GENERATION_ATTEMPTS = AUDIT_SCRIPT_GENERATOR.default_call_budget
 
 
 class ClaudeCallError(Exception):
@@ -82,79 +91,6 @@ class MapCallBudgetExceededError(Exception):
     explicito, nunca combinar grupos a la fuerza para entrar en el
     presupuesto (eso seria una forma de truncar contenido en silencio).
     """
-
-
-MAP_SYSTEM_PROMPT = """Sos un experto en ciberseguridad y cumplimiento normativo.
-
-Vas a recibir uno o mas fragmentos ("chunks") de una politica/normativa de
-seguridad, junto con el catalogo de endpoints de FortiGate disponibles para
-verificacion automatica.
-
-Tu tarea es identificar, dentro de ESTE fragmento unicamente, los controles
-que:
-  (a) esten explicitamente exigidos por el texto, y
-  (b) sean verificables consultando alguno de los endpoints listados.
-
-NO inventes controles que el texto no exige. NO generes controles
-genericos de "buenas practicas" que no esten citados textualmente. Si este
-fragmento no contiene ningun control verificable con los endpoints dados,
-devolve una lista vacia -- eso es una respuesta valida y esperada, NO un
-error.
-
-Respondé SOLO con JSON, sin texto antes ni despues, sin markdown fences,
-con exactamente este esquema:
-{
-  "checks": [
-    {
-      "title": "string breve describiendo el control",
-      "clause_ref": {
-        "chunk_id": "el chunk_id exacto de donde sale este control",
-        "heading_path": ["lista de headings, tal cual se te dio"],
-        "page": numero de pagina o null,
-        "quote": "cita textual EXACTA del fragmento que exige este control"
-      },
-      "endpoints": ["lista de endpoint labels del catalogo dado, los que hagan falta consultar"],
-      "severity": "low" | "medium" | "high" | "critical",
-      "intent": "string breve: que se espera verificar y por que"
-    }
-  ]
-}
-"""
-
-REDUCE_SYSTEM_PROMPT = """Sos un generador de scripts Python de auditoria de seguridad.
-
-Vas a recibir una lista de controles (PolicyCheck) y el catalogo de
-endpoints de FortiGate disponibles. Tu tarea es escribir UN script Python
-que audite CADA control de la lista contra los datos reales del FortiGate.
-
-El script se ejecuta en un sandbox extremadamente restringido. Reglas
-ABSOLUTAS -- violar cualquiera de estas hace que el script sea rechazado:
-
-  - Namespace disponible: SOLO `fgt`, `report`, y estos nombres seguros:
-    len str int float bool list dict set tuple sorted any all min max sum
-    enumerate zip range isinstance abs round
-  - `fgt.get(endpoint_key)` -- endpoint_key DEBE ser un string literal que
-    exista en el catalogo de endpoints dado. Solo lectura, nunca escritura.
-  - `fgt.endpoints()` -- lista el catalogo disponible.
-  - `report.finding(check_id, status, evidence, endpoints_used=None)` --
-    status DEBE ser uno de: "pass", "fail", "not_applicable", "indeterminate".
-    check_id DEBE ser un string literal.
-  - `report.note(check_id, message)` -- anotacion suplementaria, no
-    reemplaza a `finding`.
-  - DEBES llamar `report.finding(...)` EXACTAMENTE UNA VEZ por cada
-    check_id de la lista dada -- cobertura completa es obligatoria.
-  - PROHIBIDO (rechazo inmediato): import, class, lambda, while, try,
-    raise, with, global, nonlocal, delete, yield, await, async, cualquier
-    identificador que contenga "__", y los nombres getattr, setattr,
-    delattr, eval, exec, compile, open, input, globals, locals, vars, dir,
-    type, super, __import__, help, breakpoint, memoryview.
-  - PERMITIDO: def, return, asignaciones, if/elif/else, for, comprehensions,
-    operadores aritmeticos/booleanos/de comparacion, f-strings.
-  - Maximo 4000 nodos AST, anidamiento maximo 3 niveles (def/if/for).
-
-Respondé SOLO con el codigo Python del script. Sin explicaciones antes ni
-despues. Sin markdown fences (nada de ```python ni ```).
-"""
 
 
 def _call_claude(system_prompt: str, user_prompt: str, claude_api_key: str, max_tokens: int) -> str:
@@ -266,14 +202,18 @@ def _map_chunk_group(
     group: list[dict], endpoint_catalog: list[str], claude_api_key: str
 ) -> list[dict]:
     user_prompt = _build_map_user_prompt(group, endpoint_catalog)
-    raw_text = _call_claude(MAP_SYSTEM_PROMPT, user_prompt, claude_api_key, max_tokens=4096)
+    raw_text = POLICY_INTERPRETER.run(user_prompt, claude_api_key, transport=_call_claude)
 
     try:
         parsed = json.loads(raw_text)
     except json.JSONDecodeError as e:
         raise MapResponseParseError(f"Claude map response is not valid JSON: {e}") from e
 
-    return parsed.get("checks") or []
+    if not isinstance(parsed, dict) or not isinstance(parsed.get("checks"), list):
+        raise MapResponseParseError("Agent response must be an object with a checks array")
+    if any(not isinstance(check, dict) for check in parsed["checks"]):
+        raise MapResponseParseError("Every policy check must be an object")
+    return parsed["checks"]
 
 
 def map_chunks_to_checks(
@@ -395,7 +335,7 @@ def reduce_checks_to_script(
 ) -> str:
     """Fase reduce: PolicyCheck[] -> script.py (una llamada a Claude)."""
     user_prompt = _build_reduce_user_prompt(checks, endpoint_catalog, retry_feedback)
-    raw_text = _call_claude(REDUCE_SYSTEM_PROMPT, user_prompt, claude_api_key, max_tokens=4096)
+    raw_text = AUDIT_SCRIPT_GENERATOR.run(user_prompt, claude_api_key, transport=_call_claude)
     return _strip_code_fences(raw_text)
 
 

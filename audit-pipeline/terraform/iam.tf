@@ -76,9 +76,9 @@ resource "aws_iam_role_policy" "lambda_permissions" {
       # El /* al final del ARN significa "cualquier objeto dentro del bucket".
       # ------------------------------------------------------------------
       {
-        Sid    = "WriteReports"
-        Effect = "Allow"
-        Action = "s3:PutObject"
+        Sid      = "WriteReports"
+        Effect   = "Allow"
+        Action   = "s3:PutObject"
         Resource = "${aws_s3_bucket.reports.arn}/*"
       },
 

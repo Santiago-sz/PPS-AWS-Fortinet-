@@ -1,5 +1,10 @@
 # Testing y calidad de código
 
+> Entrada actual para el repositorio completo: [docs/HARNESS.md](../docs/HARNESS.md).
+> El comando `python scripts/verify.py` desde la raiz consolida los perfiles y
+> registra evidencia. Este documento conserva instrucciones y resultados historicos;
+> la linea base actual esta en [docs/BASELINE.md](../docs/BASELINE.md).
+
 Guía rápida para correr tests, linter y análisis estático de IaC en este
 proyecto (Lambda Python + Terraform).
 

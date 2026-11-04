@@ -18,6 +18,9 @@ desktop.ini
 .venv-gui/
 .pps-api/
 .env
+.harness/
+.venv-harness/
+audit-pipeline/api/*.egg-info/
 .env.*
 !.env.example
 **/__pycache__/

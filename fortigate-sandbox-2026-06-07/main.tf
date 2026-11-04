@@ -2,7 +2,7 @@
 resource "aws_vpc" "sandbox_vpc" {
   cidr_block           = "10.0.0.0/16"
   enable_dns_hostnames = true
-  tags = { Name = "UNNE-Sandbox-VPC" }
+  tags                 = { Name = "UNNE-Sandbox-VPC" }
 }
 
 resource "aws_internet_gateway" "igw" {
@@ -37,7 +37,7 @@ resource "aws_security_group" "allow_fgt" {
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"] 
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   egress {
@@ -54,7 +54,7 @@ data "aws_ami" "fortigate_latest" {
   owners      = ["aws-marketplace"]
 
   filter {
-    name   = "name"
+    name = "name"
     # Busca la versión VM64 On-Demand en la región configurada
     values = ["FortiGate-VM64-AWSONDEMAND*"]
   }
@@ -63,7 +63,7 @@ data "aws_ami" "fortigate_latest" {
 # 4. Instancia de FortiGate
 resource "aws_instance" "fortigate" {
   # Usa la AMI encontrada automáticamente
-  ami                    = data.aws_ami.fortigate_latest.id 
+  ami                    = data.aws_ami.fortigate_latest.id
   instance_type          = "c5.large"
   subnet_id              = aws_subnet.public_subnet.id
   vpc_security_group_ids = [aws_security_group.allow_fgt.id]
