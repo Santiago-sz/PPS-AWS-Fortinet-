@@ -1,0 +1,38 @@
+{
+  "policy": "politica-acceso-administrativo",
+  "min_checks": 3,
+  "max_checks": 8,
+  "_comment": "Cada keyword es un string o una lista de sinonimos (any-of). Un check producido matchea un check esperado si contiene al menos un sinonimo de CADA grupo en title+intent+clause_ref.quote (sin tildes, minusculas). endpoints_any usa labels de fortigate_client.ENDPOINTS.",
+  "checks": [
+    {
+      "id": "trusted-hosts",
+      "clause": "2.1-2.2",
+      "keywords": [["trusted host", "hosts de confianza", "trusthost"]],
+      "endpoints_any": ["admins"]
+    },
+    {
+      "id": "lockout-threshold",
+      "clause": "3.1",
+      "keywords": [["bloqueo", "lockout"], ["intento", "threshold", "fallid"]],
+      "endpoints_any": ["system_global"]
+    },
+    {
+      "id": "lockout-duration",
+      "clause": "3.2",
+      "keywords": [["bloqueo", "lockout"], ["duraci", "duration", "300"]],
+      "endpoints_any": ["system_global"]
+    },
+    {
+      "id": "admin-idle-timeout",
+      "clause": "4.1-4.2",
+      "keywords": [["inactividad", "timeout", "idle"]],
+      "endpoints_any": ["system_global"]
+    },
+    {
+      "id": "https-only-management",
+      "clause": "5.1-5.2",
+      "keywords": [["https"]],
+      "endpoints_any": ["system_global", "interfaces"]
+    }
+  ]
+}

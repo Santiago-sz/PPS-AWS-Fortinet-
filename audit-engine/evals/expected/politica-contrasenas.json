@@ -1,0 +1,56 @@
+{
+  "policy": "politica-contrasenas",
+  "min_checks": 5,
+  "max_checks": 10,
+  "_comment": "Con el catalogo ampliado (system/password-policy -> password_policy) las clausulas 2.1-2.3 (longitud, complejidad, historial) ya son verificables. 3.1-3.2 se verifican sobre system/admin (admins) y, para la expiracion global, tambien sobre password_policy. max_checks acota que el modelo no fragmente clausulas en controles redundantes.",
+  "checks": [
+    {
+      "id": "password-min-length",
+      "clause": "2.1",
+      "keywords": [["longitud", "minimum-length", "caracteres"]],
+      "endpoints_any": ["password_policy"]
+    },
+    {
+      "id": "password-complexity",
+      "clause": "2.2",
+      "keywords": [["complejidad", "categorias", "mayusculas", "min-upper-case"]],
+      "endpoints_any": ["password_policy"]
+    },
+    {
+      "id": "password-reuse-history",
+      "clause": "2.3",
+      "keywords": [["reutiliz", "historial", "reuse-password"]],
+      "endpoints_any": ["password_policy"]
+    },
+    {
+      "id": "admin-password-expiry",
+      "clause": "3.1",
+      "keywords": [["caducidad", "expir", "vencimiento"]],
+      "endpoints_any": ["admins", "password_policy"]
+    },
+    {
+      "id": "admin-force-password-change",
+      "clause": "3.2",
+      "keywords": [["primer inicio", "force-password-change", "cambio de contrasena"]],
+      "endpoints_any": ["admins"]
+    },
+    {
+      "id": "local-user-two-factor",
+      "clause": "4.1-4.2",
+      "keywords": [["segundo factor", "doble factor", "two-factor", "2fa", "fortitoken"]],
+      "endpoints_any": ["local_users"]
+    },
+    {
+      "id": "disabled-local-users",
+      "clause": "5.1-5.2",
+      "keywords": [["deshabilitad", "disabled", "inactiv"]],
+      "endpoints_any": ["local_users"]
+    },
+    {
+      "id": "sslvpn-idle-timeout",
+      "clause": "6.1",
+      "keywords": [["ssl-vpn", "ssl vpn", "sslvpn"], ["inactiv", "idle"]],
+      "endpoints_any": ["vpn_ssl"]
+    }
+  ]
+}

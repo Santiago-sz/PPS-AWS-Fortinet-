@@ -1,0 +1,304 @@
+{
+  "policy": "politica-contrasenas",
+  "recorded_at": "hand-written",
+  "model_id": "canned",
+  "_comment": "1 map + 1 reduce valido al primer intento. Con el catalogo ampliado el map ya produce checks para las clausulas 2.1-2.3 (longitud/complejidad/historial) sobre system/password-policy (password_policy) y para 3.2 (force-password-change) sobre system/admin (admins).",
+  "responses": [
+    {
+      "stage": "map",
+      "input_tokens": 2810,
+      "output_tokens": 1640,
+      "cache_write_tokens": 1020,
+      "latency_ms": 11400,
+      "json": {
+        "checks": [
+          {
+            "title": "Longitud mínima de contraseña de 12 caracteres en la política global",
+            "clause_ref": {
+              "chunk_id": "chunk-0001",
+              "heading_path": ["Política de contraseñas y cuentas de usuario"],
+              "page": null,
+              "quote": "Las contraseñas deben tener una longitud mínima de doce (12) caracteres."
+            },
+            "endpoints": ["password_policy"],
+            "severity": "high",
+            "intent": "Verificar que system/password-policy esté habilitada y minimum-length sea mayor o igual a 12",
+            "remediation": {
+              "summary": "Habilitar la política de contraseñas y fijar la longitud mínima en 12.",
+              "steps": ["System > Settings > Password Policy > Enable", "Minimum length = 12"],
+              "fortigate_cli": "config system password-policy\n    set status enable\n    set minimum-length 12\nend"
+            }
+          },
+          {
+            "title": "Complejidad de contraseña: al menos tres categorías de caracteres",
+            "clause_ref": {
+              "chunk_id": "chunk-0001",
+              "heading_path": ["Política de contraseñas y cuentas de usuario"],
+              "page": null,
+              "quote": "Las contraseñas deben combinar al menos tres de las siguientes cuatro categorías: letras mayúsculas, letras minúsculas, dígitos y símbolos."
+            },
+            "endpoints": ["password_policy"],
+            "severity": "medium",
+            "intent": "Verificar que al menos tres de min-lower-case-letter, min-upper-case-letter, min-number y min-non-alphanumeric sean mayores o iguales a 1",
+            "remediation": {
+              "summary": "Exigir al menos un carácter de tres categorías distintas en la política de contraseñas.",
+              "steps": ["System > Settings > Password Policy > Character requirements"],
+              "fortigate_cli": "config system password-policy\n    set min-lower-case-letter 1\n    set min-upper-case-letter 1\n    set min-number 1\n    set min-non-alphanumeric 1\nend"
+            }
+          },
+          {
+            "title": "Prohibición de reutilizar contraseñas anteriores",
+            "clause_ref": {
+              "chunk_id": "chunk-0001",
+              "heading_path": ["Política de contraseñas y cuentas de usuario"],
+              "page": null,
+              "quote": "No se permite reutilizar ninguna de las últimas cuatro (4) contraseñas."
+            },
+            "endpoints": ["password_policy"],
+            "severity": "medium",
+            "intent": "Verificar que reuse-password esté en disable en system/password-policy (historial de contraseñas)",
+            "remediation": {
+              "summary": "Deshabilitar la reutilización de contraseñas en la política global.",
+              "steps": ["System > Settings > Password Policy > desmarcar Allow password reuse"],
+              "fortigate_cli": "config system password-policy\n    set reuse-password disable\nend"
+            }
+          },
+          {
+            "title": "Caducidad de contraseña configurada en cuentas de administrador",
+            "clause_ref": {
+              "chunk_id": "chunk-0001",
+              "heading_path": ["Política de contraseñas y cuentas de usuario"],
+              "page": null,
+              "quote": "Las contraseñas de las cuentas de administrador deben tener una fecha de caducidad configurada y renovarse al menos cada noventa (90) días."
+            },
+            "endpoints": ["admins", "password_policy"],
+            "severity": "medium",
+            "intent": "Verificar que expire-status/expire-day de la política global exija renovación cada 90 días o, en su defecto, que cada administrador tenga password-expire distinto de 0000-00-00 00:00:00",
+            "remediation": {
+              "summary": "Habilitar la expiración global a 90 días o definir una fecha de expiración por administrador.",
+              "steps": ["System > Settings > Password Policy > Password expiration = 90", "System > Administrators > editar cuenta > Password expiration"],
+              "fortigate_cli": "config system password-policy\n    set expire-status enable\n    set expire-day 90\nend"
+            }
+          },
+          {
+            "title": "Cambio de contraseña forzado en el primer inicio de sesión de administradores",
+            "clause_ref": {
+              "chunk_id": "chunk-0001",
+              "heading_path": ["Política de contraseñas y cuentas de usuario"],
+              "page": null,
+              "quote": "Las cuentas de administrador creadas con contraseña inicial deben forzar el cambio de contraseña en el primer inicio de sesión."
+            },
+            "endpoints": ["admins"],
+            "severity": "low",
+            "intent": "Listar administradores con force-password-change distinto de enable para revisión",
+            "remediation": {
+              "summary": "Activar force-password-change en las cuentas de administrador recién creadas.",
+              "steps": ["System > Administrators > editar cuenta > Force password change on next login"],
+              "fortigate_cli": "config system admin\n    edit \"admin\"\n        set force-password-change enable\n    next\nend"
+            }
+          },
+          {
+            "title": "Segundo factor de autenticación en usuarios locales de acceso remoto",
+            "clause_ref": {
+              "chunk_id": "chunk-0001",
+              "heading_path": ["Política de contraseñas y cuentas de usuario"],
+              "page": null,
+              "quote": "Todo usuario local habilitado para acceso remoto debe tener activado un segundo factor de autenticación (token FortiToken, correo electrónico o SMS)."
+            },
+            "endpoints": ["local_users"],
+            "severity": "high",
+            "intent": "Verificar que ningún usuario local tenga two-factor=disable",
+            "remediation": {
+              "summary": "Habilitar two-factor (FortiToken, email o SMS) en cada usuario local.",
+              "steps": ["User & Authentication > User Definition > editar usuario > Two-factor Authentication"],
+              "fortigate_cli": "config user local\n    edit \"usuario\"\n        set two-factor fortitoken\n    next\nend"
+            }
+          },
+          {
+            "title": "Sin usuarios locales en estado deshabilitado",
+            "clause_ref": {
+              "chunk_id": "chunk-0001",
+              "heading_path": ["Política de contraseñas y cuentas de usuario"],
+              "page": null,
+              "quote": "No deben existir usuarios locales en estado deshabilitado de forma permanente."
+            },
+            "endpoints": ["local_users"],
+            "severity": "low",
+            "intent": "Listar usuarios locales con status=disable para revisión/eliminación",
+            "remediation": {
+              "summary": "Eliminar las cuentas locales deshabilitadas que superen los 30 días.",
+              "steps": ["User & Authentication > User Definition > eliminar cuentas deshabilitadas"],
+              "fortigate_cli": null
+            }
+          },
+          {
+            "title": "Cierre de sesiones SSL-VPN inactivas a los 5 minutos",
+            "clause_ref": {
+              "chunk_id": "chunk-0001",
+              "heading_path": ["Política de contraseñas y cuentas de usuario"],
+              "page": null,
+              "quote": "El portal SSL-VPN debe cerrar las sesiones inactivas tras un máximo de cinco (5) minutos sin actividad."
+            },
+            "endpoints": ["vpn_ssl"],
+            "severity": "medium",
+            "intent": "Verificar que idle-timeout de SSL-VPN sea menor o igual a 300 segundos",
+            "remediation": {
+              "summary": "Fijar idle-timeout de SSL-VPN en 300 segundos o menos.",
+              "steps": ["VPN > SSL-VPN Settings > Idle Logout = 300"],
+              "fortigate_cli": "config vpn ssl settings\n    set idle-timeout 300\nend"
+            }
+          },
+          {
+            "title": "Duración máxima de sesión SSL-VPN de 8 horas",
+            "clause_ref": {
+              "chunk_id": "chunk-0001",
+              "heading_path": ["Política de contraseñas y cuentas de usuario"],
+              "page": null,
+              "quote": "El tiempo máximo total de una sesión SSL-VPN no debe superar las ocho (8) horas."
+            },
+            "endpoints": ["vpn_ssl"],
+            "severity": "low",
+            "intent": "Verificar que auth-timeout de SSL-VPN sea menor o igual a 28800 segundos",
+            "remediation": {
+              "summary": "Fijar auth-timeout de SSL-VPN en 28800 segundos o menos.",
+              "steps": ["CLI: config vpn ssl settings / set auth-timeout 28800"],
+              "fortigate_cli": "config vpn ssl settings\n    set auth-timeout 28800\nend"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "stage": "reduce",
+      "attempt": 1,
+      "input_tokens": 2960,
+      "output_tokens": 1890,
+      "cache_read_tokens": 640,
+      "latency_ms": 17800,
+      "lines": [
+        "policy = fgt.get(\"password_policy\")",
+        "admins = fgt.get(\"admins\")",
+        "users = fgt.get(\"local_users\")",
+        "sslvpn = fgt.get(\"vpn_ssl\")",
+        "",
+        "",
+        "def value_of(data, key):",
+        "    if isinstance(data, dict) and key in data:",
+        "        return data[key]",
+        "    return None",
+        "",
+        "",
+        "def as_int(value):",
+        "    if isinstance(value, bool):",
+        "        return None",
+        "    if isinstance(value, int):",
+        "        return value",
+        "    return None",
+        "",
+        "",
+        "def first_item(data):",
+        "    if isinstance(data, list) and len(data) > 0:",
+        "        return data[0]",
+        "    return data",
+        "",
+        "",
+        "NO_EXPIRY = (\"0000-00-00 00:00:00\", \"None\", \"\")",
+        "pw = first_item(policy)",
+        "pw_status = str(value_of(pw, \"status\"))",
+        "admin_list = admins if isinstance(admins, list) else []",
+        "user_list = users if isinstance(users, list) else []",
+        "",
+        "# chk-0001 - longitud minima >= 12",
+        "min_len = as_int(value_of(pw, \"minimum-length\"))",
+        "if policy is None:",
+        "    report.finding(\"chk-0001\", \"indeterminate\", \"system/password-policy no disponible\", endpoints_used=[\"password_policy\"])",
+        "elif pw_status != \"enable\":",
+        "    report.finding(\"chk-0001\", \"fail\", f\"politica de contrasenas deshabilitada (status={pw_status})\", endpoints_used=[\"password_policy\"])",
+        "elif min_len is not None and min_len >= 12:",
+        "    report.finding(\"chk-0001\", \"pass\", f\"minimum-length={min_len}\", endpoints_used=[\"password_policy\"])",
+        "else:",
+        "    report.finding(\"chk-0001\", \"fail\", f\"minimum-length={min_len} (< 12)\", endpoints_used=[\"password_policy\"])",
+        "",
+        "# chk-0002 - complejidad: al menos 3 de 4 categorias exigidas",
+        "category_keys = (\"min-lower-case-letter\", \"min-upper-case-letter\", \"min-number\", \"min-non-alphanumeric\")",
+        "categories = [k for k in category_keys if (as_int(value_of(pw, k)) or 0) >= 1]",
+        "if policy is None:",
+        "    report.finding(\"chk-0002\", \"indeterminate\", \"system/password-policy no disponible\", endpoints_used=[\"password_policy\"])",
+        "elif pw_status != \"enable\":",
+        "    report.finding(\"chk-0002\", \"fail\", f\"politica de contrasenas deshabilitada (status={pw_status})\", endpoints_used=[\"password_policy\"])",
+        "elif len(categories) >= 3:",
+        "    report.finding(\"chk-0002\", \"pass\", f\"categorias exigidas: {categories}\", endpoints_used=[\"password_policy\"])",
+        "else:",
+        "    report.finding(\"chk-0002\", \"fail\", f\"solo {len(categories)} categorias exigidas: {categories}\", endpoints_used=[\"password_policy\"])",
+        "",
+        "# chk-0003 - sin reutilizacion de contrasenas",
+        "reuse = str(value_of(pw, \"reuse-password\"))",
+        "if policy is None:",
+        "    report.finding(\"chk-0003\", \"indeterminate\", \"system/password-policy no disponible\", endpoints_used=[\"password_policy\"])",
+        "elif pw_status == \"enable\" and reuse == \"disable\":",
+        "    report.finding(\"chk-0003\", \"pass\", \"reuse-password=disable\", endpoints_used=[\"password_policy\"])",
+        "else:",
+        "    report.finding(\"chk-0003\", \"fail\", f\"reuse-password={reuse} status={pw_status}\", endpoints_used=[\"password_policy\"])",
+        "",
+        "# chk-0004 - caducidad de contrasena en administradores (global o por cuenta)",
+        "expire_status = str(value_of(pw, \"expire-status\"))",
+        "expire_day = as_int(value_of(pw, \"expire-day\"))",
+        "global_expiry_ok = pw_status == \"enable\" and expire_status == \"enable\" and expire_day is not None and expire_day <= 90",
+        "no_expiry = [str(value_of(a, \"name\")) for a in admin_list if str(value_of(a, \"password-expire\")) in NO_EXPIRY]",
+        "if admins is None and policy is None:",
+        "    report.finding(\"chk-0004\", \"indeterminate\", \"system/admin y system/password-policy no disponibles\", endpoints_used=[\"admins\", \"password_policy\"])",
+        "elif global_expiry_ok:",
+        "    report.finding(\"chk-0004\", \"pass\", f\"expiracion global expire-day={expire_day}\", endpoints_used=[\"admins\", \"password_policy\"])",
+        "elif no_expiry:",
+        "    report.finding(\"chk-0004\", \"fail\", f\"administradores sin caducidad de contrasena: {no_expiry}\", endpoints_used=[\"admins\", \"password_policy\"])",
+        "else:",
+        "    report.finding(\"chk-0004\", \"pass\", f\"{len(admin_list)} administradores con caducidad configurada\", endpoints_used=[\"admins\", \"password_policy\"])",
+        "",
+        "# chk-0005 - cambio de contrasena forzado en el primer inicio de sesion",
+        "no_force = [str(value_of(a, \"name\")) for a in admin_list if str(value_of(a, \"force-password-change\")) != \"enable\"]",
+        "if admins is None:",
+        "    report.finding(\"chk-0005\", \"indeterminate\", \"system/admin no disponible\", endpoints_used=[\"admins\"])",
+        "elif no_force:",
+        "    report.finding(\"chk-0005\", \"fail\", f\"administradores sin force-password-change: {no_force}\", endpoints_used=[\"admins\"])",
+        "else:",
+        "    report.finding(\"chk-0005\", \"pass\", f\"{len(admin_list)} administradores con force-password-change\", endpoints_used=[\"admins\"])",
+        "",
+        "# chk-0006 - segundo factor en usuarios locales",
+        "without_2fa = [str(value_of(u, \"name\")) for u in user_list if str(value_of(u, \"two-factor\")) in (\"disable\", \"None\")]",
+        "if users is None:",
+        "    report.finding(\"chk-0006\", \"indeterminate\", \"user/local no disponible\", endpoints_used=[\"local_users\"])",
+        "elif without_2fa:",
+        "    report.finding(\"chk-0006\", \"fail\", f\"usuarios locales sin segundo factor: {without_2fa}\", endpoints_used=[\"local_users\"])",
+        "else:",
+        "    report.finding(\"chk-0006\", \"pass\", f\"{len(user_list)} usuarios locales con segundo factor\", endpoints_used=[\"local_users\"])",
+        "",
+        "# chk-0007 - usuarios locales deshabilitados",
+        "disabled_users = [str(value_of(u, \"name\")) for u in user_list if str(value_of(u, \"status\")) == \"disable\"]",
+        "if users is None:",
+        "    report.finding(\"chk-0007\", \"indeterminate\", \"user/local no disponible\", endpoints_used=[\"local_users\"])",
+        "elif disabled_users:",
+        "    report.finding(\"chk-0007\", \"fail\", f\"usuarios locales deshabilitados: {disabled_users}\", endpoints_used=[\"local_users\"])",
+        "else:",
+        "    report.finding(\"chk-0007\", \"pass\", \"sin usuarios locales deshabilitados\", endpoints_used=[\"local_users\"])",
+        "",
+        "# chk-0008 - idle-timeout SSL-VPN <= 300 s",
+        "idle = as_int(value_of(sslvpn, \"idle-timeout\"))",
+        "if idle is None:",
+        "    report.finding(\"chk-0008\", \"indeterminate\", \"vpn.ssl/settings idle-timeout no disponible\", endpoints_used=[\"vpn_ssl\"])",
+        "elif idle <= 300:",
+        "    report.finding(\"chk-0008\", \"pass\", f\"idle-timeout={idle} s\", endpoints_used=[\"vpn_ssl\"])",
+        "else:",
+        "    report.finding(\"chk-0008\", \"fail\", f\"idle-timeout={idle} s (> 300)\", endpoints_used=[\"vpn_ssl\"])",
+        "",
+        "# chk-0009 - auth-timeout SSL-VPN <= 28800 s",
+        "auth_timeout = as_int(value_of(sslvpn, \"auth-timeout\"))",
+        "if auth_timeout is None:",
+        "    report.finding(\"chk-0009\", \"indeterminate\", \"vpn.ssl/settings auth-timeout no disponible\", endpoints_used=[\"vpn_ssl\"])",
+        "elif auth_timeout <= 28800:",
+        "    report.finding(\"chk-0009\", \"pass\", f\"auth-timeout={auth_timeout} s\", endpoints_used=[\"vpn_ssl\"])",
+        "else:",
+        "    report.finding(\"chk-0009\", \"fail\", f\"auth-timeout={auth_timeout} s (> 28800)\", endpoints_used=[\"vpn_ssl\"])"
+      ]
+    }
+  ]
+}

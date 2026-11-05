@@ -1,0 +1,61 @@
+# =============================================================================
+# terraform.tfvars.example — copiar a terraform.tfvars y completar
+# =============================================================================
+# terraform.tfvars está ignorado por Git (*.tfvars); este .example sí se
+# versiona. Solo las dos primeras variables son obligatorias; el resto
+# muestra los defaults de variables.tf para tenerlos a la vista.
+#
+#   cp terraform.tfvars.example terraform.tfvars
+# =============================================================================
+
+# --- Obligatorias -------------------------------------------------------------
+
+# Correo que recibe los reportes y las alarmas (confirmar la suscripción SNS
+# tras el primer apply).
+notification_email = "seguridad@ejemplo.edu.ar"
+
+# IP pública o hostname del FortiGate (HTTPS/443). Si es una IP privada,
+# completar también executor_subnet_ids / executor_security_group_ids.
+fortigate_host = "203.0.113.45"
+
+# Verificación del certificado TLS del FortiGate (env FORTIGATE_VERIFY_SSL).
+# Dejar true; poner false SOLO en laboratorios con certificado autofirmado.
+fortigate_verify_ssl = true
+
+# --- Modelo -------------------------------------------------------------------
+
+# Perfil de inferencia cross-region de Bedrock. Verificar que esté ACTIVE:
+#   aws bedrock list-inference-profiles --region us-east-1
+bedrock_model_id = "us.anthropic.claude-sonnet-4-6"
+
+# true: policy_generator invoca a audit_executor apenas firma el script.
+# false: deja script+manifest en S3 (status awaiting_approval) y un operador
+#        aprueba con `pps-api aws approve <run_id>` — compuerta humana.
+auto_execute = true
+
+# --- Red (opcional) -----------------------------------------------------------
+
+# Dejar vacías para correr audit_executor fuera de VPC (FortiGate alcanzable
+# por Internet). Completar AMBAS para alcanzar un FortiGate por IP privada
+# (VPN site-to-site / peering); las subnets necesitan NAT o VPC endpoints
+# para S3, Secrets Manager y SNS.
+executor_subnet_ids         = []
+executor_security_group_ids = []
+# executor_subnet_ids         = ["subnet-0123456789abcdef0", "subnet-0fedcba9876543210"]
+# executor_security_group_ids = ["sg-0123456789abcdef0"]
+
+# --- Observabilidad -----------------------------------------------------------
+
+# Model Invocation Logging de Bedrock (prompt + respuesta de cada llamada).
+# ATENCIÓN: es una configuración ÚNICA por cuenta y región; si la cuenta ya
+# tiene una, poner false para no pisarla.
+enable_bedrock_invocation_logging = true
+
+# --- Otros defaults útiles ----------------------------------------------------
+
+# aws_region                  = "us-east-1"
+# environment                 = "prod"
+# enable_legacy_nist_schedule = false   # true re-habilita el assessor NIST diario
+# log_retention_days          = 365
+# artifact_retention_days     = 365
+# report_retention_days       = 365

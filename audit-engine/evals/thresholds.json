@@ -1,0 +1,14 @@
+{
+  "_comment": "Umbrales minimos. per_policy aplica a cada normativa (numerico: valor >= umbral; booleano: igualdad). overall aplica al agregado de la corrida.",
+  "per_policy": {
+    "check_recall": 0.6,
+    "endpoint_precision": 0.8,
+    "remediation_coverage": 0.8,
+    "checks_in_range": true,
+    "validator_ok_final": true
+  },
+  "overall": {
+    "first_attempt_pass_rate": 0.5,
+    "generation_success_rate": 1.0
+  }
+}

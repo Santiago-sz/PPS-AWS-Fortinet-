@@ -1,0 +1,32 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# Terraform
+**/.terraform/
+**/terraform.tfstate
+**/terraform.tfstate.backup
+**/*.tfvars
+**/*.tfvars.json
+!**/*.tfvars.example
+
+# Lambda Layer build output (scripts/build_layer.sh / build_layer.py) — regenerable, not source
+layers/
+lambda.zip
+
+# Eval results (evals/run_evals.py) — regenerable
+evals/results/*
+!evals/results/.gitkeep
+
+# Already its own independent git repo — never embed/track here
+P-Terraform-Forti-AWS/
+
+# Google Drive sync noise
+desktop.ini
+
+# Terraform plan output (never commit a plan: it can embed variable values)
+tfplan
+*.tfplan
