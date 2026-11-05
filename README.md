@@ -18,23 +18,28 @@ reintenta con feedback hasta 3 veces) y se firma con SHA-256. La Lambda
 un **sandbox** con presupuestos duros que solo expone `fgt.get()` y
 `report.finding()`, consulta la REST API del FortiGate y publica
 `report.md`/`report.json` en S3 y una notificación SNS. La app de
-escritorio (`desktop/`) y la API local (`audit-pipeline/api`) permiten
+escritorio (`gui/`) y la API local (`local-api`) permiten
 subir normativas, aprobar ejecuciones y revisar reportes sin credenciales
 AWS. El sistema **nunca modifica el FortiGate**.
 
 ## Empezar
 
+- Organización del código: [`docs/context/repository-layout.md`](docs/context/repository-layout.md).
+  Componentes independientes en `gui/`, `local-api/`, `audit-engine/` e
+  `infrastructure/`. El servidor local y el puente AWS tienen módulos separados;
+  la API y la GUI admiten HTTPS local con verificación de certificados.
+
 - Operación y despliegue: [`docs/README.md`](docs/README.md) (índice de la
   documentación: arquitectura, paso a paso de despliegue y prueba, harness,
   conexión al FortiGate, estado y pendientes), complementado por
-  `audit-pipeline/TESTING.md`, `audit-pipeline/SECRETS.md`,
-  `audit-pipeline/terraform/terraform.tfvars.example` y el output
+  `audit-engine/TESTING.md`, `audit-engine/SECRETS.md`,
+  `infrastructure/pipeline/terraform.tfvars.example` y el output
   `next_steps` del `terraform apply`.
 - Reglas para agentes y colaboradores, mapa de carpetas y definición de
   terminado: [`AGENTS.md`](AGENTS.md).
-- Evaluación de la calidad del generador: `audit-pipeline/evals/README.md`.
-- App de escritorio: `desktop/` (`SPEC_GUI_PPS_AWS_FORTINET.md` describe la
+- Evaluación de la calidad del generador: `audit-engine/evals/README.md`.
+- App de escritorio: `gui/` (`SPEC_GUI_PPS_AWS_FORTINET.md` describe la
   especificación de la GUI).
 
 Las carpetas `lambda/` y `terraform/` de la raíz son copias legacy
-obsoletas; el código canónico vive en `audit-pipeline/`.
+obsoletas; el código canónico vive en `audit-engine/`.
