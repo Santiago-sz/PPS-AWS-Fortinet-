@@ -16,16 +16,18 @@ desktop.ini
 !**/*.tfvars.example
 
 # Lambda packaging / layer build output (regenerable)
-audit-pipeline/lambda.zip
-audit-pipeline/layers/
+audit-engine/lambda.zip
+audit-engine/layers/
 
 # Eval results (regenerable; keep the folder marker)
-audit-pipeline/evals/results/*
-!audit-pipeline/evals/results/.gitkeep
+audit-engine/evals/results/*
+!audit-engine/evals/results/.gitkeep
 
 # Desktop application / local development
 .venv/
 .venv-gui/
+.venv-harness/
+.harness/
 .pps-api/
 *.egg-info/
 .env
@@ -34,9 +36,9 @@ audit-pipeline/evals/results/*
 **/__pycache__/
 **/.pytest_cache/
 **/.ruff_cache/
-desktop/build/
-desktop/dist/
-desktop/*.egg-info/
+gui/build/
+gui/dist/
+gui/*.egg-info/
 
 # Terraform plan output (never commit a plan: it can embed variable values)
 tfplan
