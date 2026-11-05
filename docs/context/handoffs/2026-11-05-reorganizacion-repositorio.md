@@ -3,7 +3,8 @@
 - Fecha: 2026-11-05, America/Buenos_Aires.
 - Estado: implementación y comprobaciones locales completadas; CI remoto pendiente.
 - Rama: `feature/fase1-harness-bedrock`; commit de referencia `e5ca5a7`.
-- No se crearon commits ni se prepararon archivos en el índice Git.
+- Publicación autorizada posteriormente por el usuario: commit y push de los
+  cambios realizados; merge no autorizado.
 
 ## Solicitud y alcance
 
@@ -70,7 +71,15 @@ presentar como verificaciones de seguridad completamente aprobadas.
 
 ## Próximo paso y límites
 
-Revisar el diff con el usuario y continuar la definición del contrato del agente.
+Actualización de publicación: `ea6e63d` contiene la reorganización y HTTPS;
+`988a1f3` contiene la documentación base y el contexto. El commit que incluye
+esta actualización incorpora el contrato completo de `AGENTS.md`: TDD, contexto,
+skills, handoffs, ramas, commits incrementales y revisión previa al merge.
+Los hooks tienen política definida, pero todavía no están implementados.
+Rama de publicación: `feature/fase1-harness-bedrock`; merge pendiente de revisión
+y autorización explícita del desarrollador.
+
+Revisar el diff con el usuario y definir las skills concretas y los hooks.
 El CI remoto todavía debe ejecutarse. No se probó una auditoría live en AWS ni
 se desplegó esta reorganización. Los certificados de las pruebas son temporales;
 el operador debe proporcionar los certificados locales para usar HTTPS.
