@@ -42,13 +42,13 @@ Desde `audit-engine/`, usando el intérprete del entorno elegido:
 
 ```powershell
 ../.venv/Scripts/python.exe -m pytest -q -p no:cacheprovider
-../.venv/Scripts/python.exe -m ruff check lambda/ evals/ scripts/build_layer.py
-../.venv/Scripts/python.exe -m ruff format --check lambda/ evals/ scripts/build_layer.py
+../.venv/Scripts/python.exe -m ruff check generator/ executor/ contracts/ legacy/ tests/ evals/ scripts/build_layer.py
+../.venv/Scripts/python.exe -m ruff format --check generator/ executor/ contracts/ legacy/ tests/ evals/ scripts/build_layer.py
 ../.venv/Scripts/python.exe evals/run_evals.py --mode offline
 ```
 
 API: instalar `local-api[dev]` y ejecutar pytest en ese directorio.
-Desktop: instalar `desktop[dev]` y ejecutar pytest con `QT_QPA_PLATFORM=offscreen`.
+Desktop: instalar `gui[dev]` y ejecutar pytest con `QT_QPA_PLATFORM=offscreen`.
 No usar el antiguo runner `scripts/verify.py`: su implementación de desarrollo
 fue retirada durante esta conversación.
 

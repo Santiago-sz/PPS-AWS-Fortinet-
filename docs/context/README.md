@@ -18,6 +18,8 @@ contexto necesario; al retomar una tarea, leer su handoff y contrastarlo con Git
 
 | Necesidad | Contexto inicial | Fuente de detalle |
 |---|---|---|
+| Seleccionar skills | [skills.md](skills.md) | `.agents/skills/<nombre>/SKILL.md` |
+| Entender hooks y su estado | [hooks.md](hooks.md) | Política y contratos; todavía sin implementación/activación |
 | Entender objetivo, alcance y componentes | [project.md](project.md) | [Arquitectura base](../base/01-arquitectura-fase1.md), [mapa base](../base/04-estructura-del-repositorio.md) |
 | Cambiar pipeline, contratos o integración | [architecture.md](architecture.md) | [Arquitectura y modelo de datos](../base/01-arquitectura-fase1.md) |
 | Preparar entorno o verificar cambios | [development.md](development.md) | [TESTING.md](../../audit-engine/TESTING.md), [runbook base](../base/02-paso-a-paso-despliegue-y-prueba.md) |

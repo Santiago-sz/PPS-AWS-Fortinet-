@@ -181,6 +181,10 @@ afirmar que un test pasó si no se ejecutó.
 
 ## 9. Descubrimiento y uso de skills
 
+Catálogo del proyecto: [skills y criterios de selección](docs/context/skills.md).
+Usar `pps-gui`, `pps-local-api`, `pps-audit-engine` o `pps-terraform` según el
+componente; `pps-handoff` para continuidad y `pps-review` para revisión y entrega.
+
 - Las skills propias del proyecto se versionan en
   `.agents/skills/<nombre>/SKILL.md`. Consultar además el catálogo de skills
   disponibles que expone el entorno del agente, incluidas las de usuario y plugins.
@@ -252,6 +256,10 @@ registro de decisiones.
   aprobación en el handoff; nunca inferirla del silencio o del paso del tiempo.
 
 ## 12. Política de hooks
+
+La definición concreta, contratos y aceptación están en
+[hooks de desarrollo](docs/context/hooks.md). Estado actual: definidos, sin
+handlers ni configuración ejecutable activada. Usar el procedimiento manual.
 
 Este archivo define su política; no instala ni activa hooks. Las configuraciones
 dependen del cliente del agente. Antes de apoyarse en un evento, comprobar que
