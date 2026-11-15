@@ -83,3 +83,13 @@ No corresponde nuevo test de comportamiento para este ajuste de lint.
 - Este registro posterior solo modifica documentación; no invalida la evidencia
   del código probado en `1eedd51`. No se repitieron suites por agregar este registro.
 - Próximo paso: prueba funcional local GUI/API. AWS/FortiGate real sigue pendiente.
+
+### Regla de transición solicitada por el desarrollador
+
+El 2026-11-15 se agregó a AGENTS.md §11 la obligación de integrar la tarea
+actual en `main` antes de comenzar otra feature o fix, consultando y esperando
+autorización explícita para el merge. La nueva rama parte de `main` actualizada.
+No existe una rama local `main` al comprobar `git branch --list`; antes de un
+merge deberá aclararse el destino sin asumir que `master` es equivalente.
+Este pedido solo modifica la política, no autoriza un merge. Verificación
+documental: lectura de la sección y `git diff --check`; sin suites de código.

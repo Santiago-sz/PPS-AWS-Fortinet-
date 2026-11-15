@@ -228,6 +228,14 @@ registro de decisiones.
   `feature/<tema>` desde la base de integración acordada. Comprobar la base;
   no asumir `master`, `main` o `develop` por el nombre. No desarrollar features
   directamente en ramas de integración. Para correcciones, usar `fix/<tema>`.
+- **Integrar antes de cambiar de feature o fix.** Antes de comenzar otra tarea
+  en una rama `feature/*`, `feat/*` o `fix/*`, integrar la tarea actual en `main`.
+  Primero presentar el contenido revisable y consultar al desarrollador;
+  esperar su autorización explícita antes de ejecutar el merge. Mientras esa
+  autorización esté pendiente, no comenzar la siguiente feature o fix.
+  Después del merge autorizado, crear la nueva rama desde `main` actualizada.
+  Si `main` no existe, aclarar el destino con el desarrollador antes de integrar;
+  no sustituirla por otra rama ni crearla automáticamente.
 - Al continuar la misma feature, reutilizar su rama identificada en el handoff;
   no crear otra por sesión ni por compactación. No mezclar features independientes.
   Si los cambios pendientes impiden aislar el trabajo, conservarlos y acordar su
