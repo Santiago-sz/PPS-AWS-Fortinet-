@@ -58,3 +58,12 @@ después, verificar Bedrock y conectividad FortiGate para el E2E autorizado.
 - Próximo paso: push de `fix/functional-test-readiness`, consultar jobs del SHA
   publicado y revisar resultados y logs; no confundir Checkov soft-fail con
   ausencia de hallazgos.
+
+### Primera ejecución remota
+
+Push publicado en `43fb37e`. Run `43720460154`: API, GUI, evals e
+infraestructura aprobaron; motor se detuvo antes de pytest por UP038 en
+`tests/test_repository_layout.py:42`. Ruff 0.11.2 del CI exige unión de tipos
+en `isinstance`; el Ruff local más nuevo no informó esa regla. Se ajustó
+únicamente esa sintaxis preexistente; no cambia el contrato del test.
+No corresponde nuevo test de comportamiento para este ajuste de lint.

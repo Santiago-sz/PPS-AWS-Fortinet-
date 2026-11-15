@@ -39,7 +39,7 @@ def test_executor_does_not_import_generator():
         imports = [
             node
             for node in ast.walk(ast.parse(module.read_text(encoding="utf-8")))
-            if isinstance(node, (ast.Import, ast.ImportFrom))
+            if isinstance(node, ast.Import | ast.ImportFrom)
         ]
         for node in imports:
             names = [a.name for a in node.names] if isinstance(node, ast.Import) else [node.module]
