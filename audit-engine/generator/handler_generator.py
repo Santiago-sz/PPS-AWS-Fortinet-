@@ -49,6 +49,7 @@ import logging
 import os
 import uuid
 from datetime import UTC, datetime
+from urllib.parse import unquote_plus
 
 import boto3
 
@@ -114,7 +115,7 @@ def _extract_event_object(event: dict) -> tuple[str, str]:
     """Extrae (bucket, key) del primer registro de un evento S3 ObjectCreated."""
     record = event["Records"][0]
     bucket = record["s3"]["bucket"]["name"]
-    key = record["s3"]["object"]["key"]
+    key = unquote_plus(record["s3"]["object"]["key"])
     return bucket, key
 
 

@@ -122,6 +122,28 @@ def _generator_events(capsys, name="generator_result") -> list[dict]:
 
 
 class TestUploadTriggersCorrectFlow:
+    @pytest.mark.parametrize(
+        ("encoded_key", "decoded_key"),
+        [
+            ("policies/norma+de+seguridad.pdf", "policies/norma de seguridad.pdf"),
+            ("policies/pol%C3%ADtica%2Bred.docx", "policies/política+red.docx"),
+            ("policies/norma%2520.pdf", "policies/norma%20.pdf"),
+        ],
+    )
+    def test_decodes_s3_key_once_for_download_and_manifest(
+        self, generator_env, mocker, encoded_key, decoded_key
+    ):
+        _mock_lambda_only(mocker)
+        _mock_happy_collaborators(mocker)
+        get_policy = handler_generator.s3_io.get_policy
+        mocker.patch("handler_generator.s3_io.put_script", return_value="a" * 64)
+        put_manifest = mocker.patch("handler_generator.s3_io.put_manifest")
+
+        handler_generator.lambda_handler(_s3_event(key=encoded_key), _lambda_context())
+
+        get_policy.assert_called_once_with("pps-policies-bucket", decoded_key)
+        assert put_manifest.call_args.args[2]["policy_key"] == decoded_key
+
     def test_happy_path_extracts_chunks_generates_writes_and_invokes_executor(
         self, generator_env, mocker, capsys
     ):

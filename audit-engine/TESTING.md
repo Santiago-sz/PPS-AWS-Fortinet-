@@ -39,12 +39,23 @@ cd audit-engine
 ../.venv/Scripts/python.exe -m pytest -q -p no:cacheprovider
 ```
 
-Corre toda la suite en `tests/` — **275 tests passed, 1 skipped**
+Verificación local del 2026-11-15 (Python 3.11, `.venv-gui`, pytest 9.1.1):
+**283 tests passed, 1 skipped**. El venv `.venv/` no estaba disponible.
 (skip documentado: `signal.setitimer`/`SIGALRM` no existe en Windows, ver
 `test_sandbox.py::TestWallClockBudgetViaSignalBackstop`; en Linux/CI ese
-test corre de verdad y la suite reporta 276 passed, 0 skipped). Todos mockean AWS
+test corre de verdad; el resultado de Linux/CI queda pendiente de comprobar). Todos mockean AWS
 (S3/Secrets Manager/SNS/`lambda:InvokeFunction`/Bedrock)/FortiGate — nunca se
 hace red real, se puede correr sin credenciales ni conectividad.
+
+Regresiones añadidas: claves S3 con espacios, Unicode, signo `+` y escapes
+literales se decodifican una sola vez para descarga y manifest. Los fallos al
+leer el secreto o construir el cliente FortiGate producen `could_not_audit`
+con `preparation_error:<tipo>`, reporte y evento terminal, sin ejecutar el
+sandbox. Esto requiere que la entrega del reporte a S3 esté disponible.
+
+El test de no propagación observa directamente un handler del logger raíz:
+pytest 9.1 captura también loggers con `propagate=False`, por lo que `caplog`
+no permite deducir si el evento alcanzó el logger raíz.
 
 Nota: el `botocore` del venv (1.35.x) es anterior al bloque `cachePoint` de
 la API Converse de Bedrock, así que no sirve para validar localmente la

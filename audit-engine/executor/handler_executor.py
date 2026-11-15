@@ -214,8 +214,33 @@ def lambda_handler(event: dict, context) -> dict:
         )
 
     # ── 3. Ejecución bajo sandbox ────────────────────────────────────────────
-    fortigate_token = _get_secret(fortigate_secret_arn, "token")
-    fgt_client = FortiGateClient(host=fortigate_host, token=fortigate_token, verify_ssl=verify_ssl)
+    try:
+        fortigate_token = _get_secret(fortigate_secret_arn, "token")
+        fgt_client = FortiGateClient(
+            host=fortigate_host, token=fortigate_token, verify_ssl=verify_ssl
+        )
+    except Exception as e:
+        # El reporte conserva el tipo de fallo sin copiar mensajes que podrían contener secretos.
+        failure_reason = f"preparation_error:{type(e).__name__}"
+        logger.error("Preparación falló — run_id=%s reason=%s", run_id, failure_reason)
+        delivery = _report_failure(
+            reports_bucket=reports_bucket,
+            topic_arn=sns_topic_arn,
+            run_id=run_id,
+            policy_key=policy_key,
+            timestamp=run_ts,
+            failure_reason=failure_reason,
+        )
+        return _finish(
+            {
+                "status": "could_not_audit",
+                "run_id": run_id,
+                "failure_reason": failure_reason,
+                **delivery,
+            },
+            [],
+            clock,
+        )
 
     try:
         sandbox_result = sandbox.execute(script, manifest, fgt_client, budget=budget)

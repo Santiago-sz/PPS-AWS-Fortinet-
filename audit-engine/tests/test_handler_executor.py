@@ -13,6 +13,7 @@ import json
 from types import SimpleNamespace
 
 import pytest
+from botocore.exceptions import ClientError
 
 import handler_executor
 import sandbox
@@ -132,6 +133,44 @@ class TestSuccessfulRevalidationExecutesAndReports:
         assert len(kwargs["findings"]) == 1
         assert kwargs["findings"][0]["check_id"] == "chk-0001"
         assert kwargs["findings"][0]["status"] == "fail"
+
+
+@pytest.mark.parametrize("stage", ["secret", "client"])
+def test_preparation_failure_reports_without_executing(
+    executor_env, mocker, mock_secrets_manager, capsys, stage
+):
+    script_sha256 = _valid_script_sha256()
+    manifest = {**VALID_MANIFEST, "script_sha256": script_sha256}
+    mocker.patch("handler_executor.s3_io.get_manifest", return_value=manifest)
+    mocker.patch("handler_executor.s3_io.get_script", return_value=VALID_SCRIPT)
+    fgt_class = mocker.patch("handler_executor.FortiGateClient")
+    if stage == "secret":
+        mock_secrets_manager.get_secret_value.side_effect = ClientError(
+            {"Error": {"Code": "AccessDeniedException", "Message": "sensitive detail"}},
+            "GetSecretValue",
+        )
+    else:
+        fgt_class.side_effect = ValueError("sensitive detail")
+    execute = mocker.patch("handler_executor.sandbox.execute")
+    deliver = mocker.patch("handler_executor.reporter.deliver_policy_report", return_value={})
+
+    result = handler_executor.lambda_handler(
+        _invoke_event(script_sha256=script_sha256), _lambda_context()
+    )
+
+    assert result["status"] == "could_not_audit"
+    assert result["failure_reason"].startswith("preparation_error:")
+    assert "sensitive detail" not in result["failure_reason"]
+    execute.assert_not_called()
+    if stage == "secret":
+        fgt_class.assert_not_called()
+    deliver.assert_called_once()
+    assert deliver.call_args.kwargs["status"] == "could_not_audit"
+    assert deliver.call_args.kwargs["policy_key"] == VALID_MANIFEST["policy_key"]
+    events = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    terminal = [event for event in events if event.get("event") == "executor_result"]
+    assert len(terminal) == 1
+    assert terminal[0]["failure_reason"] == result["failure_reason"]
 
 
 class TestFailingRevalidationDoesNotExecute:

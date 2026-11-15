@@ -38,12 +38,17 @@ class TestLogEvent:
         assert len(parsed) == 1
         assert isinstance(parsed[0]["when"], str)
 
-    def test_does_not_propagate_to_root_logger(self, caplog):
-        # If it propagated, the root handler (with the Lambda log format)
-        # would print a second, non-JSON copy of the line.
-        with caplog.at_level(logging.INFO):
+    def test_does_not_propagate_to_root_logger(self, mocker):
+        # pytest 9.1 captura también loggers sin propagación; observar el root directamente.
+        handler = logging.Handler()
+        emit = mocker.patch.object(handler, "emit")
+        root = logging.getLogger()
+        root.addHandler(handler)
+        try:
             observability.log_event("quiet")
-        assert not any("quiet" in rec.getMessage() for rec in caplog.records)
+        finally:
+            root.removeHandler(handler)
+        emit.assert_not_called()
 
 
 class TestEmitMetric:
