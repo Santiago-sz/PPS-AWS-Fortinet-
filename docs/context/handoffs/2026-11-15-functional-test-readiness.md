@@ -67,3 +67,19 @@ infraestructura aprobaron; motor se detuvo antes de pytest por UP038 en
 en `isinstance`; el Ruff local más nuevo no informó esa regla. Se ajustó
 únicamente esa sintaxis preexistente; no cambia el contrato del test.
 No corresponde nuevo test de comportamiento para este ajuste de lint.
+
+### Resultado final de revisión y CI
+
+- Commit de código final: `1eedd51d460f137a51d939acff8f647431a3dde3`, publicado.
+- [Run 43720573002](https://github.com/Santiago-sz/PPS-AWS-Fortinet-/actions/runs/43720573002): `completed/success`, Ubuntu 26.04, Python 3.12.16.
+- Motor: 284 aprobados, sin skips; incluye SIGALRM real. Ruff 0.11.2 y formato correctos.
+- API: 37 aprobados. GUI: 49 aprobados y Ruff correcto. Evals offline: job aprobado.
+- Infraestructura: construcción del layer, fmt, init sin backend y validate aprobados.
+  Checkov: 116 aprobados, 29 fallidos, 0 omitidos; job con soft-fail, no ausencia de hallazgos.
+- Comprobación local del ajuste de lint: 3 tests de repository-layout aprobados,
+  Ruff y formato correctos; diff sin errores de espacios.
+- Revisión técnica del agente completa, sin hallazgos bloqueantes en el diff.
+  Revisión del desarrollador y autorización de merge siguen pendientes.
+- Este registro posterior solo modifica documentación; no invalida la evidencia
+  del código probado en `1eedd51`. No se repitieron suites por agregar este registro.
+- Próximo paso: prueba funcional local GUI/API. AWS/FortiGate real sigue pendiente.
