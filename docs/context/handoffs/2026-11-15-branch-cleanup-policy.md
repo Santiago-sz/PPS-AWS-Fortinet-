@@ -19,3 +19,12 @@
   ejecutable ni repetir suites por una política documental.
 - Revisión del desarrollador y merge de esta política pendientes. Publicar
   cambios documentales requiere autorización; el borrado remoto sí fue pedido.
+
+## Autorización de integración
+
+El 2026-11-15 el desarrollador indicó «integralo al master», autorizando el
+merge de `feature/branch-cleanup-policy` (`d1298cb` más este registro) en
+`master`. Integración mediante fast-forward y eliminación posterior de la
+rama local conforme a la política. La rama de esta tarea no fue publicada.
+El pedido no incluye push de master. Comprobaciones: árbol inicialmente
+limpio y diff documental sin errores de espacios. No cambió código ejecutable.
