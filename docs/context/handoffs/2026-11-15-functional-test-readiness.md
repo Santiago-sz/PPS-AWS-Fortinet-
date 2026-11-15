@@ -93,3 +93,10 @@ No existe una rama local `main` al comprobar `git branch --list`; antes de un
 merge deberá aclararse el destino sin asumir que `master` es equivalente.
 Este pedido solo modifica la política, no autoriza un merge. Verificación
 documental: lectura de la sección y `git diff --check`; sin suites de código.
+
+Corrección posterior del desarrollador (2026-11-15): la rama de integración
+es `master`, no `main`. AGENTS.md §11 actualizado para integrar allí la tarea
+actual y crear las siguientes ramas desde `master` actualizada. Se mantiene
+la consulta y autorización explícita previa al merge; este pedido no autoriza
+ejecutarlo. La descripción anterior se conserva como antecedente sustituido.
+Comprobación documental: diff revisado y `git diff --check` correcto.
