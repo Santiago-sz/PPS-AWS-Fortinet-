@@ -38,3 +38,23 @@ No cambiaron prompt, modelo o catálogo; no corresponde regrabar fixtures.
 No se repitieron suites de GUI/API porque no se modificaron esos componentes.
 TESTING actualizado. Próximo paso: revisión del diff y CI Linux/Python 3.12;
 después, verificar Bedrock y conectividad FortiGate para el E2E autorizado.
+
+## Revisión del commit y preparación de CI (2026-11-15)
+
+- Commit revisado: `c314de889de0e12d09ba5180cc517f1b99124dd6`; árbol limpio al iniciar.
+- Revisión del agente sin hallazgos bloqueantes. Hash y AST siguen precediendo
+  la preparación del cliente; no se modificaron validador, sandbox ni legacy.
+- Control negativo de observabilidad: con `propagate=True` solo en memoria,
+  el test falla como corresponde (una llamada al handler root); sin cambios en disco.
+- Ubuntu WSL dispone de Python 3.14.4, no de 3.12. Docker no estaba iniciado.
+  El test existente `TestWallClockBudgetViaSignalBackstop::test_real_signal_backstop_terminates_pure_cpu_spin_with_no_toolkit_calls`
+  pasó allí: 1 aprobado. Se usó pytest puro del entorno local, sin instalar
+  dependencias, con autoload de plugins y escritura de bytecode desactivados.
+  Esta evidencia no sustituye CI Linux/Python 3.12.
+- API GitHub Actions consultada por SHA: cero ejecuciones antes del push;
+  `git ls-remote` confirmó que la rama todavía no existía en origin.
+- El desarrollador autorizó explícitamente publicar esta rama, incluyendo el
+  registro documental, y verificar CI. Merge sigue sin autorización.
+- Próximo paso: push de `fix/functional-test-readiness`, consultar jobs del SHA
+  publicado y revisar resultados y logs; no confundir Checkov soft-fail con
+  ausencia de hallazgos.
