@@ -100,3 +100,19 @@ actual y crear las siguientes ramas desde `master` actualizada. Se mantiene
 la consulta y autorización explícita previa al merge; este pedido no autoriza
 ejecutarlo. La descripción anterior se conserva como antecedente sustituido.
 Comprobación documental: diff revisado y `git diff --check` correcto.
+
+### Autorización final y base de nuevas ramas (2026-11-15)
+
+Después de revisar la comparación con `feature/fase1-harness-bedrock`, el
+desarrollador autorizó continuar el merge de la rama completa
+`fix/functional-test-readiness` a `master`, incluyendo la regla nueva: toda
+nueva divergencia o rama de trabajo parte de `master` actualizada, sin usar
+ramas antiguas para tareas nuevas. Continuar la misma tarea conserva su rama.
+
+Origen antes del registro: `4ace2be`; destino local y remoto: `829c101`.
+La rama feature antigua es antecesora del origen; no hay commits exclusivos
+de ella que deban recuperarse. Árbol limpio al iniciar. Merge autorizado
+mediante fast-forward, incluyendo este registro y la regla solicitada.
+No se autorizó publicar `master`. El código probado por CI en `1eedd51`
+no cambia; las adiciones posteriores son documentales. Comprobaciones:
+revisión del diff y `git diff --check`; sin repetir suites por documentación.

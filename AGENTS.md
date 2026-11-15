@@ -228,6 +228,11 @@ registro de decisiones.
   `feature/<tema>` desde `master`, la rama de integración acordada. Comprobar
   que la base corresponde a `master` actualizada. No desarrollar features
   directamente en ramas de integración. Para correcciones, usar `fix/<tema>`.
+- **Toda nueva divergencia parte de `master`.** Crear cualquier nueva rama de
+  trabajo desde `master` actualizada, incluidas `feature/*`, `feat/*` y `fix/*`.
+  No iniciar tareas nuevas desde ramas de trabajo anteriores, aunque sigan
+  existiendo. Continuar la misma tarea en su rama existente no requiere crear
+  otra rama ni reescribir su historial.
 - **Integrar antes de cambiar de feature o fix.** Antes de comenzar otra tarea
   en una rama `feature/*`, `feat/*` o `fix/*`, integrar la tarea actual en `master`.
   Primero presentar el contenido revisable y consultar al desarrollador;
