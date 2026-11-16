@@ -52,3 +52,35 @@ código ejecutable, por lo que no se repitió la suite del motor.
   navegación, accesibilidad y reinicio del proceso GUI.
 - E2E real con Bedrock/FortiGate, sujeto a verificación de entorno y autorización.
 - Merge de este registro pendiente de revisión y autorización; no hay push.
+
+## Revalidacion del 2026-11-16
+
+Solicitud: ejecutar nuevamente la prueba local GUI + API. Se continuo en la
+misma rama, HEAD inicial `5b816e6`, con arbol limpio. Sin cambios de codigo,
+AWS, FortiGate ni bases personales. Skills: pps-gui, pps-local-api,
+pps-handoff y pps-review (revision de la entrega documental).
+
+- Regresion conjunta con `.venv-gui`, Qt offscreen y configuracion de
+  `local-api/pyproject.toml`: **86 passed in 10.33s**.
+- Smoke efimero por stdin con API HTTP real en puerto loopback efimero,
+  SQLite y QSettings temporales, Window real y workers normales: aprobado.
+- DOCX creado durante la prueba: carga mediante ApiClient, estado pendiente,
+  descarga identica y actualizacion de politicas en GUI comprobados.
+- Resultado sintetico explicito: un control fallido y una remediacion propuesta;
+  comprobados universo y fallos, filtros de estado/texto, detalle de remediacion,
+  exportaciones HTTP JSON/Markdown y escritura de ambos archivos temporales.
+- Caida de API: modo offline y carga deshabilitada. Reinicio en el mismo puerto
+  con SQLite reabierta: reconexion y resultado conservado. Cierre y nueva
+  instancia Window: politica y resultado recuperados de la API.
+- Primera ejecucion detenida por comparacion de texto acentuado en stdin de
+  PowerShell; se uso escape Unicode en el script de comprobacion y la segunda
+  ejecucion completo todos los pasos con codigo 0. No hubo cambio de producto.
+- Datos y exportaciones temporales eliminados al terminar. No se agregaron tests
+  ni implementacion; no corresponde ciclo TDD nuevo. Diff documental comprobado
+  con `git diff --check` antes del commit.
+
+Limites: ventana en offscreen, sin inspeccion visual humana, sin dialogo nativo
+ni arrastre real. Nueva instancia Window en el mismo proceso, no reinicio del
+proceso de escritorio. Los pendientes manuales y E2E anteriores siguen vigentes.
+Merge y push no autorizados. Proximo paso local: prueba visible por el usuario
+para seleccion/arrastre, lectura y reinicio completo del escritorio.
