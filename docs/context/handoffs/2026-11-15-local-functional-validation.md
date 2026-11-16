@@ -84,3 +84,26 @@ ni arrastre real. Nueva instancia Window en el mismo proceso, no reinicio del
 proceso de escritorio. Los pendientes manuales y E2E anteriores siguen vigentes.
 Merge y push no autorizados. Proximo paso local: prueba visible por el usuario
 para seleccion/arrastre, lectura y reinicio completo del escritorio.
+
+## Confirmación manual del usuario — 2026-11-16
+
+El usuario confirmó carga y persistencia de documentos, recuperación después
+de detener y reiniciar la API, y visualización correcta del reporte sintético.
+Después de solicitarle verificar filtros, detalle con evidencia/cláusula y
+remediación, y exportaciones JSON/Markdown, confirmó que todo funciona.
+Esta evidencia es confirmación del usuario, adicional al smoke automatizado.
+
+Se creó mediante el cliente HTTP una política separada `PRUEBA SINTETICA LOCAL`
+y se asoció mediante `Service.finish` el run `synthetic-fd92d279b582`, auditoría
+`aud_0897b7ccea804174bbb67fa320e3524a`. Contiene cuatro controles: pass, fail,
+indeterminate y not_applicable; dos remediaciones propuestas. La recuperación
+HTTP del resultado y ambas exportaciones se verificaron correctamente.
+Los archivos y la base persisten localmente en `.pps-api/`, excluida de Git;
+los artefactos están en `.pps-api/synthetic/synthetic-fd92d279b582/`.
+No se modificaron documentos anteriores ni se usaron AWS o FortiGate.
+
+Estado: recorrido funcional local acordado aprobado. No se confirmó por separado
+arrastre, accesibilidad o reinicio completo del proceso GUI. El reporte sintético
+no acredita auditoría real. Próximo paso: preparar la verificación de entorno AWS
+y conectividad; cualquier operación mutante requiere pedido explícito.
+Revisión y merge siguen pendientes; sin autorización de push.
