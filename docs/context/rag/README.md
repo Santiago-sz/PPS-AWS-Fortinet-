@@ -19,6 +19,91 @@ el trabajo. El detalle vive en una sola fuente por tema:
 | Estado de la tarea, pruebas y pendientes | [Handoff](../handoffs/2026-11-17-bedrock-knowledge-base.md) |
 | Contrato de entorno e IAM | [AGENTS.md](../../../AGENTS.md), sección 4 |
 
+## Estado al 2026-11-18: desplegado y probado en AWS
+
+Esta sección registra el despliegue y las pruebas reales. Donde las secciones
+siguientes digan «no desplegado» o «sin verificar», vale lo que se indica
+aquí.
+
+**Desplegado** (cuenta del laboratorio, `us-east-1`, a pedido del dueño del
+repositorio):
+
+| Módulo | Resultado |
+|---|---|
+| `infrastructure/knowledge-base` | 9 recursos creados: bucket de documentos, rol de servicio, Knowledge Base administrada y origen de datos S3. `plan` posterior sin cambios |
+| `infrastructure/pipeline` | Política `bedrock:Retrieve` del generador creada, tres Lambdas actualizadas en el lugar, capa del generador reemplazada. `plan` posterior sin cambios |
+
+El identificador de la base se entrega al pipeline con un archivo
+`knowledge_base.auto.tfvars` local, ignorado por Git.
+
+**Documentos cargados** en el bucket de conocimiento (copia local fuera del
+repositorio):
+
+| Documento | Origen |
+|---|---|
+| `fortinet/FortiOS-8.0.0-Best_Practices.pdf` | Fortinet, público |
+| `nist/NIST.CSWP.29-CSF-2.0.pdf` | NIST, público |
+| `nist/NIST.SP.800-41r1-Firewalls.pdf` | NIST, público |
+| `nist/NIST.SP.800-53r5.pdf` | NIST, público |
+| `propio/catalogo-endpoints-fortigate.md` | Material propio: los 31 endpoints y qué se revisa en cada uno |
+
+La guía de Fortinet es de FortiOS 8.0.0 porque la versión del equipo
+institucional no fue informada; debe reemplazarse por la que corresponda.
+
+**Ingesta, con un problema abierto.** La primera ingesta indexó 4 de 6
+documentos y quedó detenida. Durante su ejecución se retiraron del bucket
+tres normativas de ejemplo que no correspondían como material de referencia;
+se pidió detener el trabajo y permaneció en estado `STOPPING`, lo que impide
+iniciar otro. Consecuencias al cierre del día: los dos documentos NIST
+agregados después no están indexados, y dos de las normativas de ejemplo
+retiradas siguen en el índice y aparecen como fuente en las pruebas. Cuando
+el trabajo termine, ejecutar una ingesta nueva.
+
+**Problemas encontrados al probar en vivo y su corrección.** Hasta este día
+el sistema nunca había llamado al modelo con éxito, por la cuota en cero.
+Las primeras ejecuciones reales mostraron cinco fallas, todas corregidas con
+tests escritos primero:
+
+| Problema observado | Corrección | Commit |
+|---|---|---|
+| El modelo envuelve a veces el JSON de la fase map en un bloque de código; las tres normativas de evaluación fallaban | Se quita ese envoltorio antes de interpretar | `4c9f95d` |
+| Los scripts generados se rechazaban en los tres intentos: el modelo usaba métodos de `dict`, `list` y `str` y cadenas `elif`, que el validador prohíbe y el prompt no mencionaba | El prompt de generación describe esos límites y las formas equivalentes. El validador y el sandbox no cambiaron | `1a7bbfb` |
+| Con una normativa real, una respuesta de map llegó cortada por el tope de salida | Tope de map de 4.096 a 16.000 tokens y de reduce a 8.192; una respuesta cortada falla de forma explícita | `8bd93a5` |
+| Dentro de la Lambda, las 16 consultas a la base fallaron con `ParamValidationError`: el SDK del runtime no conocía `managedSearchConfiguration` | La capa del generador fija una versión de boto3 | `d34f7d4` |
+| Con la recuperación ya funcionando, solo 5 de 17 controles recibían referencia por los topes de tamaño | Topes de 3.000 a 10.000 caracteres por control y de 12.000 a 80.000 en total | `addaee8` |
+
+**Evaluaciones en vivo del generador** (tres normativas de evaluación, modelo
+Claude Sonnet 4.6): todos los umbrales cumplidos. Generación exitosa 1,00;
+aprobación al primer intento 0,67; cobertura de controles entre 0,92 y 0,96;
+precisión de endpoints 1,00; cobertura de remediación 1,00. Las fixtures
+grabadas se regeneraron con respuestas reales del modelo.
+
+**Auditoría de punta a punta** con una normativa real, el Anexo I de la
+Decisión Administrativa 641/2021 (requisitos mínimos de seguridad de la
+información para organismos del Sector Público Nacional), con la base
+habilitada:
+
+| Etapa | Resultado |
+|---|---|
+| Extracción de controles | 12 controles en 3 llamadas de map |
+| Recuperación | 12 consultas, ninguna fallida; los 12 controles recibieron referencia; 3 fragmentos omitidos por el tope por control |
+| Generación del script | Script válido al tercer intento |
+| Manifiesto | Bloque `knowledge_base` con fuentes por control; sin identificador de cuenta ni nombre de bucket |
+| Ejecución | `could_not_audit`, motivo `preparation_error:ValueError`: no hay un FortiGate conectado y el secreto del dispositivo conserva su valor de ejemplo |
+
+En tres ejecuciones sobre la misma normativa el modelo extrajo 16, 17 y 12
+controles. Esa variación es propia del modelo y conviene medirla.
+
+**Sigue sin verificar:** el filtro por `fortios_version` (no hay documentos
+con ese metadato), el efecto de la referencia sobre la calidad de los scripts
+(con referencia se necesitaron tres intentos; sin ella, uno o dos en las
+evaluaciones), la evaluación de recuperación en vivo (las preguntas y
+fuentes esperadas siguen siendo provisorias) y la ejecución contra un
+FortiGate real.
+
+**Otros efectos del despliegue:** se recreó la suscripción de correo del
+tema de notificaciones, que requiere confirmación del destinatario.
+
 ## 1. Qué es el RAG y para qué se usa aquí
 
 RAG (generación aumentada por recuperación) consiste en buscar, antes de
@@ -50,10 +135,10 @@ el endpoint correcto o redactar una remediación.
 
 | Componente | Ubicación | Estado |
 |---|---|---|
-| Módulo Terraform de la Knowledge Base (bucket de documentos, rol de servicio, base administrada, origen de datos S3) | `infrastructure/knowledge-base/` | Validado con `terraform validate`; no desplegado |
-| Enganche en el pipeline (variables, entorno del generador, permiso de consulta condicional; desde el 2026-11-18, `knowledge_base_fortios_version`) | `infrastructure/pipeline/` | Validado; no desplegado |
+| Módulo Terraform de la Knowledge Base (bucket de documentos, rol de servicio, base administrada, origen de datos S3) | `infrastructure/knowledge-base/` | Desplegado el 2026-11-18 |
+| Enganche en el pipeline (variables, entorno del generador, permiso de consulta condicional; desde el 2026-11-18, `knowledge_base_fortios_version`) | `infrastructure/pipeline/` | Desplegado el 2026-11-18 |
 | Módulo de recuperación, con filtro de metadatos opcional y configuración de búsqueda en una constante | `audit-engine/generator/knowledge_retriever.py` | Con tests |
-| Referencia para la generación (2026-11-18): una consulta por control entre map y reduce, topes, sección del prompt y bloque del manifest | `audit-engine/generator/reference_context.py`, `llm_client.py`, `handler_generator.py` | Con tests; sin probar contra una base ni contra el modelo |
+| Referencia para la generación (2026-11-18): una consulta por control entre map y reduce, topes, sección del prompt y bloque del manifest | `audit-engine/generator/reference_context.py`, `llm_client.py`, `handler_generator.py` | Con tests; probado contra la base y el modelo el 2026-11-18 |
 | Trazabilidad (2026-11-18): bloque `knowledge_base` en el manifest y `references` por hallazgo en el reporte JSON y Markdown | `contracts/s3_io.py`, `executor/toolkit.py`, `executor/reporter.py` | Con tests |
 | Evals de recuperación (2026-11-18): preguntas versionadas, hit rate en k, MRR, umbrales, modos offline y live | `audit-engine/evals/retrieval_eval.py`, `evals/retrieval/` | Offline en verde con fixture **sintética**; live sin ejecutar |
 | Tests de contrato entre Terraform y código | `audit-engine/tests/test_knowledge_base_iac.py` | En verde |
@@ -62,8 +147,8 @@ Cómo se usa la referencia, en breve (detalle en la decisión 11):
 
 - Después de map, el generador hace una consulta por control con el título y
   la intención de ese control. No usa texto de la normativa como consulta.
-- A lo sumo 40 consultas por corrida, 3.000 caracteres de referencia por
-  control y 12.000 en total. Un fragmento entra entero o se omite, nunca se
+- A lo sumo 40 consultas por corrida, 10.000 caracteres de referencia por
+  control y 80.000 en total. Un fragmento entra entero o se omite, nunca se
   recorta: por control se omite el que no cabe y se prueba el siguiente; sobre
   el total se descartan primero los de menor puntaje. La normativa y los
   controles nunca se recortan.
@@ -115,7 +200,8 @@ Orden de despliegue, a cargo del operador:
    pipeline.
 4. `plan` y `apply` en `infrastructure/pipeline`.
 
-Los pasos detallados están en el README del módulo. Ninguno fue ejecutado.
+Los pasos detallados están en el README del módulo. Se ejecutaron el
+2026-11-18; ver la sección de estado al inicio.
 
 ## 4. Verificaciones realizadas (2026-11-17, Windows)
 
@@ -174,8 +260,8 @@ Sin verificar:
   1.43.123 declara `filter` dentro de `managedSearchConfiguration` y el
   código lo arma así, pero no se probó ninguna consulta con filtro. Además
   requiere documentos cargados con ese metadato, lo que no está hecho.
-- Si los topes de referencia (3.000 por control, 12.000 en total) son
-  adecuados; con ellos, un fragmento como el de 9.943 caracteres queda fuera.
+- Si los topes de referencia calibrados (10.000 por control, 80.000 en
+  total) son adecuados para otras normativas y otros documentos.
 - El efecto de la referencia sobre los scripts generados. Las evaluaciones
   grabadas no recorren el camino con la base habilitada.
 - La calidad de recuperación real. La evaluación offline usa una fixture

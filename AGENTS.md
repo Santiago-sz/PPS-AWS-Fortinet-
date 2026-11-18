@@ -26,7 +26,7 @@ permiten revisar los resultados sin credenciales AWS.
 | `infrastructure/knowledge-base/` | Módulo Terraform aislado (provider aws 6.x, estado propio) de la Knowledge Base administrada de Bedrock: bucket de documentos, rol de servicio, base `MANAGED` y data source S3. No desplegado; ver su `README.md`. | Canónico, opcional |
 | `local-api/` | Servidor HTTP/HTTPS local (`pps_api/server`), servicios y SQLite; puente separado en `pps_api/aws` (`pps-api aws dispatch|sync|list-pending|approve`). | Canónico |
 | `audit-engine/evals/` | Harness de evaluación del generador (normativas sintéticas, fixtures grabadas, métricas, umbrales) y de la recuperación de la Knowledge Base (`--suite retrieval`, fixture sintética). | Canónico |
-| `audit-engine/scripts/` | `build_layer.py` / `build_layer.sh` (Lambda Layer pypdf+python-docx+lxml). | Canónico |
+| `audit-engine/scripts/` | `build_layer.py` / `build_layer.sh` (Lambda Layer pypdf+python-docx+lxml y, desde el 2026-11-18, boto3 con versión fija). | Canónico |
 | `gui/` | App de escritorio PySide6 (consola de auditorías; sin credenciales AWS). | Canónico |
 | `infrastructure/fortigate-lab/` | Terraform de un FortiGate VM de laboratorio en AWS (entorno de pruebas). | Independiente |
 | `lambda/`, `terraform/` (raíz) | **Copias legacy obsoletas** del pipeline original. Ver `README-LEGACY.md` en cada una. | **No editar, no borrar** |
@@ -109,7 +109,7 @@ Todo desde `audit-engine/` con el venv de la raíz (`../.venv`), detalle en
 `audit-engine/TESTING.md`:
 
 ```bash
-../.venv/Scripts/python.exe -m pytest -q -p no:cacheprovider        # 460 passed, 1 skipped (Windows)
+../.venv/Scripts/python.exe -m pytest -q -p no:cacheprovider        # 464 passed, 1 skipped (Windows)
 ../.venv/Scripts/python.exe -m ruff check generator/ executor/ contracts/ legacy/ tests/ evals/ scripts/build_layer.py
 ../.venv/Scripts/python.exe -m ruff format --check generator/ executor/ contracts/ legacy/ tests/ evals/ scripts/build_layer.py
 ../.venv/Scripts/python.exe scripts/build_layer.py                    # layers/pps-doc-parsers.zip

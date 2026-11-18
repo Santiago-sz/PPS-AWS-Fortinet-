@@ -261,7 +261,7 @@ Registro duradero: [decisión 11](../decisions/11-referencias-en-generacion.md).
 2. **Consulta**: `title` e `intent` del control. La estructura de un control
    no tiene un campo de valor esperado; la cita de `clause_ref` no se usa
    porque es texto de la normativa.
-3. **Topes**: 40 llamadas, 3.000 caracteres por control y 12.000 en total,
+3. **Topes**: 40 llamadas, 3.000 caracteres por control y 80.000 en total,
    valores iniciales sin calibrar. Un fragmento de referencia nunca se
    recorta: entra entero o se omite. Con estos valores un fragmento de más
    de 3.000 caracteres queda siempre fuera.
@@ -371,3 +371,31 @@ No verificado:
 
 Próximo paso concreto: revisión del desarrollador; con su aprobación,
 commits por paquete en esta rama y consulta de merge a `master`.
+
+## Actualización 2026-11-18: despliegue y pruebas en vivo
+
+- Autorización: el dueño del repositorio pidió de forma explícita desplegar
+  en AWS, ejecutar las evaluaciones en vivo y una auditoría de punta a punta.
+- Desplegados `infrastructure/knowledge-base` (9 recursos) y
+  `infrastructure/pipeline` con la base habilitada; `plan` posterior de ambos
+  sin cambios. Detalle y resultados en el [resumen de trabajo](../rag/README.md),
+  sección «Estado al 2026-11-18».
+- Commits de este tramo: `32d8069`, `25441e4`, `54f5955`, `4c9f95d`,
+  `1a7bbfb`, `8bd93a5`, `d34f7d4`, `addaee8` y el commit documental que
+  incluye esta actualización. Rama publicada en `origin`. Merge a `master`:
+  pendiente de revisión y autorización.
+- TDD en las correcciones: cada una partió de un test que reproducía la falla
+  observada en vivo (JSON envuelto en bloque de código, respuesta de map
+  cortada) y se observó su fallo antes de corregir. El cambio del prompt de
+  generación se comprobó con las evaluaciones en vivo y el test que fija el
+  hash del prompt se actualizó de forma deliberada.
+- Verificaciones en Windows al cierre: `pytest` 464 aprobados y 1 omitido;
+  `ruff check` y `ruff format --check` sin observaciones; evaluaciones
+  offline con código de salida 0 sobre fixtures regrabadas en vivo.
+- Decisión a revisar: la capa del generador ahora incluye boto3, lo que
+  revierte la regla anterior de no incluirlo.
+- Pendientes: ingesta nueva cuando termine el trabajo detenido; conectar un
+  FortiGate real y cargar su token; confirmar la suscripción de correo;
+  reemplazar la guía de Fortinet por la de la versión del equipo; regrabar la
+  evaluación de recuperación contra el conjunto real; medir la variación en
+  la cantidad de controles extraídos entre ejecuciones.

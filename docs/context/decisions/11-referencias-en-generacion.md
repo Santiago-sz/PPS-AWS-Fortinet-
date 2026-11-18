@@ -38,8 +38,8 @@ documento respaldó cada control.
    `title` e `intent` del control; nunca con chunks ni con la cita de
    `clause_ref`.
 3. **Topes.** `MAX_RETRIEVE_CALLS = 40` llamadas por corrida,
-   `MAX_REFERENCE_CHARS_PER_CONTROL = 3000` caracteres de referencia por
-   control y `MAX_REFERENCE_CHARS = 12000` en total. **Un fragmento de
+   `MAX_REFERENCE_CHARS_PER_CONTROL = 10000` caracteres de referencia por
+   control y `MAX_REFERENCE_CHARS = 80000` en total. **Un fragmento de
    referencia entra entero o se omite; nunca se recorta**, porque un corte
    puede dejar a medias un bloque de configuración y volverlo engañoso. Por
    control se recorren los resultados en el orden del servicio: el que no

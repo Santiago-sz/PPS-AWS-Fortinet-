@@ -40,7 +40,7 @@ cd audit-engine
 ```
 
 Verificación local del 2026-11-18 (Windows, Python 3.12, `.venv`, pytest
-8.3.5): **460 tests passed, 1 skipped**. La del 2026-11-17 daba 350 passed,
+8.3.5): **464 tests passed, 1 skipped**. La del 2026-11-17 daba 350 passed,
 1 skipped; la diferencia son los 110 tests del uso de la Knowledge Base en la
 generación, su trazabilidad y las evals de recuperación (ver abajo). La del
 2026-11-15 (Python 3.11, `.venv-gui`, pytest 9.1.1) daba 283 passed, 1 skipped.
@@ -48,7 +48,7 @@ generación, su trazabilidad y las evals de recuperación (ver abajo). La del
 `test_sandbox.py::TestWallClockBudgetViaSignalBackstop`; en Linux/CI ese
 test corre de verdad. CI en Linux aprobó el 2026-11-15, con 284 tests y ese
 test incluido, y de nuevo para el commit `e86bbc1` según lo informado el
-2026-11-18; para el estado actual se espera 461 passed sin omitidos, valor
+2026-11-18; para el estado actual se espera 465 passed sin omitidos, valor
 inferido y no observado.) Todos mockean AWS
 (S3/Secrets Manager/SNS/`lambda:InvokeFunction`/Bedrock)/FortiGate — nunca se
 hace red real, se puede correr sin credenciales ni conectividad.
