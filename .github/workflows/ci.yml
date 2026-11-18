@@ -39,6 +39,13 @@ jobs:
             audit-engine/requirements.txt
       - name: Install dev + runtime deps
         run: python -m pip install -r requirements-dev.txt -r requirements.txt boto3
+      - name: Pin boto3 to the layer version
+        # requirements-dev.txt trae checkov, que fija boto3 1.35.x. Ese SDK no
+        # conoce la API de Knowledge Bases administradas (managedSearchConfiguration)
+        # y los tests del recuperador validan contra el modelo de servicio
+        # instalado. Se instala la misma versión que fija el layer del generador
+        # (scripts/layer-requirements.txt). Este job no ejecuta checkov.
+        run: python -m pip install "boto3==1.43.123"
       - name: ruff check
         run: python -m ruff check generator/ executor/ contracts/ legacy/ tests/ evals/ scripts/build_layer.py
       - name: ruff format --check
@@ -100,7 +107,7 @@ jobs:
       - name: Build Lambda layer zip
         # aws_lambda_layer_version.doc_parsers usa filebase64sha256() sobre el
         # zip: tiene que existir antes de validate. Verifica además el layout
-        # python/ y que no viaje boto3.
+        # python/ y que estén los paquetes esperados (incluido boto3).
         run: python audit-engine/scripts/build_layer.py
       - uses: hashicorp/setup-terraform@v3
         with:
