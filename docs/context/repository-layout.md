@@ -16,6 +16,7 @@ audit-engine/
   scripts/                   Construcción del layer
 infrastructure/
   pipeline/                  Terraform canónico del pipeline
+  knowledge-base/            Knowledge Base administrada de Bedrock (módulo aislado)
   fortigate-lab/             Laboratorio independiente
 docs/base/                   Documentación original conservada como antecedente
 docs/context/                Conocimiento actualizado y handoffs
@@ -49,6 +50,11 @@ El layer se construye en `audit-engine/layers/`. Ejecutar Terraform desde
 `infrastructure/pipeline/`; `init -backend=false` y `validate` utilizan
 `TF_DATA_DIR` fuera del repositorio. No mover estados de Terraform entre entornos
 ni ejecutar plan/apply por interpretar esta migración como un despliegue.
+
+`infrastructure/knowledge-base/` (2026-11-17) es un módulo independiente con su
+propio provider (aws 6.x), lock y estado; el pipeline sigue en aws 5.x. Solo se
+relacionan por el id de la Knowledge Base, que el operador pasa como variable.
+Ver [la decisión](decisions/10-bedrock-knowledge-base.md).
 
 ## Rutas anteriores
 

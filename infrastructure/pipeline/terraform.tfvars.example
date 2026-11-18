@@ -33,6 +33,14 @@ bedrock_model_id = "us.anthropic.claude-sonnet-4-6"
 #        aprueba con `pps-api aws approve <run_id>` — compuerta humana.
 auto_execute = true
 
+# --- Knowledge Base / RAG (opcional) -------------------------------------------
+
+# Id de la Knowledge Base administrada creada con infrastructure/knowledge-base/
+# (output knowledge_base_id). Vacío = recuperación deshabilitada y sin permiso
+# bedrock:Retrieve en el rol del generador.
+# knowledge_base_id          = "<id-de-la-knowledge-base>"
+# knowledge_base_max_results = 5
+
 # --- Red (opcional) -----------------------------------------------------------
 
 # Dejar vacías para correr audit_executor fuera de VPC (FortiGate alcanzable

@@ -269,3 +269,43 @@ variable "max_generation_attempts" {
   # Agotado el presupuesto, se reporta el fallo explícitamente — nunca un
   # audit parcial.
 }
+
+
+# -----------------------------------------------------------------------------
+# KNOWLEDGE BASE (RAG) — opcional, deshabilitada por defecto
+# -----------------------------------------------------------------------------
+# La Knowledge Base administrada de Bedrock se crea en un módulo aparte
+# (infrastructure/knowledge-base/, provider aws 6.x). Este módulo solo recibe
+# su id: no crea ni modifica la base.
+# -----------------------------------------------------------------------------
+
+variable "knowledge_base_id" {
+  description = "Id de la Knowledge Base administrada de Amazon Bedrock que puede consultar policy_generator (env KNOWLEDGE_BASE_ID). Vacío (default) = recuperación deshabilitada y sin permiso bedrock:Retrieve"
+  type        = string
+  default     = ""
+  # Es el output knowledge_base_id del módulo infrastructure/knowledge-base/.
+  # Con el valor vacío no se agrega ningún statement de IAM (ver iam.tf) y
+  # knowledge_retriever.load_config() informa enabled=False.
+
+  validation {
+    condition     = can(regex("^[0-9a-zA-Z]{0,10}$", var.knowledge_base_id))
+    error_message = "knowledge_base_id debe estar vacío o ser un id de Knowledge Base (hasta 10 caracteres alfanuméricos), no un ARN ni un comodín."
+  }
+  # El id se interpola en el ARN del permiso bedrock:Retrieve: la validación
+  # impide que un "*" o un ARN completo amplíen ese permiso.
+}
+
+variable "knowledge_base_max_results" {
+  description = "Cantidad máxima de fragmentos que policy_generator pide por consulta a la Knowledge Base (env KNOWLEDGE_BASE_MAX_RESULTS)"
+  type        = number
+  default     = 5
+
+  validation {
+    condition = (
+      var.knowledge_base_max_results >= 1 &&
+      var.knowledge_base_max_results <= 100 &&
+      floor(var.knowledge_base_max_results) == var.knowledge_base_max_results
+    )
+    error_message = "knowledge_base_max_results debe ser un entero entre 1 y 100 (límite de numberOfResults de la API Retrieve)."
+  }
+}

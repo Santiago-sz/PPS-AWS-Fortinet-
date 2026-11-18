@@ -28,7 +28,7 @@ Síntesis documental: 2026-11-05; verificar la implementación antes de cambiarl
 
 | Componente | Conoce o puede usar | Restricción de diseño |
 |---|---|---|
-| Generador | Normativa, Bedrock, artefactos S3, invocación del executor | Sin acceso al secret FortiGate; sus fallos se reportan a S3 sin SNS |
+| Generador | Normativa, Bedrock, artefactos S3, invocación del executor; consulta opcional a una Knowledge Base (`knowledge_retriever`, deshabilitada por defecto y todavía sin uso en los prompts) | Sin acceso al secret FortiGate; sus fallos se reportan a S3 sin SNS |
 | Executor | Artefactos, secret FortiGate, GET catalogados, S3/SNS | Sin acceso a Bedrock; revalidación independiente |
 | Script generado | Capacidades `fgt` y `report` y nombres seguros | Sin cliente HTTP general, imports, reflexión ni escritura en el firewall |
 | Toolkit | Manifest y cliente FortiGate | Resuelve cita y remediación desde el manifest |
@@ -73,6 +73,10 @@ retorno de Lambda, estado de reporte y presentación de la API.
 ## Infraestructura y conectividad
 
 El diseño usa S3, Lambdas, Bedrock, Secrets Manager, SNS, DLQ SQS y CloudWatch.
+Desde el 2026-11-17 existe además, sin desplegar, el módulo opcional
+`infrastructure/knowledge-base/` (Knowledge Base administrada de Bedrock); la
+recuperación es aditiva y no sustituye el map/reduce sobre la normativa. Ver
+[la decisión 10](decisions/10-bedrock-knowledge-base.md).
 El logging de invocaciones de Bedrock tiene alcance de cuenta/región y puede
 contener texto sensible de las normativas. La región y el modelo documentados
 son configuración histórica, no disponibilidad garantizada.

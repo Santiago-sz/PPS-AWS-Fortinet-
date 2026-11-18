@@ -45,7 +45,7 @@ jobs:
         run: python -m ruff format --check generator/ executor/ contracts/ legacy/ tests/ evals/ scripts/build_layer.py
       - name: pytest
         # En Linux el test del backstop SIGALRM del sandbox corre de verdad
-        # (en Windows se salta): se espera 276 passed, 0 skipped.
+        # (en Windows se salta): se espera 351 passed, 0 skipped.
         run: python -m pytest -q -p no:cacheprovider
 
   api:
@@ -124,6 +124,31 @@ jobs:
         uses: bridgecrewio/checkov-action@v12
         with:
           directory: infrastructure/pipeline
+          framework: terraform
+          quiet: true
+          soft_fail: true
+          output_format: cli
+      # Módulo aislado de la Knowledge Base administrada de Bedrock: provider
+      # aws 6.x propio, por eso usa otro TF_DATA_DIR. No necesita el layer.
+      - name: terraform fmt -check (knowledge-base)
+        working-directory: infrastructure/knowledge-base
+        run: terraform fmt -check -recursive -diff
+      - name: terraform init (knowledge-base, no backend)
+        working-directory: infrastructure/knowledge-base
+        run: terraform init -backend=false -input=false
+        env:
+          TF_DATA_DIR: ${{ runner.temp }}/pps-knowledge-base-data
+      - name: terraform validate (knowledge-base)
+        working-directory: infrastructure/knowledge-base
+        run: terraform validate
+        env:
+          TF_DATA_DIR: ${{ runner.temp }}/pps-knowledge-base-data
+      - name: checkov knowledge-base (soft fail)
+        # Informativo: resultado y justificación en
+        # infrastructure/knowledge-base/README.md.
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: infrastructure/knowledge-base
           framework: terraform
           quiet: true
           soft_fail: true

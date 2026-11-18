@@ -21,6 +21,12 @@ Los detalles de contexto, alternativas y consecuencias están en el registro
 base. Este índice sintetiza decisiones; no garantiza que sus argumentos de
 seguridad sean propiedades demostradas del código.
 
+## Decisiones posteriores a la base
+
+| Referencia | Decisión registrada | Implicación para una tarea |
+|---|---|---|
+| [10](10-bedrock-knowledge-base.md) | Knowledge Base administrada de Bedrock en un módulo Terraform aislado; recuperación aditiva y deshabilitada por defecto | No subir el provider del pipeline para esto; no reemplazar el map/reduce completo por fragmentos recuperados |
+
 ## Nuevas decisiones
 
 Cuando se acepte una decisión duradera que no exista en la base, crear

@@ -273,12 +273,14 @@ resource "aws_lambda_function" "policy_generator" {
 
   environment {
     variables = {
-      BEDROCK_MODEL_ID        = var.bedrock_model_id
-      AUTO_EXECUTE            = tostring(var.auto_execute)
-      POLICIES_BUCKET         = aws_s3_bucket.policies.bucket
-      S3_BUCKET               = aws_s3_bucket.reports.bucket
-      EXECUTOR_FUNCTION_NAME  = aws_lambda_function.audit_executor.function_name
-      MAX_GENERATION_ATTEMPTS = var.max_generation_attempts
+      BEDROCK_MODEL_ID           = var.bedrock_model_id
+      AUTO_EXECUTE               = tostring(var.auto_execute)
+      POLICIES_BUCKET            = aws_s3_bucket.policies.bucket
+      S3_BUCKET                  = aws_s3_bucket.reports.bucket
+      EXECUTOR_FUNCTION_NAME     = aws_lambda_function.audit_executor.function_name
+      MAX_GENERATION_ATTEMPTS    = var.max_generation_attempts
+      KNOWLEDGE_BASE_ID          = var.knowledge_base_id
+      KNOWLEDGE_BASE_MAX_RESULTS = var.knowledge_base_max_results
     }
     # S3_BUCKET es el bucket de reports/artifacts (prefijos artifacts/* y
     # reports/*), mismo nombre de variable que ya usa handler.py, para que
@@ -288,6 +290,9 @@ resource "aws_lambda_function" "policy_generator" {
     # BEDROCK_MODEL_ID: modelo/perfil de inferencia (ver variables.tf).
     # AUTO_EXECUTE: "false" deja el script firmado en S3 sin invocar al
     # executor (status=awaiting_approval)  - compuerta humana mínima.
+    # KNOWLEDGE_BASE_ID / KNOWLEDGE_BASE_MAX_RESULTS: configuración opcional
+    # de knowledge_retriever.py. Con el id vacío (default) la recuperación
+    # queda deshabilitada y el rol no recibe bedrock:Retrieve (iam.tf).
   }
 
   depends_on = [

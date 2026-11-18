@@ -7,6 +7,7 @@ con la rama, el commit y los cambios pendientes de Git.
 
 | Tarea | Estado |
 |---|---|
+| [2026-11-17-bedrock-knowledge-base](2026-11-17-bedrock-knowledge-base.md) | Base de RAG implementada localmente y deshabilitada por defecto; sin commits; revisión y merge pendientes; sin cambios en AWS |
 | [2026-11-15-functional-test-readiness](2026-11-15-functional-test-readiness.md) | Tres correcciones verificadas; revisión y merge pendientes |
 | [2026-11-05-skills-hooks](2026-11-05-skills-hooks.md) | Seis skills validadas y hooks definidos; implementación/activación pendiente |
 | [2026-11-05-reorganizacion-repositorio](2026-11-05-reorganizacion-repositorio.md) | Arquitectura implementada y verificada localmente; CI remoto pendiente |

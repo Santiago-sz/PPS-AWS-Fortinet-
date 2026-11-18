@@ -39,8 +39,10 @@ cd audit-engine
 ../.venv/Scripts/python.exe -m pytest -q -p no:cacheprovider
 ```
 
-Verificación local del 2026-11-15 (Python 3.11, `.venv-gui`, pytest 9.1.1):
-**283 tests passed, 1 skipped**. El venv `.venv/` no estaba disponible.
+Verificación local del 2026-11-17 (Python 3.12, `.venv`, pytest 8.3.5):
+**350 tests passed, 1 skipped**. La verificación anterior, del 2026-11-15
+(Python 3.11, `.venv-gui`, pytest 9.1.1), daba 283 passed, 1 skipped; la
+diferencia son los 67 tests de la base de Knowledge Base (ver abajo).
 (skip documentado: `signal.setitimer`/`SIGALRM` no existe en Windows, ver
 `test_sandbox.py::TestWallClockBudgetViaSignalBackstop`; en Linux/CI ese
 test corre de verdad; el resultado de Linux/CI queda pendiente de comprobar). Todos mockean AWS
@@ -69,6 +71,9 @@ runtime de Lambda trae un boto3 más nuevo.
 |---|---|
 | `test_bedrock_client.py` | Transporte Converse sobre Bedrock: forma exacta de la request (`modelId`, `cachePoint`, `maxTokens` explícito), parseo de usage/latencia, mapeo de errores a `BedrockCallError`, cliente cacheado, evento `llm_call` + métricas EMF |
 | `test_observability.py` | `log_event` (una línea JSON), `emit_metric` (estructura EMF `_aws`), `timer` |
+| `test_knowledge_retriever.py` | Recuperación sobre la Knowledge Base administrada (`bedrock-agent-runtime.retrieve`) con cliente simulado: configuración por entorno (id vacío = deshabilitado), forma exacta de la request, mapeo de `retrievalResults`, rechazo de consultas vacías o sobre el límite de la API (20000 caracteres, sin recortar), errores envueltos en `KnowledgeRetrievalError` solo con código o tipo, un evento `kb_retrieve` por llamada sin consulta ni texto recuperado, cliente cacheado |
+| `test_knowledge_base_iac.py` | Contratos IaC/código de la Knowledge Base, leyendo el HCL real: variables `knowledge_base_id`/`knowledge_base_max_results` y sus validaciones, env del generador (y su ausencia en executor y assessor), `bedrock:Retrieve` solo en la política condicional `generator_knowledge_base` con el ARN exacto, provider del pipeline intacto (`~> 5.0`, lock 5.100.0) y propiedades del módulo `infrastructure/knowledge-base/` (tipo `MANAGED`, conector S3 administrado, condiciones de confianza, sin comodines, bucket endurecido, outputs) |
+| `test_repository_layout.py` | Ubicación y empaquetado: módulos aplanables sin colisiones, `knowledge_retriever.py` empaquetado con el generador, y el executor sin imports de `llm_client`/`bedrock_client`/`knowledge_retriever` ni referencias a Bedrock |
 
 ### Archivos de test — flujo legacy NIST CSF 2.0 (`enable_legacy_nist_schedule=false` por defecto; la Lambda assessor sigue desplegada)
 
@@ -124,6 +129,7 @@ Configuración en `pyproject.toml` (`[tool.ruff]` / `[tool.ruff.lint]`).
 
 ```bash
 PYTHONUTF8=1 ../.venv/Scripts/python.exe -m checkov.main -d ../infrastructure/pipeline
+PYTHONUTF8=1 ../.venv/Scripts/python.exe -m checkov.main -d ../infrastructure/knowledge-base
 ```
 
 `PYTHONUTF8=1` es necesario en Windows: sin eso, Python usa cp1252 por
@@ -133,7 +139,8 @@ toparse con los comentarios en español (tildes, guiones largos) de los
 
 Es un análisis de solo lectura — checkov nunca corre `terraform plan` ni
 `apply`, solo parsea el HCL estáticamente. El resultado consolidado de la
-última corrida está en `checkov-report.md`.
+última corrida está en `checkov-report.md`; el del módulo de la Knowledge
+Base, en `../infrastructure/knowledge-base/README.md`.
 
 ## 5. `terraform validate` / `plan`
 
@@ -160,6 +167,20 @@ Prerrequisito: `layers/pps-doc-parsers.zip` tiene que existir antes de
 `validate`/`plan`/`apply` (ver sección "Layer"), porque
 `aws_lambda_layer_version.doc_parsers` calcula `filebase64sha256()` sobre
 él. También `terraform fmt -check -recursive` debe pasar (CI lo exige).
+
+El módulo `../infrastructure/knowledge-base/` (Knowledge Base administrada
+de Bedrock, provider aws 6.x) se verifica igual pero con su propio
+directorio de datos y sin necesidad del layer:
+
+```bash
+export TF_DATA_DIR="C:/Users/<usuario>/.terraform-data/pps-knowledge-base"
+terraform -chdir=../infrastructure/knowledge-base fmt -check -recursive
+terraform -chdir=../infrastructure/knowledge-base init -backend=false -input=false
+terraform -chdir=../infrastructure/knowledge-base validate
+```
+
+No compartir `TF_DATA_DIR` entre módulos: usan versiones distintas del
+provider.
 
 ## 6. tflint (pendiente — instalación manual opcional)
 
@@ -221,6 +242,7 @@ Métricas, modo live, re-grabado de fixtures y qué citar en la tesis: ver
 `.github/workflows/ci.yml` corre en cada push/PR, en `ubuntu-latest` con
 Python 3.12: `lambda` (ruff + pytest), `api` (pytest), `desktop` (pytest
 con Qt offscreen), `terraform` (build del layer + `fmt -check` + `init
--backend=false` + `validate` + checkov en modo `soft_fail`) y
+-backend=false` + `validate` + checkov en modo `soft_fail`, para
+`infrastructure/pipeline` y para `infrastructure/knowledge-base`) y
 `evals-offline`. Son las mismas órdenes de este documento; si pasan acá,
 pasan en CI.

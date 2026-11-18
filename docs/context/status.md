@@ -35,6 +35,12 @@ La rama y el árbol de trabajo actuales se obtienen de Git, no de ese relato.
   [checkov-report.md](../../infrastructure/pipeline/checkov-report.md); la base informa
   109 aprobados y 29 fallidos justificados, no ausencia de hallazgos.
 
+- Knowledge Base de Bedrock (2026-11-17): base implementada localmente y
+  deshabilitada por defecto; falta desplegar el módulo, definir el corpus e
+  incorporar los fragmentos al prompt. Según el encargo de esa fecha, la cuota
+  del modelo en la cuenta sigue en 0 con dos pedidos de aumento presentados.
+  Detalle en [el handoff](handoffs/2026-11-17-bedrock-knowledge-base.md).
+
 Las referencias a recursos, versiones y cuotas son históricas. Esta lista no
 autoriza despliegues, cambios IAM, modificaciones del firewall ni costos live.
 
