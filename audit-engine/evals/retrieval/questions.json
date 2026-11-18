@@ -1,0 +1,85 @@
+{
+  "version": 1,
+  "k": 5,
+  "_comment": "Preguntas genericas sobre hardening de FortiGate, limitadas a temas que cubre el catalogo de endpoints. expected_sources son subcadenas (sin distinguir mayusculas) del identificador del documento esperado: basta con que una aparezca en el origen de algun resultado. Son PROVISORIAS: el corpus real todavia no esta definido; ajustarlas a los nombres reales de los documentos y subir version cuando se cargue.",
+  "questions": [
+    {
+      "id": "admin-trusted-hosts",
+      "topic": "admin_access",
+      "question": "How should administrator access to a FortiGate be restricted to trusted hosts?",
+      "expected_sources": ["hardening", "administration-guide"]
+    },
+    {
+      "id": "admin-https-ssh-only",
+      "topic": "admin_access",
+      "question": "Which administrative access protocols should be disabled on FortiGate interfaces, such as HTTP and Telnet?",
+      "expected_sources": ["hardening", "cis"]
+    },
+    {
+      "id": "admin-idle-timeout-lockout",
+      "topic": "admin_access",
+      "question": "What are the recommended administrator idle timeout and account lockout settings in FortiOS?",
+      "expected_sources": ["hardening", "cis"]
+    },
+    {
+      "id": "password-policy-minimum-length",
+      "topic": "password_policy",
+      "question": "How is the minimum password length configured in the FortiOS system password policy?",
+      "expected_sources": ["cli-reference", "administration-guide"]
+    },
+    {
+      "id": "password-policy-complexity-reuse",
+      "topic": "password_policy",
+      "question": "What password complexity and password reuse settings does a FortiGate password policy support?",
+      "expected_sources": ["hardening", "cis"]
+    },
+    {
+      "id": "logging-remote-syslog",
+      "topic": "logging",
+      "question": "How do you send FortiGate logs to a remote syslog server or FortiAnalyzer?",
+      "expected_sources": ["administration-guide", "cli-reference"]
+    },
+    {
+      "id": "logging-encrypted-transport",
+      "topic": "logging",
+      "question": "How is log transmission from a FortiGate to FortiAnalyzer encrypted?",
+      "expected_sources": ["hardening", "administration-guide"]
+    },
+    {
+      "id": "ntp-synchronization",
+      "topic": "ntp",
+      "question": "How is NTP time synchronization configured on a FortiGate?",
+      "expected_sources": ["administration-guide", "cli-reference"]
+    },
+    {
+      "id": "ntp-authentication",
+      "topic": "ntp",
+      "question": "Why should a FortiGate synchronize its clock with trusted NTP servers and how is NTP authentication enabled?",
+      "expected_sources": ["hardening", "cis"]
+    },
+    {
+      "id": "firewall-policy-implicit-deny-logging",
+      "topic": "firewall_policy",
+      "question": "How do you log traffic denied by the implicit deny firewall policy on a FortiGate?",
+      "expected_sources": ["administration-guide", "hardening"]
+    },
+    {
+      "id": "firewall-policy-any-any",
+      "topic": "firewall_policy",
+      "question": "Why should firewall policies avoid using all as source, destination and service?",
+      "expected_sources": ["hardening", "cis"]
+    },
+    {
+      "id": "ssl-inspection-deep",
+      "topic": "ssl_inspection",
+      "question": "What is the difference between certificate inspection and deep inspection in an SSL/SSH inspection profile?",
+      "expected_sources": ["administration-guide"]
+    },
+    {
+      "id": "ssl-inspection-invalid-certificates",
+      "topic": "ssl_inspection",
+      "question": "How should an SSL/SSH inspection profile handle invalid or untrusted server certificates?",
+      "expected_sources": ["hardening", "administration-guide"]
+    }
+  ]
+}

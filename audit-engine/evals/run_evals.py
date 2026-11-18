@@ -28,6 +28,14 @@ Salida: `evals/results/<timestamp>-<mode>.json` + tabla Markdown por stdout.
 Código de salida 1 si alguna normativa o el agregado cae por debajo de los
 umbrales de `evals/thresholds.json`.
 
+Suites (`--suite`):
+  generation (default)  Lo descripto arriba.
+  retrieval             Calidad de recuperación de la Knowledge Base (hit
+                        rate en k y MRR sobre `evals/retrieval/questions.json`),
+                        con los mismos modos offline/live, `--record`,
+                        `--results-dir` y `--thresholds`. Ver
+                        `evals/retrieval_eval.py`.
+
 Solo stdlib + los módulos del pipeline (se agregan a sys.path desde
 `audit-pipeline/lambda`, igual que hace pytest vía pyproject.toml).
 """
@@ -49,6 +57,12 @@ EVALS_DIR = Path(__file__).resolve().parent
 PIPELINE_DIR = EVALS_DIR.parent
 for area in ("generator", "executor", "contracts", "legacy"):
     sys.path.insert(0, str(PIPELINE_DIR / area))
+# `retrieval_eval` vive junto a este archivo; al cargar el runner por ruta
+# (tests) el directorio de evals no está en sys.path.
+if str(EVALS_DIR) not in sys.path:
+    sys.path.insert(0, str(EVALS_DIR))
+
+import retrieval_eval  # noqa: E402
 
 import bedrock_client  # noqa: E402
 import chunker  # noqa: E402
@@ -455,9 +469,17 @@ def markdown_table(per_policy: list[dict], agg: dict) -> str:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Evals offline/live del generador de scripts")
     parser.add_argument("--mode", choices=["offline", "live"], default="offline")
+    parser.add_argument(
+        "--suite",
+        choices=["generation", "retrieval"],
+        default="generation",
+        help="generation: map/reduce del generador; retrieval: calidad de la Knowledge Base",
+    )
     parser.add_argument("--policy", help="correr solo esta normativa (stem del .md)")
     parser.add_argument(
-        "--record", action="store_true", help="live: guardar respuestas en recorded/"
+        "--record",
+        action="store_true",
+        help="live: guardar respuestas en recorded/ (retrieval: en retrieval/recorded.json)",
     )
     parser.add_argument("--max-attempts", type=int, default=llm_client.MAX_GENERATION_ATTEMPTS)
     parser.add_argument("--results-dir", type=Path, default=RESULTS_DIR)
@@ -472,6 +494,15 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.record and args.mode != "live":
         parser.error("--record only makes sense with --mode live")
+
+    if args.suite == "retrieval":
+        return retrieval_eval.run_suite(
+            mode=args.mode,
+            record=args.record,
+            results_dir=args.results_dir,
+            thresholds_file=args.thresholds,
+            verbose=args.verbose,
+        )
 
     names = _policy_names(args.policy)
 
