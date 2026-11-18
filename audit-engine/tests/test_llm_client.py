@@ -297,6 +297,27 @@ class TestMapChunksToChecks:
         with pytest.raises(MapResponseParseError):
             map_chunks_to_checks(chunks, ENDPOINT_CATALOG)
 
+    def test_truncated_map_response_fails_explicitly(self, mocker):
+        # Observado en el primer E2E con una normativa real (2026-11-18): un
+        # grupo con muchos controles agotó el tope de salida y el JSON llegó
+        # cortado. Debe informarse como truncamiento, no como JSON inválido,
+        # y nunca usarse un resultado parcial.
+        chunks = [_make_chunk("chunk-0001", "texto")]
+        cut = json.dumps(ONE_CHECK_MAP_RESPONSE)[:-20]
+        _mock_bedrock(mocker, [bedrock_converse_response(cut, stop_reason="max_tokens")])
+
+        with pytest.raises(llm_client.MapOutputTruncatedError) as excinfo:
+            map_chunks_to_checks(chunks, ENDPOINT_CATALOG)
+
+        assert isinstance(excinfo.value, MapResponseParseError)
+        assert "max_tokens" in str(excinfo.value)
+
+    def test_complete_map_response_at_other_stop_reasons_is_parsed(self, mocker):
+        chunks = [_make_chunk("chunk-0001", "texto")]
+        _mock_bedrock(mocker, [bedrock_json_response(ONE_CHECK_MAP_RESPONSE)])
+
+        assert len(map_chunks_to_checks(chunks, ENDPOINT_CATALOG)) == 1
+
     def test_bedrock_failure_surfaces_as_claude_call_error(self, mocker):
         chunks = [_make_chunk("chunk-0001", "texto")]
         _mock_bedrock(

@@ -77,8 +77,12 @@ MAP_GROUP_MAX_CHARS = 12_000
 MAX_GENERATION_ATTEMPTS = 3
 
 # Tope de tokens de salida por llamada (siempre explicito en la request).
-MAP_MAX_TOKENS = 4096
-REDUCE_MAX_TOKENS = 4096
+# Calibrado con el primer E2E sobre una normativa real (2026-11-18): con
+# 4096 un grupo de map con muchos controles llegaba cortado. El tope de map
+# deja margen amplio; si aun asi se agota, la llamada falla de forma
+# explicita (MapOutputTruncatedError) en lugar de usar un JSON parcial.
+MAP_MAX_TOKENS = 16_000
+REDUCE_MAX_TOKENS = 8_192
 
 
 class ClaudeCallError(Exception):
@@ -93,6 +97,16 @@ class ClaudeCallError(Exception):
 
 class MapResponseParseError(Exception):
     """La respuesta del modelo para un grupo de map no es JSON valido."""
+
+
+class MapOutputTruncatedError(MapResponseParseError):
+    """La respuesta de map agoto el tope de tokens de salida y llego cortada.
+
+    Hereda de MapResponseParseError para que los callers existentes la
+    informen por el mismo camino, pero con un motivo distinguible: no es un
+    JSON mal formado por el modelo, sino una salida incompleta. Nunca se
+    intenta rescatar controles de una respuesta cortada.
+    """
 
 
 class MapCallBudgetExceededError(Exception):
@@ -237,11 +251,16 @@ def _call_model(
     *,
     stage: str,
     attempt: int | None = None,
+    fail_on_truncation: bool = False,
 ) -> str:
     """Llama al modelo via Bedrock y devuelve el texto crudo de la respuesta.
 
     Nunca devuelve un dict de error -- traduce `BedrockCallError` a
     `ClaudeCallError` para que los callers conserven su manejo de errores.
+
+    Con `fail_on_truncation`, una respuesta que termino por agotar el tope
+    de salida (`stop_reason == "max_tokens"`) levanta
+    `MapOutputTruncatedError` en lugar de devolver texto incompleto.
     """
     try:
         result = bedrock_client.converse(
@@ -253,6 +272,10 @@ def _call_model(
         )
     except bedrock_client.BedrockCallError as e:
         raise ClaudeCallError(str(e)) from e
+    if fail_on_truncation and getattr(result, "stop_reason", None) == "max_tokens":
+        raise MapOutputTruncatedError(
+            f"model {stage} response hit the max_tokens limit ({max_tokens}) and is incomplete"
+        )
     return result.text
 
 
@@ -347,7 +370,9 @@ def _normalize_check(check: dict) -> dict:
 
 def _map_chunk_group(group: list[dict], endpoint_catalog: list[str]) -> list[dict]:
     user_prompt = _build_map_user_prompt(group, endpoint_catalog)
-    raw_text = _call_model(MAP_SYSTEM_PROMPT, user_prompt, MAP_MAX_TOKENS, stage="map")
+    raw_text = _call_model(
+        MAP_SYSTEM_PROMPT, user_prompt, MAP_MAX_TOKENS, stage="map", fail_on_truncation=True
+    )
 
     # El modelo a veces envuelve el JSON en un bloque ```json ... ``` aunque
     # el prompt pida JSON puro (observado en vivo el 2026-11-18). Se quita
