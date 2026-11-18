@@ -1,13 +1,15 @@
 # Base de RAG vectorial sobre una Knowledge Base administrada de Bedrock
 
 - Fecha e identificador: 2026-11-17, bedrock-knowledge-base.
-- Estado: implementado localmente, **sin commits**; revisión del desarrollador
+- Estado: implementado y registrado en commits; revisión del desarrollador
   y merge pendientes. **No se hizo ningún cambio en AWS.**
-- Rama: `feature/bedrock-knowledge-base`; base `master` en `32e0ac5`, que es
-  también el último commit (HEAD) al cerrar este incremento.
-- Árbol inicial limpio; todos los cambios pendientes son de esta tarea.
-- Merge: no autorizado. Commits: no realizados por indicación del encargo
-  (los cambios quedan en el árbol de trabajo para revisión).
+- Rama: `feature/bedrock-knowledge-base`; base `master` en `32e0ac5`.
+- Commits: `16b45d3` (implementación) y un commit documental posterior con el
+  [resumen de trabajo](../rag/README.md). Durante la implementación no se
+  hicieron commits; el desarrollador pidió después (2026-11-17) registrar los
+  cambios y publicar la rama en `origin`.
+- Árbol inicial limpio; todos los cambios son de esta tarea.
+- Merge: no autorizado.
 
 ## Objetivo y aceptación
 

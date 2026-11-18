@@ -26,6 +26,7 @@ contexto necesario; al retomar una tarea, leer su handoff y contrastarlo con Git
 | Entender una elección técnica | [decisions/README.md](decisions/README.md) | [Registro base](../base/05-decisiones.md) |
 | Consultar despliegue, bloqueos y deuda | [status.md](status.md) | [Estado histórico](../base/07-estado-y-pendientes.md), [conectividad](../base/06-conexion-fortigate.md) |
 | Continuar una tarea | [handoffs/README.md](handoffs/README.md) | Handoff correspondiente al identificador y rama de la tarea |
+| Entender o continuar el RAG con Bedrock | [rag/README.md](rag/README.md) | [Módulo knowledge-base](../../infrastructure/knowledge-base/README.md), [decisión 10](decisions/10-bedrock-knowledge-base.md) |
 
 ## Uso y mantenimiento
 
