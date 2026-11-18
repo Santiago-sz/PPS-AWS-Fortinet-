@@ -113,7 +113,7 @@ class TestBuildRequest:
         assert build_request(QUERY, knowledge_base_id=KB_ID, max_results=7) == {
             "knowledgeBaseId": KB_ID,
             "retrievalQuery": {"text": QUERY},
-            "retrievalConfiguration": {"vectorSearchConfiguration": {"numberOfResults": 7}},
+            "retrievalConfiguration": {"managedSearchConfiguration": {"numberOfResults": 7}},
         }
 
 
@@ -134,7 +134,7 @@ class TestRetrieve:
         client.retrieve.assert_called_once_with(
             knowledgeBaseId=KB_ID,
             retrievalQuery={"text": QUERY},
-            retrievalConfiguration={"vectorSearchConfiguration": {"numberOfResults": 4}},
+            retrievalConfiguration={"managedSearchConfiguration": {"numberOfResults": 4}},
         )
 
     def test_fragment_is_immutable(self):
@@ -375,3 +375,179 @@ class TestGetClient:
         load_config()
 
         boto_client.assert_not_called()
+
+
+class TestSearchConfigurationSwitch:
+    """La API ofrece `vectorSearchConfiguration` y `managedSearchConfiguration`;
+    la elección es una única constante de módulo."""
+
+    def test_managed_knowledge_base_uses_the_managed_search_configuration(self):
+        """Comprobado contra el servicio el 2026-11-18: una base MANAGED rechaza
+        `vectorSearchConfiguration` con ValidationException y acepta
+        `managedSearchConfiguration`."""
+        assert knowledge_retriever.SEARCH_CONFIGURATION_KEY == "managedSearchConfiguration"
+
+    def test_switching_the_constant_moves_the_whole_search_configuration(self, monkeypatch):
+        monkeypatch.setattr(
+            knowledge_retriever, "SEARCH_CONFIGURATION_KEY", "vectorSearchConfiguration"
+        )
+        metadata_filter = {"equals": {"key": "fortios_version", "value": "7.4"}}
+
+        request = build_request(
+            QUERY, knowledge_base_id=KB_ID, max_results=7, metadata_filter=metadata_filter
+        )
+
+        assert request["retrievalConfiguration"] == {
+            "vectorSearchConfiguration": {"numberOfResults": 7, "filter": metadata_filter}
+        }
+
+    def test_both_search_shapes_accept_number_of_results_and_filter_in_the_service_model(self):
+        """Guarda contra el modelo de servicio del venv: si una versión de
+        botocore cambia estas formas, la constante deja de ser intercambiable."""
+        import boto3
+
+        model = boto3.client(
+            "bedrock-agent-runtime",
+            region_name="us-east-1",
+            aws_access_key_id="test",
+            aws_secret_access_key="test",
+        ).meta.service_model
+        configuration = model.shape_for("KnowledgeBaseRetrievalConfiguration")
+
+        for member in ("vectorSearchConfiguration", "managedSearchConfiguration"):
+            shape = configuration.members[member]
+            assert {"numberOfResults", "filter"} <= set(shape.members), member
+            assert shape.members["filter"].name == "RetrievalFilter"
+            assert shape.members["numberOfResults"].metadata == {"min": 1, "max": 100}
+
+
+class TestMetadataFilter:
+    def test_request_without_filter_is_unchanged(self):
+        assert build_request(QUERY, knowledge_base_id=KB_ID, max_results=7) == build_request(
+            QUERY, knowledge_base_id=KB_ID, max_results=7, metadata_filter=None
+        )
+        assert "filter" not in json.dumps(
+            build_request(QUERY, knowledge_base_id=KB_ID, max_results=7)
+        )
+
+    def test_filter_goes_inside_the_search_configuration(self):
+        metadata_filter = knowledge_retriever.equals_filter("fortios_version", "7.4")
+
+        request = build_request(
+            QUERY, knowledge_base_id=KB_ID, max_results=7, metadata_filter=metadata_filter
+        )
+
+        assert metadata_filter == {"equals": {"key": "fortios_version", "value": "7.4"}}
+        search = request["retrievalConfiguration"][knowledge_retriever.SEARCH_CONFIGURATION_KEY]
+        assert search == {"numberOfResults": 7, "filter": metadata_filter}
+
+    def test_retrieve_passes_the_filter_to_the_service(self, mocker):
+        client = mocker.MagicMock()
+        client.retrieve.return_value = _retrieve_response(_result("fragmento"))
+        metadata_filter = knowledge_retriever.equals_filter("fortios_version", "7.4")
+
+        retrieve(
+            QUERY,
+            knowledge_base_id=KB_ID,
+            max_results=4,
+            metadata_filter=metadata_filter,
+            client=client,
+        )
+
+        configuration = client.retrieve.call_args.kwargs["retrievalConfiguration"]
+        assert configuration[knowledge_retriever.SEARCH_CONFIGURATION_KEY]["filter"] == (
+            metadata_filter
+        )
+
+    @pytest.mark.parametrize("metadata_filter", ["fortios_version=7.4", [], {}])
+    def test_malformed_filter_is_rejected_before_calling_the_service(self, mocker, metadata_filter):
+        client = mocker.MagicMock()
+
+        with pytest.raises(ValueError):
+            retrieve(
+                QUERY,
+                knowledge_base_id=KB_ID,
+                max_results=4,
+                metadata_filter=metadata_filter,
+                client=client,
+            )
+
+        client.retrieve.assert_not_called()
+
+    @pytest.mark.parametrize(("key", "value"), [("", "7.4"), ("k" * 101, "7.4"), ("clave", "")])
+    def test_equals_filter_rejects_invalid_key_or_value(self, key, value):
+        with pytest.raises(ValueError):
+            knowledge_retriever.equals_filter(key, value)
+
+    def test_fortios_version_env_builds_an_equals_filter(self, monkeypatch):
+        monkeypatch.setenv(KNOWLEDGE_BASE_ID_ENV, KB_ID)
+        monkeypatch.setenv(knowledge_retriever.KNOWLEDGE_BASE_FORTIOS_VERSION_ENV, " 7.4 ")
+
+        config = load_config()
+
+        assert knowledge_retriever.KNOWLEDGE_BASE_FORTIOS_VERSION_ENV == (
+            "KNOWLEDGE_BASE_FORTIOS_VERSION"
+        )
+        assert config.fortios_version == "7.4"
+        assert config.metadata_filter == {"equals": {"key": "fortios_version", "value": "7.4"}}
+
+    @pytest.mark.parametrize("value", [None, "", "   "])
+    def test_blank_fortios_version_means_no_filter(self, monkeypatch, value):
+        monkeypatch.setenv(KNOWLEDGE_BASE_ID_ENV, KB_ID)
+        if value is None:
+            monkeypatch.delenv(
+                knowledge_retriever.KNOWLEDGE_BASE_FORTIOS_VERSION_ENV, raising=False
+            )
+        else:
+            monkeypatch.setenv(knowledge_retriever.KNOWLEDGE_BASE_FORTIOS_VERSION_ENV, value)
+
+        config = load_config()
+
+        assert config.fortios_version == ""
+        assert config.metadata_filter is None
+
+
+class TestSourceIdentifier:
+    """El identificador de origen es la clave del objeto: el nombre del bucket
+    (que incluye el id de cuenta) nunca sale del módulo de recuperación."""
+
+    @pytest.mark.parametrize(
+        ("uri", "expected"),
+        [
+            (
+                "https://pps-prod-knowledge-123456789012.s3.amazonaws.com/fortinet/Best_Practices.pdf",
+                "fortinet/Best_Practices.pdf",
+            ),
+            (
+                "https://pps-prod-knowledge-123456789012.s3.us-east-1.amazonaws.com/a/b%20c.pdf",
+                "a/b c.pdf",
+            ),
+            (
+                "https://s3.us-east-1.amazonaws.com/pps-prod-knowledge-123456789012/a/b.pdf",
+                "a/b.pdf",
+            ),
+            ("s3://pps-prod-knowledge-123456789012/fortinet/doc.pdf", "fortinet/doc.pdf"),
+            ("https://docs.example.com/guia/hardening.html?x=1", "guia/hardening.html"),
+            ("fortinet/doc.pdf", "fortinet/doc.pdf"),
+        ],
+    )
+    def test_only_the_object_key_is_kept(self, uri, expected):
+        identifier = knowledge_retriever.source_identifier(uri)
+
+        assert identifier == expected
+        assert "123456789012" not in identifier
+
+    @pytest.mark.parametrize(
+        "uri", [None, "", "   ", "s3://pps-prod-knowledge-123456789012", "https://host.example/"]
+    )
+    def test_uri_without_an_object_key_has_no_identifier(self, uri):
+        assert knowledge_retriever.source_identifier(uri) is None
+
+    def test_fewer_results_than_requested_are_returned_as_they_come(self, mocker):
+        """Observado el 2026-11-18: pedir 3 resultados devolvió 2."""
+        client = mocker.MagicMock()
+        client.retrieve.return_value = _retrieve_response(_result("uno"), _result("dos"))
+
+        fragments = retrieve(QUERY, knowledge_base_id=KB_ID, max_results=3, client=client)
+
+        assert [f.text for f in fragments] == ["uno", "dos"]

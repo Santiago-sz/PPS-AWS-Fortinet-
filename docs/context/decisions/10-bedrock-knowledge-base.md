@@ -40,7 +40,10 @@ en riesgo el pipeline ya desplegado.
 5. **Este incremento no cambia prompts.** `knowledge_retriever.py` no lo
    importa ningún handler ni `llm_client`. Incorporar fragmentos al prompt de
    reduce y registrarlos en el manifest es un cambio posterior, que exige
-   regrabar las fixtures de evals en vivo.
+   regrabar las fixtures de evals en vivo. Ese cambio se hizo el 2026-11-18
+   y está registrado en la
+   [decisión 11](11-referencias-en-generacion.md); el punto describe el
+   alcance del incremento del 2026-11-17.
 
 ## Consecuencias
 

@@ -1,8 +1,10 @@
 # Base de RAG vectorial sobre una Knowledge Base administrada de Bedrock
 
-- Fecha e identificador: 2026-11-17, bedrock-knowledge-base.
-- Estado: implementado y registrado en commits; revisión del desarrollador
-  y merge pendientes. **No se hizo ningún cambio en AWS.**
+- Fecha e identificador: 2026-11-17, bedrock-knowledge-base. Actualizado el
+  2026-11-18 con un segundo incremento (sección «Incremento del 2026-11-18»,
+  al final): **implementado y verificado en local, sin commit**.
+- Estado: primer incremento registrado en commits; revisión del desarrollador
+  y merge pendientes. **Ninguno de los dos incrementos hizo cambios en AWS.**
 - Rama: `feature/bedrock-knowledge-base`; base `master` en `32e0ac5`.
 - Commits: `16b45d3` (implementación) y un commit documental posterior con el
   [resumen de trabajo](../rag/README.md). Durante la implementación no se
@@ -170,3 +172,202 @@ No verificado:
 
 Próximo paso concreto: revisión del diff por el desarrollador; con su
 aprobación, commits pequeños en esta rama y consulta de merge a `master`.
+
+Los pendientes 1 y 2 de esta lista quedaron resueltos el 2026-11-18 (ver la
+sección siguiente); la lista se conserva como registro del primer incremento.
+
+## Incremento del 2026-11-18
+
+- Base: `e86bbc1` en `feature/bedrock-knowledge-base`. Árbol inicial: un
+  único cambio ajeno, `infrastructure/knowledge-base/knowledge_base.tf`,
+  modificado por otro proceso que desplegaba ese módulo en paralelo. No se
+  leyó, editó ni ejecutó nada en esa carpeta.
+- Estado: implementado y verificado en local. **Sin commit, sin `git add`.**
+  Revisión y merge pendientes; merge no autorizado.
+- Restricciones del encargo: sin llamadas a AWS, sin `plan`/`apply`, sin
+  tocar `infrastructure/knowledge-base/`, `script_validator.py`, `sandbox.py`,
+  catálogo de endpoints ni funciones legacy; provider y lock del pipeline
+  intactos; `terraform.tfvars` y estados sin leer.
+- Skills: `pps-audit-engine`, `pps-terraform`, `pps-handoff` (leídas y
+  aplicadas como procedimiento).
+
+### Hechos informados en el encargo (no observados por el agente)
+
+- El CI del commit `e86bbc1` aprobó sus cinco jobs en Linux
+  ([run 44227778670](https://github.com/Santiago-sz/PPS-AWS-Fortinet-/actions/runs/44227778670)).
+  La cantidad de tests aprobados en Linux no fue observada; el valor 351 de
+  este handoff sigue siendo una inferencia.
+- Los pedidos de cuota de Bedrock se cerraron. Cuota aplicada de Claude
+  Sonnet 4.6, inferencia entre regiones: 6.000.000 tokens por minuto y 10
+  pedidos por minuto (no los 10.000 pedidos). Una llamada mínima a Converse
+  respondió correctamente. El bloqueo 2 de la lista anterior ya no rige.
+
+### Objetivo y aceptación
+
+1. Usar los fragmentos recuperados en la generación del script, con la base
+   deshabilitada idéntica byte a byte a lo anterior.
+2. Evaluación de calidad de recuperación en `audit-engine/evals/`.
+3. Higiene documental (identificadores reales en `docs/base/`, afirmaciones
+   desactualizadas y hechos del 2026-11-18).
+
+### Cambios
+
+Paquete 1, generación con referencia:
+
+- Nuevos: `audit-engine/generator/reference_context.py`,
+  `audit-engine/tests/test_reference_context.py`,
+  `docs/context/decisions/11-referencias-en-generacion.md`.
+- Modificados: `generator/knowledge_retriever.py` (filtro, constante de
+  configuración de búsqueda, `fortios_version` en la configuración),
+  `generator/llm_client.py` (`reference_provider`, `references`,
+  `REFERENCE_SYSTEM_NOTE`), `generator/handler_generator.py`,
+  `contracts/s3_io.py` (`knowledge_base` opcional en el manifest),
+  `executor/toolkit.py` y `executor/reporter.py` (`references` por hallazgo);
+  tests de esos módulos, `test_repository_layout.py` y
+  `test_knowledge_base_iac.py`; `infrastructure/pipeline/variables.tf`,
+  `lambda.tf` y `terraform.tfvars.example`
+  (`knowledge_base_fortios_version` y `KNOWLEDGE_BASE_FORTIOS_VERSION`).
+
+Paquete 2, evals de recuperación:
+
+- Nuevos: `audit-engine/evals/retrieval_eval.py`,
+  `evals/retrieval/questions.json`, `evals/retrieval/recorded.json`
+  (sintética), `audit-engine/tests/test_retrieval_evals.py`.
+- Modificados: `evals/run_evals.py` (`--suite`), `evals/thresholds.json`
+  (clave `retrieval`), `evals/README.md`.
+
+Paquete 3, higiene documental:
+
+- `docs/base/*.md`: 39 reemplazos por marcadores neutros en 7 archivos.
+- `lambda/README-LEGACY.md` y `terraform/README-LEGACY.md`: una línea cada
+  uno, la ruta del código canónico. Es el único cambio en las carpetas
+  legacy, indicado de forma explícita en el encargo.
+- Comentario inicial de `handler_generator.py`, `docs/context/status.md`,
+  `docs/context/handoffs/README.md`, `audit-engine/TESTING.md`,
+  `.github/workflows/ci.yml` (comentario del conteo esperado).
+
+Documentación común: `AGENTS.md`, `docs/context/architecture.md`,
+`docs/context/rag/README.md`, decisiones 10 y 11 e índice, este handoff.
+
+### Decisiones a revisar
+
+Registro duradero: [decisión 11](../decisions/11-referencias-en-generacion.md).
+
+1. **Manifest sin bloque = deshabilitado.** El encargo pide a la vez manifest
+   idéntico con la base deshabilitada y que el manifest diga si la
+   recuperación estuvo habilitada. Se resolvió así: el bloque
+   `knowledge_base` solo existe cuando estuvo habilitada (`enabled: true`);
+   su ausencia significa deshabilitada.
+2. **Consulta**: `title` e `intent` del control. La estructura de un control
+   no tiene un campo de valor esperado; la cita de `clause_ref` no se usa
+   porque es texto de la normativa.
+3. **Topes**: 40 llamadas, 3.000 caracteres por control y 12.000 en total,
+   valores iniciales sin calibrar. Un fragmento de referencia nunca se
+   recorta: entra entero o se omite. Con estos valores un fragmento de más
+   de 3.000 caracteres queda siempre fuera.
+4. **Configuración inválida con la base habilitada**: un
+   `KNOWLEDGE_BASE_MAX_RESULTS` inválido hace fallar la invocación (igual que
+   una variable requerida ausente). Con la base deshabilitada no se lee.
+5. **Evento nuevo `kb_references`** con el resumen de la corrida, para que el
+   resultado quede en los logs aun cuando la generación falla y no hay
+   manifest.
+6. **Origen = clave del objeto.** El servicio devuelve una URL cuyo bucket
+   incluye el id de cuenta; `knowledge_retriever.source_identifier` conserva
+   solo la clave antes de que llegue a prompt, manifest, reporte, eventos o
+   fixtures. Hay tests con un URI de la cuenta ficticia `123456789012`.
+7. **Validación de `knowledge_base_fortios_version`** en Terraform: vacío o
+   versión numérica de hasta tres componentes.
+8. **Evals de recuperación como suite del runner existente**
+   (`--suite retrieval`), no como script aparte. `--suite` por defecto sigue
+   siendo `generation`, de modo que el comando offline de siempre no cambia.
+9. `local-api` y `gui` no se modificaron: leen manifest y reporte con `.get`
+   y filtros por nombre de clave que no alcanzan a los campos nuevos. No se
+   corrieron sus suites.
+
+### TDD y verificaciones
+
+Tests escritos antes de implementar.
+
+- Primera corrida: `ModuleNotFoundError: No module named 'reference_context'`
+  al recolectar `test_reference_context.py` (solo evidencia de que faltaba el
+  módulo).
+- Con un esqueleto sin comportamiento de `reference_context`: 61 fallidos y
+  6 errores de fixture; 376 aprobados (los 350 previos y 26 guardas nuevas
+  que ya se cumplían, entre ellas los hashes de prompts, manifest y reporte
+  sin Knowledge Base). Fallos por comportamiento faltante: argumentos
+  inexistentes (`metadata_filter`, `reference_provider`, `knowledge_base`),
+  atributos inexistentes (`SEARCH_CONFIGURATION_KEY`, `equals_filter`,
+  `retrieval_eval`), claves ausentes (`references`, bloque del manifest),
+  variable de Terraform inexistente y aserciones de contenido.
+- Tras implementar generador, manifest, toolkit y reporter: 8 fallidos y 6
+  errores, todos del cableado Terraform y de las evals de recuperación. Tras
+  el cableado y el runner: 4 fallidos por un error propio en la llamada a
+  `score_question`; corregido, 443 aprobados.
+- Segunda vuelta, con los hallazgos de la base real (ver más abajo): se
+  actualizaron y agregaron tests primero; 24 fallidos (forma
+  `managedSearchConfiguration`, `source_identifier` inexistente, origen como
+  clave en manifest, prompt y evals, presupuesto por control) y 436
+  aprobados. Tras implementar: 460 aprobados. Dos tests previos de
+  `test_knowledge_retriever.py` que fijaban `vectorSearchConfiguration`
+  cambiaron su expectativa porque el servicio demostró que era incorrecta.
+- Los hashes de referencia se calcularon sobre `e86bbc1` antes de editar
+  código de producción.
+
+Resultado final (2026-11-18, Windows, Python 3.12, pytest 8.3.5, Ruff
+0.11.2), desde `audit-engine/`:
+
+| Verificación | Resultado |
+|---|---|
+| `pytest -q -p no:cacheprovider` | 460 aprobados, 1 omitido (SIGALRM en Windows); antes 350 y 1 |
+| `ruff check` / `ruff format --check` | Correctos |
+| `evals/run_evals.py --mode offline` | Código 0, umbrales cumplidos; `evals/recorded/`, `expected/` y `policies/` sin cambios |
+| `evals/run_evals.py --suite retrieval --mode offline` | Código 0; 13 preguntas, acierto en 5 de 0,92 y MRR de 0,70 sobre fixture sintética |
+| Pipeline: `fmt -check`, `init -backend=false`, `validate` | Correctos; provider y lock sin cambios |
+| Checkov pipeline | 118 aprobados, 29 fallidos (igual que antes); `checkov-report.md` sin cambios |
+
+Verificado contra el servicio el 2026-11-18, por fuera de este trabajo e
+informado al agente (que no llamó a AWS):
+
+- Una base `MANAGED` rechaza `vectorSearchConfiguration` con
+  `ValidationException` y acepta
+  `{"managedSearchConfiguration": {"numberOfResults": 3}}`. La constante
+  `SEARCH_CONFIGURATION_KEY` quedó en `managedSearchConfiguration`.
+- Cada resultado trae `score`, `content.text` y `location.s3Location.uri`
+  como URL `https://<bucket>.s3.amazonaws.com/<clave>`.
+- Pedir 3 resultados devolvió 2. Tamaños de fragmento para una consulta:
+  9.943, 1.463, 1.109 y 1.082 caracteres.
+
+No verificado:
+
+- El código de este incremento contra AWS: ni `Retrieve` real, ni el modelo
+  con la sección de referencia, ni `plan`.
+- El filtro `fortios_version` dentro de `managedSearchConfiguration`: el
+  modelo de servicio lo declara, ninguna consulta con filtro fue probada.
+- El modo live de las evals de recuperación (solo con el recuperador
+  simulado) y la calidad real de recuperación.
+- El efecto de la referencia en los scripts generados; las fixtures grabadas
+  no cubren ese camino.
+- CI en Linux con este incremento (se espera 461 aprobados sin omitidos; es
+  una inferencia).
+- Suites de `local-api` y `gui`: no se ejecutaron porque no se modificaron.
+- `infrastructure/knowledge-base/`: no se validó en este incremento.
+
+### Pendientes y próximo paso
+
+1. Revisión del diff por el desarrollador. Los tres paquetes están pensados
+   para commits separados; `handler_generator.py`, `TESTING.md` y este
+   handoff mezclan cambios de más de un paquete y requieren seleccionar
+   hunks.
+2. Fuera del alcance pedido y sin tocar: los diagramas `.drawio` de
+   `docs/base/diagrams/` contienen el id de cuenta y el id de VPC (los `.png`
+   pueden mostrarlos); `docs/base/*.md` conserva rutas locales del clon con
+   el nombre de usuario de Windows; `audit-engine/evals/README.md` nombra el
+   perfil local de AWS.
+3. Con la base desplegada: probar una consulta con filtro, cargar
+   documentos con el metadato `fortios_version`, ajustar
+   `expected_sources` y grabar las evals de recuperación en vivo.
+4. Regrabar las evals de generación en vivo con y sin la base.
+5. Mostrar `references` en `gui` y `local-api`.
+
+Próximo paso concreto: revisión del desarrollador; con su aprobación,
+commits por paquete en esta rama y consulta de merge a `master`.

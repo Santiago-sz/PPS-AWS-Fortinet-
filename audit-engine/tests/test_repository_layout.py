@@ -72,3 +72,20 @@ def test_executor_does_not_import_knowledge_retriever_or_bedrock_clients():
                 continue
             assert "knowledge_retriever" not in names, module.name
         assert "bedrock" not in source.lower(), module.name
+
+
+def test_executor_and_contracts_do_not_import_the_reference_context():
+    engine = ROOT / "audit-engine"
+    assert (engine / "generator/reference_context.py").is_file()
+    for area in ("executor", "contracts", "legacy"):
+        for module in (engine / area).glob("*.py"):
+            for node in ast.walk(ast.parse(module.read_text(encoding="utf-8"))):
+                if isinstance(node, ast.Import):
+                    names = [a.name for a in node.names]
+                elif isinstance(node, ast.ImportFrom):
+                    names = [node.module or ""]
+                else:
+                    continue
+                assert not {"reference_context", "knowledge_retriever"}.intersection(names), (
+                    module.name
+                )

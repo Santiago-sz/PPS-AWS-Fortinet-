@@ -352,3 +352,48 @@ class TestKnowledgeBaseModule:
                 continue
             text = path.read_text(encoding="utf-8")
             assert not re.search(r"(?<!\d)\d{12}(?!\d)", text.replace("123456789012", "")), path
+
+
+class TestFortiosVersionFilterWiring:
+    def test_variable_is_an_optional_string_disabled_by_default(self):
+        block = _block(
+            _read(PIPELINE / "variables.tf"), "variable", "knowledge_base_fortios_version"
+        )
+
+        assert re.search(r"type\s*=\s*string", block)
+        assert re.search(r'default\s*=\s*""', block)
+
+    def test_variable_validation_accepts_versions_and_rejects_free_text(self):
+        block = _block(
+            _read(PIPELINE / "variables.tf"), "variable", "knowledge_base_fortios_version"
+        )
+
+        assert re.search(r"validation\s*\{", block), "falta el bloque validation"
+        pattern = re.search(r'regex\("([^"]+)",\s*var\.knowledge_base_fortios_version\)', block)
+        assert pattern, "la validacion debe usar una expresion regular sobre la version"
+        compiled = re.compile(pattern.group(1))
+        for accepted in ("", "7.4", "7.4.8", "7"):
+            assert compiled.fullmatch(accepted), accepted
+        for rejected in ("7.4 ", "v7.4", "7.4; drop", "latest", "7..4", "1.2.3.4.5"):
+            assert not compiled.fullmatch(rejected), rejected
+
+    def test_generator_receives_the_env_var_the_retriever_reads(self):
+        env_block = _environment_variables(_read(PIPELINE / "lambda.tf"), "policy_generator")
+
+        assert re.search(
+            rf"\b{knowledge_retriever.KNOWLEDGE_BASE_FORTIOS_VERSION_ENV}\b\s*=\s*"
+            r"var\.knowledge_base_fortios_version\b",
+            env_block,
+        )
+
+    def test_example_tfvars_documents_the_variable_commented(self):
+        example = (PIPELINE / "terraform.tfvars.example").read_text(encoding="utf-8")
+
+        assert re.search(r"(?m)^#\s*knowledge_base_fortios_version\s*=", example)
+
+    def test_new_descriptions_are_latin1(self):
+        """Las descripciones terminan en campos de IAM/Lambda: solo Latin-1."""
+        for name in ("variables.tf", "lambda.tf"):
+            for line in (PIPELINE / name).read_text(encoding="utf-8").splitlines():
+                if "fortios" in line.lower():
+                    line.encode("latin-1")

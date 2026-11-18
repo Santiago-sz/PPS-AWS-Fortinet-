@@ -21,11 +21,11 @@ permiten revisar los resultados sin credenciales AWS.
 
 | Ruta | Qué es | Estado |
 |---|---|---|
-| `audit-engine/` | Código de las tres Lambdas (`handler_generator.py`, `handler_executor.py`, `handler.py` legacy NIST) y módulos: `extractor`, `chunker`, `llm_client`, `bedrock_client`, `knowledge_retriever`, `script_validator`, `sandbox`, `toolkit`, `fortigate_client`, `reporter`, `s3_io`, `observability`. Tests en `audit-engine/tests/`. | **Canónico** |
+| `audit-engine/` | Código de las tres Lambdas (`handler_generator.py`, `handler_executor.py`, `handler.py` legacy NIST) y módulos: `extractor`, `chunker`, `llm_client`, `bedrock_client`, `knowledge_retriever`, `reference_context`, `script_validator`, `sandbox`, `toolkit`, `fortigate_client`, `reporter`, `s3_io`, `observability`. Tests en `audit-engine/tests/`. | **Canónico** |
 | `infrastructure/pipeline/` | Infra AWS (S3, Lambdas, IAM mínimo privilegio, SQS DLQ, alarmas, logging de Bedrock). | **Canónico** |
 | `infrastructure/knowledge-base/` | Módulo Terraform aislado (provider aws 6.x, estado propio) de la Knowledge Base administrada de Bedrock: bucket de documentos, rol de servicio, base `MANAGED` y data source S3. No desplegado; ver su `README.md`. | Canónico, opcional |
 | `local-api/` | Servidor HTTP/HTTPS local (`pps_api/server`), servicios y SQLite; puente separado en `pps_api/aws` (`pps-api aws dispatch|sync|list-pending|approve`). | Canónico |
-| `audit-engine/evals/` | Harness de evaluación del generador (normativas sintéticas, fixtures grabadas, métricas, umbrales). | Canónico |
+| `audit-engine/evals/` | Harness de evaluación del generador (normativas sintéticas, fixtures grabadas, métricas, umbrales) y de la recuperación de la Knowledge Base (`--suite retrieval`, fixture sintética). | Canónico |
 | `audit-engine/scripts/` | `build_layer.py` / `build_layer.sh` (Lambda Layer pypdf+python-docx+lxml). | Canónico |
 | `gui/` | App de escritorio PySide6 (consola de auditorías; sin credenciales AWS). | Canónico |
 | `infrastructure/fortigate-lab/` | Terraform de un FortiGate VM de laboratorio en AWS (entorno de pruebas). | Independiente |
@@ -80,15 +80,28 @@ permiten revisar los resultados sin credenciales AWS.
 
 | Lambda | Env requeridas | Env opcionales | IAM (mínimo privilegio) |
 |---|---|---|---|
-| `policy_generator` (`handler_generator.lambda_handler`, 900 s, 1024 MB, layer `pps-doc-parsers`) | `S3_BUCKET`, `EXECUTOR_FUNCTION_NAME` | `BEDROCK_MODEL_ID`, `AUTO_EXECUTE`, `MAX_GENERATION_ATTEMPTS`, `POLICIES_BUCKET`, `LOG_LEVEL`, `KNOWLEDGE_BASE_ID` (vacío = recuperación deshabilitada), `KNOWLEDGE_BASE_MAX_RESULTS` | `bedrock:InvokeModel*` (anthropic.* + inference-profile), `s3:GetObject/ListBucket` en policies, `s3:PutObject` en `reports/artifacts/*` y `reports/reports/*`, `lambda:InvokeFunction` executor, `sqs:SendMessage` su DLQ, logs; `bedrock:Retrieve` sobre el ARN exacto de la Knowledge Base solo si `knowledge_base_id` no está vacío (política aparte `generator_knowledge_base`) |
+| `policy_generator` (`handler_generator.lambda_handler`, 900 s, 1024 MB, layer `pps-doc-parsers`) | `S3_BUCKET`, `EXECUTOR_FUNCTION_NAME` | `BEDROCK_MODEL_ID`, `AUTO_EXECUTE`, `MAX_GENERATION_ATTEMPTS`, `POLICIES_BUCKET`, `LOG_LEVEL`, `KNOWLEDGE_BASE_ID` (vacío = recuperación deshabilitada: prompts, manifest y reporte idénticos), `KNOWLEDGE_BASE_MAX_RESULTS`, `KNOWLEDGE_BASE_FORTIOS_VERSION` (vacío = sin filtro; filtro `equals` sobre el metadato `fortios_version`) | `bedrock:InvokeModel*` (anthropic.* + inference-profile), `s3:GetObject/ListBucket` en policies, `s3:PutObject` en `reports/artifacts/*` y `reports/reports/*`, `lambda:InvokeFunction` executor, `sqs:SendMessage` su DLQ, logs; `bedrock:Retrieve` sobre el ARN exacto de la Knowledge Base solo si `knowledge_base_id` no está vacío (política aparte `generator_knowledge_base`) |
 | `audit_executor` (`handler_executor.lambda_handler`, 300 s, 512 MB, stdlib-only) | `FORTIGATE_HOST`, `FORTIGATE_SECRET_ARN`, `S3_BUCKET`, `SNS_TOPIC_ARN` | `FORTIGATE_VERIFY_SSL`, `SANDBOX_WALL_CLOCK_SECONDS`, `SANDBOX_MAX_FGT_CALLS`, `LOG_LEVEL` | `secretsmanager:GetSecretValue` (solo el secret FortiGate), `s3:GetObject` `artifacts/*`, `s3:PutObject` `reports/*`, `sns:Publish`, `sqs:SendMessage` su DLQ, logs; `AWSLambdaVPCAccessExecutionRole` solo si `executor_subnet_ids` no está vacío |
 | `assessor` legacy (`handler.lambda_handler`) | `FORTIGATE_HOST`, `FORTIGATE_SECRET_ARN`, `S3_BUCKET`, `SNS_TOPIC_ARN` | `BEDROCK_MODEL_ID`, `ENVIRONMENT`, `FORTIGATE_VERIFY_SSL`, `LOG_LEVEL` | secret FortiGate, Bedrock, `s3:PutObject` reports, `sns:Publish`, logs |
 
 Observabilidad: eventos JSON por stdout (`llm_call`, `generation_result`,
-`generator_result`, `awaiting_approval`, `executor_result`; `kb_retrieve`
-cuando se use `knowledge_retriever`, hoy sin invocar) y métricas EMF
-en el namespace `PPS/AuditPipeline`. Logging de invocaciones de Bedrock
-(`bedrock_logging.tf`) es **account-wide por región**.
+`generator_result`, `awaiting_approval`, `executor_result`; con la Knowledge
+Base habilitada, `kb_retrieve` por consulta y `kb_references` con el resumen
+de la corrida) y métricas EMF en el namespace `PPS/AuditPipeline`. Logging de
+invocaciones de Bedrock (`bedrock_logging.tf`) es **account-wide por región**.
+
+Knowledge Base (opcional): solo el generador consulta, una vez por control,
+entre map y reduce (`reference_context`, topes `MAX_RETRIEVE_CALLS`,
+`MAX_REFERENCE_CHARS_PER_CONTROL` y `MAX_REFERENCE_CHARS`; un fragmento de
+referencia entra entero o se omite). Una base `MANAGED` exige
+`managedSearchConfiguration` (comprobado contra el servicio el 2026-11-18).
+El origen de cada fragmento se reduce a la clave del objeto: el URI completo
+incluye el id de cuenta y no debe llegar a prompts, manifest, reportes,
+eventos ni fixtures. El manifest gana el bloque aditivo `knowledge_base`
+(fuentes y puntajes por `check_id`, sin texto) y el executor lo lee para
+agregar `references` a cada hallazgo; no importa `knowledge_retriever` ni
+`reference_context`. Diseño en
+[la decisión 11](docs/context/decisions/11-referencias-en-generacion.md).
 
 ## 5. Comandos
 
@@ -96,7 +109,7 @@ Todo desde `audit-engine/` con el venv de la raíz (`../.venv`), detalle en
 `audit-engine/TESTING.md`:
 
 ```bash
-../.venv/Scripts/python.exe -m pytest -q -p no:cacheprovider        # 350 passed, 1 skipped (Windows)
+../.venv/Scripts/python.exe -m pytest -q -p no:cacheprovider        # 460 passed, 1 skipped (Windows)
 ../.venv/Scripts/python.exe -m ruff check generator/ executor/ contracts/ legacy/ tests/ evals/ scripts/build_layer.py
 ../.venv/Scripts/python.exe -m ruff format --check generator/ executor/ contracts/ legacy/ tests/ evals/ scripts/build_layer.py
 ../.venv/Scripts/python.exe scripts/build_layer.py                    # layers/pps-doc-parsers.zip
@@ -106,6 +119,7 @@ PYTHONUTF8=1 ../.venv/Scripts/python.exe -m checkov.main -d ../infrastructure/pi
 # Módulo de la Knowledge Base: mismas órdenes con -chdir=../infrastructure/knowledge-base, -d ../infrastructure/knowledge-base
 # y TF_DATA_DIR=C:/Users/<usuario>/.terraform-data/pps-knowledge-base (no requiere el layer)
 ../.venv/Scripts/python.exe evals/run_evals.py --mode offline
+../.venv/Scripts/python.exe evals/run_evals.py --suite retrieval --mode offline   # fixture sintética
 ```
 
 API y desktop: `pip install -e "local-api[dev]"` + `pytest` en

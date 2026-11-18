@@ -47,8 +47,21 @@ resource "aws_bedrockagent_data_source" "documents" {
           bucketName           = aws_s3_bucket.knowledge.bucket
           bucketOwnerAccountId = data.aws_caller_identity.current.account_id
         }
+        filterConfiguration = {
+          maxFileSizeInMegaBytes = "500"
+        }
         aclEnabled = false
       })
+
+      # Valores que el servicio aplica por defecto al crear el conector
+      # (comprobado en el despliegue del 2026-11-18). Se declaran de forma
+      # explícita porque, si se omiten, el provider detecta una diferencia
+      # entre lo enviado y lo devuelto y marca el recurso para reemplazo.
+      media_extraction_configuration {
+        image_extraction_configuration {
+          image_extraction_status = "ENABLED"
+        }
+      }
     }
   }
 }

@@ -191,3 +191,125 @@ class TestReportCapability:
 
         assert finding_calls["n"] == 1
         assert note_calls["n"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Documentos de referencia: resueltos desde el manifest, igual que clause_ref
+# ---------------------------------------------------------------------------
+
+REFERENCES_MANIFEST = {
+    **VALID_MANIFEST,
+    "knowledge_base": {
+        "enabled": True,
+        "controls_with_references": 1,
+        "retrievals_failed": 0,
+        "references": {
+            "chk1": [
+                {"source": "fortinet/hardening.pdf", "score": 0.91},
+                {"source": None, "score": None},
+            ]
+        },
+    },
+}
+
+
+class TestReportCapabilityReferences:
+    def test_old_manifest_without_the_block_produces_the_previous_finding_shape(self):
+        findings: list[dict] = []
+        report = ReportCapability(VALID_MANIFEST, findings, notes=[])
+
+        report.finding("chk1", "fail", "sin bloqueo")
+
+        assert list(findings[0]) == [
+            "check_id",
+            "clause_ref",
+            "status",
+            "evidence",
+            "endpoints_used",
+            "traceable",
+            "remediation",
+        ]
+
+    def test_references_are_resolved_from_the_manifest_per_check_id(self):
+        findings: list[dict] = []
+        report = ReportCapability(REFERENCES_MANIFEST, findings, notes=[])
+
+        report.finding("chk1", "fail", "sin bloqueo")
+        report.finding("chk2", "pass", "dns ok")
+        report.finding("does_not_exist", "indeterminate", "x")
+
+        assert findings[0]["references"] == [
+            {"source": "fortinet/hardening.pdf", "score": 0.91},
+            {"source": None, "score": None},
+        ]
+        # Recuperación habilitada pero sin documentos para ese control.
+        assert findings[1]["references"] == []
+        assert findings[2]["references"] == []
+
+    def test_finding_signature_does_not_accept_a_references_argument(self):
+        findings: list[dict] = []
+        report = ReportCapability(REFERENCES_MANIFEST, findings, notes=[])
+
+        with pytest.raises(TypeError):
+            report.finding("chk1", "fail", "x", references=[{"source": "forjada", "score": 1.0}])
+
+        assert findings == []
+
+    def test_mutating_a_finding_does_not_alter_later_findings(self):
+        findings: list[dict] = []
+        report = ReportCapability(REFERENCES_MANIFEST, findings, notes=[])
+
+        report.finding("chk1", "fail", "x")
+        findings[0]["references"][0]["source"] = "alterada"
+        findings[0]["references"].append({"source": "forjada", "score": 1.0})
+        report.finding("chk1", "fail", "x")
+
+        assert findings[1]["references"][0]["source"] == "fortinet/hardening.pdf"
+        assert len(findings[1]["references"]) == 2
+
+    @pytest.mark.parametrize(
+        "block",
+        [
+            None,
+            "texto",
+            {"enabled": False, "references": {"chk1": [{"source": "s3://x", "score": 1}]}},
+            {"references": {"chk1": [{"source": "s3://x", "score": 1}]}},
+        ],
+    )
+    def test_absent_disabled_or_malformed_block_adds_no_references_key(self, block):
+        findings: list[dict] = []
+        manifest = {**VALID_MANIFEST, "knowledge_base": block}
+        report = ReportCapability(manifest, findings, notes=[])
+
+        report.finding("chk1", "fail", "x")
+
+        assert "references" not in findings[0]
+
+    def test_malformed_reference_entries_are_dropped_or_neutralized(self):
+        findings: list[dict] = []
+        manifest = {
+            **VALID_MANIFEST,
+            "knowledge_base": {
+                "enabled": True,
+                "references": {
+                    "chk1": [
+                        "no-es-un-objeto",
+                        {"source": 123, "score": "alto", "text": "no debe viajar"},
+                        {"source": "  fortinet/a.pdf\n| inyectado  ", "score": True},
+                        {"source": "s" * 2000, "score": 0.5},
+                    ],
+                    "chk2": "no-es-una-lista",
+                },
+            },
+        }
+        report = ReportCapability(manifest, findings, notes=[])
+
+        report.finding("chk1", "fail", "x")
+        report.finding("chk2", "pass", "x")
+
+        assert findings[0]["references"] == [
+            {"source": None, "score": None},
+            {"source": "fortinet/a.pdf | inyectado", "score": None},
+            {"source": "s" * 300, "score": 0.5},
+        ]
+        assert findings[1]["references"] == []

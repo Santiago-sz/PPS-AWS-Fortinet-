@@ -39,13 +39,17 @@ cd audit-engine
 ../.venv/Scripts/python.exe -m pytest -q -p no:cacheprovider
 ```
 
-Verificación local del 2026-11-17 (Python 3.12, `.venv`, pytest 8.3.5):
-**350 tests passed, 1 skipped**. La verificación anterior, del 2026-11-15
-(Python 3.11, `.venv-gui`, pytest 9.1.1), daba 283 passed, 1 skipped; la
-diferencia son los 67 tests de la base de Knowledge Base (ver abajo).
+Verificación local del 2026-11-18 (Windows, Python 3.12, `.venv`, pytest
+8.3.5): **460 tests passed, 1 skipped**. La del 2026-11-17 daba 350 passed,
+1 skipped; la diferencia son los 110 tests del uso de la Knowledge Base en la
+generación, su trazabilidad y las evals de recuperación (ver abajo). La del
+2026-11-15 (Python 3.11, `.venv-gui`, pytest 9.1.1) daba 283 passed, 1 skipped.
 (skip documentado: `signal.setitimer`/`SIGALRM` no existe en Windows, ver
 `test_sandbox.py::TestWallClockBudgetViaSignalBackstop`; en Linux/CI ese
-test corre de verdad; el resultado de Linux/CI queda pendiente de comprobar). Todos mockean AWS
+test corre de verdad. CI en Linux aprobó el 2026-11-15, con 284 tests y ese
+test incluido, y de nuevo para el commit `e86bbc1` según lo informado el
+2026-11-18; para el estado actual se espera 461 passed sin omitidos, valor
+inferido y no observado.) Todos mockean AWS
 (S3/Secrets Manager/SNS/`lambda:InvokeFunction`/Bedrock)/FortiGate — nunca se
 hace red real, se puede correr sin credenciales ni conectividad.
 
@@ -59,11 +63,17 @@ El test de no propagación observa directamente un handler del logger raíz:
 pytest 9.1 captura también loggers con `propagate=False`, por lo que `caplog`
 no permite deducir si el evento alcanzó el logger raíz.
 
-Nota: el `botocore` del venv (1.35.x) es anterior al bloque `cachePoint` de
-la API Converse de Bedrock, así que no sirve para validar localmente la
-request real contra el modelo; los tests reemplazan el cliente
-`bedrock-runtime` por un mock y verifican la forma del payload a mano. El
-runtime de Lambda trae un boto3 más nuevo.
+Nota: el `botocore` del venv es 1.43.123 (comprobado el 2026-11-18). Su
+modelo de servicio ya incluye el bloque `cachePoint` de la API Converse y la
+operación `Retrieve` con `vectorSearchConfiguration` y
+`managedSearchConfiguration`. Los tests igualmente reemplazan los clientes
+`bedrock-runtime` y `bedrock-agent-runtime` por dobles y verifican la forma
+del payload a mano: eso no acredita que el servicio real acepte la petición.
+Lo único comprobado contra el servicio (2026-11-18, fuera de esta suite) es
+que una base `MANAGED` rechaza `vectorSearchConfiguration` y acepta
+`managedSearchConfiguration` con `numberOfResults`; el filtro de metadatos
+dentro de esa configuración sigue sin probarse.
+La versión de boto3 del runtime de Lambda no fue comprobada.
 
 ### Archivos de test — infraestructura compartida
 
@@ -71,9 +81,11 @@ runtime de Lambda trae un boto3 más nuevo.
 |---|---|
 | `test_bedrock_client.py` | Transporte Converse sobre Bedrock: forma exacta de la request (`modelId`, `cachePoint`, `maxTokens` explícito), parseo de usage/latencia, mapeo de errores a `BedrockCallError`, cliente cacheado, evento `llm_call` + métricas EMF |
 | `test_observability.py` | `log_event` (una línea JSON), `emit_metric` (estructura EMF `_aws`), `timer` |
-| `test_knowledge_retriever.py` | Recuperación sobre la Knowledge Base administrada (`bedrock-agent-runtime.retrieve`) con cliente simulado: configuración por entorno (id vacío = deshabilitado), forma exacta de la request, mapeo de `retrievalResults`, rechazo de consultas vacías o sobre el límite de la API (20000 caracteres, sin recortar), errores envueltos en `KnowledgeRetrievalError` solo con código o tipo, un evento `kb_retrieve` por llamada sin consulta ni texto recuperado, cliente cacheado |
-| `test_knowledge_base_iac.py` | Contratos IaC/código de la Knowledge Base, leyendo el HCL real: variables `knowledge_base_id`/`knowledge_base_max_results` y sus validaciones, env del generador (y su ausencia en executor y assessor), `bedrock:Retrieve` solo en la política condicional `generator_knowledge_base` con el ARN exacto, provider del pipeline intacto (`~> 5.0`, lock 5.100.0) y propiedades del módulo `infrastructure/knowledge-base/` (tipo `MANAGED`, conector S3 administrado, condiciones de confianza, sin comodines, bucket endurecido, outputs) |
-| `test_repository_layout.py` | Ubicación y empaquetado: módulos aplanables sin colisiones, `knowledge_retriever.py` empaquetado con el generador, y el executor sin imports de `llm_client`/`bedrock_client`/`knowledge_retriever` ni referencias a Bedrock |
+| `test_knowledge_retriever.py` | Recuperación sobre la Knowledge Base administrada (`bedrock-agent-runtime.retrieve`) con cliente simulado: configuración por entorno (id vacío = deshabilitado), forma exacta de la request, mapeo de `retrievalResults`, rechazo de consultas vacías o sobre el límite de la API (20000 caracteres, sin recortar), errores envueltos en `KnowledgeRetrievalError` solo con código o tipo, un evento `kb_retrieve` por llamada sin consulta ni texto recuperado, cliente cacheado; filtro de metadatos opcional (`equals` sobre `fortios_version`, env `KNOWLEDGE_BASE_FORTIOS_VERSION`) y constante `SEARCH_CONFIGURATION_KEY`, con una guarda contra el modelo de servicio de botocore para las dos configuraciones de búsqueda |
+| `test_reference_context.py` | Documentación de referencia para reduce con el recuperador simulado: una consulta por control armada solo con `title`/`intent` (nunca texto de la normativa), topes `MAX_RETRIEVE_CALLS`, `MAX_REFERENCE_CHARS_PER_CONTROL` y `MAX_REFERENCE_CHARS` (un fragmento entra entero o se omite: por control se prueba el siguiente que quepa, sobre el total se descartan primero los de menor puntaje; nunca controles), origen reducido a la clave del objeto sin id de cuenta en prompt, manifest ni eventos, formato de la sección delimitada, bloque `knowledge_base` del manifest sin texto de fragmentos, fallo blando por control con evento `kb_retrieve` y evento resumen `kb_references` |
+| `test_retrieval_evals.py` | Evals de recuperación (`run_evals.py --suite retrieval`): métricas hit rate en k y MRR, conjunto de preguntas versionado, fixture marcada como sintética, modo offline con umbrales y modo live con `knowledge_retriever.retrieve` simulado (sin red) |
+| `test_knowledge_base_iac.py` | Contratos IaC/código de la Knowledge Base, leyendo el HCL real: variables `knowledge_base_id`/`knowledge_base_max_results`/`knowledge_base_fortios_version` y sus validaciones, env del generador (y su ausencia en executor y assessor), `bedrock:Retrieve` solo en la política condicional `generator_knowledge_base` con el ARN exacto, provider del pipeline intacto (`~> 5.0`, lock 5.100.0) y propiedades del módulo `infrastructure/knowledge-base/` (tipo `MANAGED`, conector S3 administrado, condiciones de confianza, sin comodines, bucket endurecido, outputs) |
+| `test_repository_layout.py` | Ubicación y empaquetado: módulos aplanables sin colisiones, `knowledge_retriever.py` empaquetado con el generador, y el executor sin imports de `llm_client`/`bedrock_client`/`knowledge_retriever`/`reference_context` ni referencias a Bedrock |
 
 ### Archivos de test — flujo legacy NIST CSF 2.0 (`enable_legacy_nist_schedule=false` por defecto; la Lambda assessor sigue desplegada)
 
@@ -91,13 +103,13 @@ runtime de Lambda trae un boto3 más nuevo.
 | `test_extractor.py` | Extracción de texto PDF/DOCX; falla explícita ante corrupción/encriptación/sin capa de texto |
 | `test_chunker.py` | Chunking preservando límites de cláusula/sección + retrieval TF-IDF |
 | `test_script_validator.py` | Allowlist AST (happy-path + corpus adversarial RED completo: reflexión, imports, builtins denegados, caps estáticas) |
-| `test_toolkit.py` | Capabilities `fgt`/`report` inyectadas en el sandbox — memoización, resolución server-side de `clause_ref` y de la `remediation` propuesta |
+| `test_toolkit.py` | Capabilities `fgt`/`report` inyectadas en el sandbox — memoización, resolución server-side de `clause_ref`, de la `remediation` propuesta y de `references` (documentos de referencia leídos del bloque `knowledge_base` del manifest; ausentes con manifests anteriores) |
 | `test_sandbox.py` | Namespace restringido + presupuestos duros (wall-clock, call-count, findings) — `SandboxBudgetExceeded` |
-| `test_llm_client.py` | Fase map (chunk group → `PolicyCheck[]`, normalización de `remediation`) + fase reduce con reintento acotado (`MAX_GENERATION_ATTEMPTS`); eventos `llm_call`/`generation_result` |
-| `test_s3_io.py` | Get/put de policy/script/manifest/report; integridad `script_sha256` end-to-end |
-| `test_reporter.py` (clases `TestBuildPolicyReport*`, `TestRemediation*`, `TestDeliverPolicyReport`) | Reporte policy-agnostic keyed en `Finding`/`RunManifest`; distingue tres status: `completed`, `truncated` (hallazgos parciales SÍ se muestran) y `could_not_audit`; sección `## Remediaciones propuestas` (solo propuestas, nunca aplicadas); JSON con `remediation` por hallazgo y `remediation_count`; escritura en `reports/{run_id}/report.{md,json}` |
-| `test_handler_generator.py` | Entrypoint S3-triggered `policy_generator` — flujo feliz, compuerta `AUTO_EXECUTE` (`awaiting_approval` sin invocar executor), reintentos agotados, sin controles verificables, fallo del modelo, fallo de extracción; evento `generator_result` |
-| `test_handler_executor.py` | Entrypoint async `audit_executor` — re-validación independiente; integridad `script_sha256` ANTES del AST; tolerancia a fallo parcial de endpoint; presupuesto agotado reporta `status="truncated"` |
+| `test_llm_client.py` | Fase map (chunk group → `PolicyCheck[]`, normalización de `remediation`) + fase reduce con reintento acotado (`MAX_GENERATION_ATTEMPTS`); eventos `llm_call`/`generation_result`; prompts byte-idénticos sin Knowledge Base (hashes fijados sobre `e86bbc1`) y, con `reference_provider`, sección de referencia en reduce, nota en el system prompt y normativa sin recortar |
+| `test_s3_io.py` | Get/put de policy/script/manifest/report; integridad `script_sha256` end-to-end; bloque aditivo `knowledge_base` del manifest (sin él, manifest byte-idéntico) |
+| `test_reporter.py` (clases `TestBuildPolicyReport*`, `TestRemediation*`, `TestDeliverPolicyReport`) | Reporte policy-agnostic keyed en `Finding`/`RunManifest`; distingue tres status: `completed`, `truncated` (hallazgos parciales SÍ se muestran) y `could_not_audit`; sección `## Remediaciones propuestas` (solo propuestas, nunca aplicadas); JSON con `remediation` por hallazgo y `remediation_count`; `references` por hallazgo en JSON y sección `## Documentación de referencia` en Markdown solo cuando el manifest declara la recuperación habilitada (sin ella, reporte byte-idéntico); escritura en `reports/{run_id}/report.{md,json}` |
+| `test_handler_generator.py` | Entrypoint S3-triggered `policy_generator` — flujo feliz, compuerta `AUTO_EXECUTE` (`awaiting_approval` sin invocar executor), reintentos agotados, sin controles verificables, fallo del modelo, fallo de extracción; evento `generator_result`; con `KNOWLEDGE_BASE_ID` vacío la llamada al generador y el manifest no cambian, y con valor se consulta una vez por control, se registra el bloque `knowledge_base` y un fallo de recuperación no interrumpe la generación |
+| `test_handler_executor.py` | Entrypoint async `audit_executor` — re-validación independiente; integridad `script_sha256` ANTES del AST; tolerancia a fallo parcial de endpoint; presupuesto agotado reporta `status="truncated"`; los hallazgos llevan las `references` del manifest y un manifest anterior sin el bloque sigue funcionando |
 | `test_integration_generator_executor.py` | Contrato generator→executor de punta a punta con S3 real (`moto`): manifest+script llegan sin cambios; script alterado se rechaza; `report.json`/`report.md` quedan donde el bridge local los busca; `AUTO_EXECUTE=false` deja artifacts firmados sin invocar |
 | `test_evals_offline.py` | Smoke test del harness de evals (`evals/run_evals.py --mode offline`) en el mismo proceso: exit 0, archivo de resultados, métricas presentes, el ciclo de reintento ejercitado por una fixture, `bedrock_client.converse` restaurado |
 

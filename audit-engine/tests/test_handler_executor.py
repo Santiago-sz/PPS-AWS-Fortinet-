@@ -400,3 +400,50 @@ class TestSandboxBudgetExceededDuringExecution:
         assert kwargs["status"] == "truncated"
         assert kwargs["findings"] == []
         assert kwargs["failure_reason"] == "call_count_exceeded"
+
+
+class TestKnowledgeBaseReferencesFromManifest:
+    """El executor solo lee el manifest: resuelve los documentos de referencia
+    por control igual que `clause_ref`, sin consultar ningún servicio."""
+
+    def _run(self, mocker, manifest_extra: dict) -> list[dict]:
+        script_sha256 = _valid_script_sha256()
+        manifest = {**VALID_MANIFEST, "script_sha256": script_sha256, **manifest_extra}
+        mocker.patch("handler_executor.s3_io.get_manifest", return_value=manifest)
+        mocker.patch("handler_executor.s3_io.get_script", return_value=VALID_SCRIPT)
+        mock_fgt_instance = mocker.MagicMock()
+        mock_fgt_instance.get.return_value = [{"name": "admin"}]
+        mocker.patch("handler_executor.FortiGateClient", return_value=mock_fgt_instance)
+        deliver = mocker.patch(
+            "handler_executor.reporter.deliver_policy_report",
+            return_value={"uploaded": {}, "sns_published": True},
+        )
+
+        result = handler_executor.lambda_handler(
+            _invoke_event(script_sha256=script_sha256), _lambda_context()
+        )
+
+        assert result["status"] == "completed"
+        return deliver.call_args.kwargs["findings"]
+
+    def test_findings_carry_the_references_recorded_in_the_manifest(
+        self, executor_env, mocker, mock_secrets_manager
+    ):
+        references = [{"source": "fortinet/hardening.pdf", "score": 0.91}]
+        block = {
+            "enabled": True,
+            "controls_with_references": 1,
+            "retrievals_failed": 0,
+            "references": {"chk-0001": references},
+        }
+
+        findings = self._run(mocker, {"knowledge_base": block})
+
+        assert findings[0]["references"] == references
+
+    def test_old_manifest_without_the_block_keeps_working(
+        self, executor_env, mocker, mock_secrets_manager
+    ):
+        findings = self._run(mocker, {})
+
+        assert "references" not in findings[0]

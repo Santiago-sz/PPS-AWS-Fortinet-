@@ -309,3 +309,17 @@ variable "knowledge_base_max_results" {
     error_message = "knowledge_base_max_results debe ser un entero entre 1 y 100 (límite de numberOfResults de la API Retrieve)."
   }
 }
+
+variable "knowledge_base_fortios_version" {
+  description = "Versión de FortiOS para filtrar la consulta a la Knowledge Base por el metadato fortios_version (env KNOWLEDGE_BASE_FORTIOS_VERSION). Vacío (default) = sin filtro"
+  type        = string
+  default     = ""
+  # Filtro de igualdad sobre la clave de metadatos fortios_version de los
+  # documentos. Solo tiene efecto si knowledge_base_id no está vacío y si los
+  # documentos de la base fueron etiquetados con esa clave.
+
+  validation {
+    condition     = can(regex("^([0-9]{1,2}([.][0-9]{1,3}){0,2})?$", var.knowledge_base_fortios_version))
+    error_message = "knowledge_base_fortios_version debe estar vacío o ser una versión numérica de FortiOS, por ejemplo 7.4 o 7.4.8."
+  }
+}

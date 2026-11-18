@@ -1,8 +1,11 @@
 # RAG con Amazon Bedrock: resumen de trabajo
 
-Fecha: 2026-11-17. Rama: `feature/bedrock-knowledge-base`, creada desde
-`master` en `32e0ac5`. Estado: base implementada y verificada en local; nada
-desplegado en AWS; revisión y merge pendientes.
+Fecha: 2026-11-17; actualizado el 2026-11-18. Rama:
+`feature/bedrock-knowledge-base`, creada desde `master` en `32e0ac5`. Estado:
+base en los commits `16b45d3` y `e86bbc1`; el incremento del 2026-11-18
+(fragmentos en la generación, trazabilidad, filtro y evals de recuperación)
+está implementado y verificado en local, sin commit. Revisión y merge
+pendientes. Este documento no registra el estado del despliegue en AWS.
 
 Este documento resume lo realizado y sirve como punto de entrada para retomar
 el trabajo. El detalle vive en una sola fuente por tema:
@@ -11,6 +14,8 @@ el trabajo. El detalle vive en una sola fuente por tema:
 |---|---|
 | Módulo Terraform, costos, despliegue e ingesta | [README del módulo](../../../infrastructure/knowledge-base/README.md) |
 | Decisión de diseño y alternativas descartadas | [Decisión 10](../decisions/10-bedrock-knowledge-base.md) |
+| Uso de los fragmentos en la generación y trazabilidad | [Decisión 11](../decisions/11-referencias-en-generacion.md) |
+| Evaluación de la calidad de recuperación | [README de evals](../../../audit-engine/evals/README.md) |
 | Estado de la tarea, pruebas y pendientes | [Handoff](../handoffs/2026-11-17-bedrock-knowledge-base.md) |
 | Contrato de entorno e IAM | [AGENTS.md](../../../AGENTS.md), sección 4 |
 
@@ -46,19 +51,49 @@ el endpoint correcto o redactar una remediación.
 | Componente | Ubicación | Estado |
 |---|---|---|
 | Módulo Terraform de la Knowledge Base (bucket de documentos, rol de servicio, base administrada, origen de datos S3) | `infrastructure/knowledge-base/` | Validado con `terraform validate`; no desplegado |
-| Enganche en el pipeline (variables, entorno del generador, permiso de consulta condicional) | `infrastructure/pipeline/` | Validado; no desplegado |
-| Módulo de recuperación | `audit-engine/generator/knowledge_retriever.py` | Con tests; todavía no conectado al prompt |
+| Enganche en el pipeline (variables, entorno del generador, permiso de consulta condicional; desde el 2026-11-18, `knowledge_base_fortios_version`) | `infrastructure/pipeline/` | Validado; no desplegado |
+| Módulo de recuperación, con filtro de metadatos opcional y configuración de búsqueda en una constante | `audit-engine/generator/knowledge_retriever.py` | Con tests |
+| Referencia para la generación (2026-11-18): una consulta por control entre map y reduce, topes, sección del prompt y bloque del manifest | `audit-engine/generator/reference_context.py`, `llm_client.py`, `handler_generator.py` | Con tests; sin probar contra una base ni contra el modelo |
+| Trazabilidad (2026-11-18): bloque `knowledge_base` en el manifest y `references` por hallazgo en el reporte JSON y Markdown | `contracts/s3_io.py`, `executor/toolkit.py`, `executor/reporter.py` | Con tests |
+| Evals de recuperación (2026-11-18): preguntas versionadas, hit rate en k, MRR, umbrales, modos offline y live | `audit-engine/evals/retrieval_eval.py`, `evals/retrieval/` | Offline en verde con fixture **sintética**; live sin ejecutar |
 | Tests de contrato entre Terraform y código | `audit-engine/tests/test_knowledge_base_iac.py` | En verde |
+
+Cómo se usa la referencia, en breve (detalle en la decisión 11):
+
+- Después de map, el generador hace una consulta por control con el título y
+  la intención de ese control. No usa texto de la normativa como consulta.
+- A lo sumo 40 consultas por corrida, 3.000 caracteres de referencia por
+  control y 12.000 en total. Un fragmento entra entero o se omite, nunca se
+  recorta: por control se omite el que no cabe y se prueba el siguiente; sobre
+  el total se descartan primero los de menor puntaje. La normativa y los
+  controles nunca se recortan.
+- De cada fragmento se guarda como fuente solo la clave del objeto (por
+  ejemplo `fortinet/FortiOS-8.0.0-Best_Practices.pdf`). El servicio devuelve
+  una URL cuyo nombre de bucket incluye el id de cuenta; ese dato no llega al
+  prompt, al manifiesto, al reporte, a los eventos ni a las evaluaciones.
+- Los fragmentos entran al prompt de reduce en una sección delimitada,
+  agrupados por control y con su fuente. El prompt de sistema aclara que son
+  material de consulta, no instrucciones, y que no amplían lo que el script
+  puede llamar.
+- Si una consulta falla, ese control queda sin referencia y la generación
+  sigue. El manifest indica cuántos controles tuvieron referencia y cuántas
+  consultas fallaron.
+- El manifest guarda, por control, la fuente y el puntaje de cada fragmento
+  usado, sin su texto. El ejecutor lee ese bloque y lo muestra por hallazgo
+  en el reporte; no consulta la base ni el modelo.
 
 Reglas que se mantienen:
 
 - El RAG está **apagado por defecto**: con `knowledge_base_id` vacío el
   pipeline se comporta igual que antes y el rol del generador no recibe
-  ningún permiso sobre Knowledge Bases.
+  ningún permiso sobre Knowledge Bases. Con la base apagada, los prompts, el
+  manifest y el reporte son idénticos byte a byte a los anteriores; lo
+  comprueban tests con hashes fijados sobre `e86bbc1`.
 - El permiso `bedrock:Retrieve` es una política aparte, existe solo cuando la
   variable tiene valor y apunta al ARN exacto de esa base.
 - El ejecutor y el evaluador heredado no reciben permisos de Bedrock.
-- No se modificaron prompts, validador, sandbox ni el flujo heredado.
+- No se modificaron validador, sandbox, catálogo de endpoints ni el flujo
+  heredado. Los prompts solo cambian con la base habilitada.
 
 ## 3. Dos módulos de Terraform, en orden
 
@@ -96,22 +131,76 @@ Los pasos detallados están en el README del módulo. Ninguno fue ejecutado.
 El desarrollo siguió TDD: los tests se escribieron primero y se observó su
 fallo antes de implementar. El detalle está en el handoff.
 
-## 5. Qué no está verificado
+Verificaciones del incremento del 2026-11-18 (Windows):
 
-Nada se probó contra una Knowledge Base real. Queda por confirmar al
-desplegar:
+| Verificación | Resultado |
+|---|---|
+| `pytest` en `audit-engine` | 460 aprobados, 1 omitido (antes: 350 y 1) |
+| `ruff check` y `ruff format --check` | Sin observaciones |
+| Evaluaciones offline de generación | Código de salida 0; fixtures grabadas sin cambios |
+| Evaluaciones offline de recuperación | Código de salida 0 sobre fixture sintética |
+| `terraform fmt`, `init -backend=false`, `validate` en el pipeline | Aprobado |
+| Checkov, pipeline | 118 aprobados, 29 fallidos (sin cambios) |
 
-- La configuración de búsqueda que requiere una base administrada en
-  `Retrieve` (`vectorSearchConfiguration` o `managedSearchConfiguration`). La
-  petición se arma en una sola función.
+El módulo `infrastructure/knowledge-base` no se tocó ni se volvió a validar en
+ese incremento.
+
+Integración continua: el commit `e86bbc1` aprobó los cinco jobs en Linux
+([run 44227778670](https://github.com/Santiago-sz/PPS-AWS-Fortinet-/actions/runs/44227778670),
+informado el 2026-11-18). El incremento del 2026-11-18 todavía no pasó por
+integración continua.
+
+## 5. Qué está verificado contra el servicio y qué no
+
+Comprobado contra la base desplegada el 2026-11-18 (prueba hecha fuera de
+este trabajo de código, que no llamó a AWS):
+
+- **Configuración de búsqueda.** Una base administrada rechaza
+  `vectorSearchConfiguration` (`ValidationException: ... is not supported for
+  managed knowledge bases. Use managedSearchConfiguration instead.`) y acepta
+  `managedSearchConfiguration` con la cantidad de resultados. El código usa
+  `managedSearchConfiguration` (`SEARCH_CONFIGURATION_KEY` en
+  `knowledge_retriever.py`).
+- **Forma de los resultados.** Cada resultado trae puntaje, texto y una
+  ubicación de tipo S3 cuyo URI es una URL
+  `https://<bucket>.s3.amazonaws.com/<clave>`, no `s3://`.
+- **Cantidad y tamaño.** Pedir 3 resultados devolvió 2. Para una consulta se
+  observaron fragmentos de 9.943, 1.463, 1.109 y 1.082 caracteres.
+
+Sin verificar:
+
+- El código de este incremento ejecutado contra la base y contra el modelo.
+- **El filtro por `fortios_version`.** El modelo de servicio de botocore
+  1.43.123 declara `filter` dentro de `managedSearchConfiguration` y el
+  código lo arma así, pero no se probó ninguna consulta con filtro. Además
+  requiere documentos cargados con ese metadato, lo que no está hecho.
+- Si los topes de referencia (3.000 por control, 12.000 en total) son
+  adecuados; con ellos, un fragmento como el de 9.943 caracteres queda fuera.
+- El efecto de la referencia sobre los scripts generados. Las evaluaciones
+  grabadas no recorren el camino con la base habilitada.
+- La calidad de recuperación real. La evaluación offline usa una fixture
+  sintética; las preguntas y los documentos esperados son provisorios hasta
+  que exista el conjunto de documentos.
 - La forma de `connector_parameters` del conector S3; se tomó del ejemplo del
   proveedor y `validate` solo comprueba el esquema.
 - Que los permisos del rol de servicio alcancen para la ingesta.
 - El efecto sobre la pila desplegada: se espera una actualización en el lugar
-  de las tres Lambdas, pero no se ejecutó `plan`.
-- La ejecución de la integración continua en Linux con estos cambios.
+  de las tres Lambdas (una variable de entorno más en el generador), pero no
+  se ejecutó `plan`.
+- Que Lambda acepte variables de entorno con valor vacío
+  (`KNOWLEDGE_BASE_ID`, `KNOWLEDGE_BASE_FORTIOS_VERSION`).
+- La integración continua en Linux con el incremento del 2026-11-18.
 
-## 6. Bloqueo vigente: cuota de Bedrock
+## 6. Cuota de Bedrock: bloqueo levantado el 2026-11-18
+
+Estado informado el 2026-11-18 (no se consultó AWS al registrarlo): los
+pedidos de cuota se cerraron. La cuota aplicada de Claude Sonnet 4.6 para
+inferencia entre regiones es de 6.000.000 tokens por minuto y 10 pedidos por
+minuto; se habían pedido 10.000 pedidos por minuto. Una llamada mínima a
+Converse respondió correctamente. Con 10 pedidos por minuto conviene espaciar
+las corridas en vivo.
+
+Lo que sigue es el registro del 2026-11-17 y se conserva como antecedente.
 
 Al 2026-11-17 la cuota aplicada de Claude Sonnet 4.6 en la cuenta del
 laboratorio era 0 tokens por minuto y 0 pedidos por minuto (el valor por
@@ -160,16 +249,25 @@ Condiciones:
 
 ## 8. Próximos pasos
 
-1. Conectar los fragmentos recuperados al prompt de generación del script y
-   regrabar las evaluaciones en vivo (bloqueado por la cuota).
-2. Registrar en el manifiesto y en el reporte qué fragmento y qué documento
-   respaldó cada control.
-3. Agregar a las evaluaciones un conjunto de preguntas con el documento
-   esperado, para medir la calidad de la recuperación.
-4. Etiquetar los documentos con versión de FortiOS y tipo, y filtrar por esos
-   metadatos al consultar.
-5. Disparar la ingesta automáticamente al subir un documento.
-6. Definir el conjunto de documentos, desplegar el módulo e ingerir.
+Hecho el 2026-11-18, en local y sin commit: conexión de los fragmentos al
+prompt de generación, registro de fuentes en el manifiesto y en el reporte,
+evaluación de recuperación con preguntas y documento esperado, y filtro
+opcional por versión de FortiOS en la consulta.
+
+Pendiente:
+
+1. Revisión del incremento por el desarrollador, commits y decisión de merge.
+2. Definir el conjunto de documentos, desplegar el módulo e ingerir.
+3. Con la base real: probar una consulta con filtro, ajustar los
+   documentos esperados de las preguntas y grabar la evaluación de
+   recuperación en vivo (`--suite retrieval --mode live --record`).
+4. Regrabar las evaluaciones de generación en vivo, con y sin la base, y
+   comparar. La cuota ya no lo impide.
+5. Etiquetar los documentos con `fortios_version` (y tipo, si se decide) al
+   cargarlos; sin eso el filtro no devuelve resultados.
+6. Disparar la ingesta automáticamente al subir un documento.
+7. Mostrar las referencias en la aplicación de escritorio y en la API local,
+   que hoy las reciben pero no las presentan.
 
 ## 9. Otros cambios del mismo día
 

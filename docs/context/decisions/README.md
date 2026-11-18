@@ -26,6 +26,7 @@ seguridad sean propiedades demostradas del código.
 | Referencia | Decisión registrada | Implicación para una tarea |
 |---|---|---|
 | [10](10-bedrock-knowledge-base.md) | Knowledge Base administrada de Bedrock en un módulo Terraform aislado; recuperación aditiva y deshabilitada por defecto | No subir el provider del pipeline para esto; no reemplazar el map/reduce completo por fragmentos recuperados |
+| [11](11-referencias-en-generacion.md) | Fragmentos recuperados como sección de referencia en reduce: una consulta por control, topes explícitos, fallo blando, trazabilidad en manifest y reporte; idéntico al comportamiento previo con la base deshabilitada | No recuperar con texto de la normativa ni desde el executor; no usar la referencia para ampliar el validador o el catálogo; regrabar evals en vivo antes de evaluar su efecto |
 
 ## Nuevas decisiones
 

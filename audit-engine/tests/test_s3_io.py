@@ -183,3 +183,57 @@ class TestPutReport:
 
         assert json.loads(obj["Body"].read().decode("utf-8")) == {"status": "generation_failed"}
         assert obj["ContentType"] == "application/json; charset=utf-8"
+
+
+class TestBuildManifestKnowledgeBase:
+    BASE = {
+        "run_id": "run-1",
+        "policy_key": "policies/norma.pdf",
+        "policy_sha256": "a" * 64,
+        "script_key": "artifacts/run-1/script.py",
+        "script_sha256": "b" * 64,
+        "checks": [
+            {
+                "check_id": "chk-0001",
+                "title": "Admin lockout",
+                "clause_ref": {
+                    "chunk_id": "chunk-0001",
+                    "heading_path": ["Articulo 1"],
+                    "page": 1,
+                    "quote": "Los administradores deben tener bloqueo de cuenta.",
+                },
+                "endpoints": ["admins"],
+                "severity": "high",
+                "intent": "Verify admin lockout",
+            }
+        ],
+        "attempts": 1,
+        "model": "m",
+        "generated_at": "2026-09-10T12:00:00Z",
+    }
+
+    def test_manifest_without_knowledge_base_is_byte_identical_to_the_previous_one(self):
+        """Hash calculado sobre el commit e86bbc1, antes de agregar el bloque."""
+        for manifest in (
+            build_manifest(**self.BASE),
+            build_manifest(**self.BASE, knowledge_base=None),
+        ):
+            encoded = json.dumps(manifest, ensure_ascii=False)
+            assert hashlib.sha256(encoded.encode("utf-8")).hexdigest() == (
+                "bc7c3c9f57231eb37475570136b4f80fbb35c91f4237b1925c83ed939d6623db"
+            )
+            assert "knowledge_base" not in manifest
+
+    def test_knowledge_base_block_is_additive(self):
+        block = {
+            "enabled": True,
+            "controls_with_references": 1,
+            "retrievals_failed": 0,
+            "references": {"chk-0001": [{"source": "fortinet/a.pdf", "score": 0.9}]},
+        }
+
+        manifest = build_manifest(**self.BASE, knowledge_base=block)
+
+        assert manifest["knowledge_base"] == block
+        without_block = {k: v for k, v in manifest.items() if k != "knowledge_base"}
+        assert without_block == build_manifest(**self.BASE)

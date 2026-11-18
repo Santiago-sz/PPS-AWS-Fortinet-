@@ -40,6 +40,9 @@ auto_execute = true
 # bedrock:Retrieve en el rol del generador.
 # knowledge_base_id          = "<id-de-la-knowledge-base>"
 # knowledge_base_max_results = 5
+# Filtro opcional por versión de FortiOS (metadato fortios_version de los
+# documentos). Vacío = sin filtro.
+# knowledge_base_fortios_version = "7.4"
 
 # --- Red (opcional) -----------------------------------------------------------
 

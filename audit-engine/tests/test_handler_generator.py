@@ -18,6 +18,7 @@ import pytest
 
 import extractor
 import handler_generator
+import knowledge_retriever
 import llm_client
 
 
@@ -444,3 +445,210 @@ class TestRequiredEnv:
 
         with pytest.raises(OSError, match="S3_BUCKET"):
             handler_generator.lambda_handler(_s3_event(), _lambda_context())
+
+
+# ---------------------------------------------------------------------------
+# Knowledge Base: deshabilitada = idéntico; habilitada = referencia + manifest
+# ---------------------------------------------------------------------------
+
+# Forma observada en la base real: URL HTTPS cuyo bucket incluye el id de cuenta.
+KNOWLEDGE_SOURCE_URI = (
+    "https://pps-prod-knowledge-123456789012.s3.amazonaws.com/fortinet/hardening.pdf"
+)
+KNOWLEDGE_BASE_BLOCK = {
+    "enabled": True,
+    "knowledge_base_id": "KBTEST0001",
+    "max_results": 5,
+    "filter": None,
+    "controls_total": 1,
+    "controls_with_references": 1,
+    "retrievals_attempted": 1,
+    "retrievals_failed": 0,
+    "controls_skipped_by_call_cap": 0,
+    "fragments_skipped_by_control_cap": 0,
+    "fragments_dropped_by_size_cap": 0,
+    "references": {"chk-0001": [{"source": "fortinet/hardening.pdf", "score": 0.9}]},
+}
+
+
+def _run_and_capture_manifest(mocker, generate):
+    _mock_lambda_only(mocker)
+    _mock_happy_collaborators(mocker)
+    mocker.patch("handler_generator.llm_client.generate_audit_script", side_effect=generate)
+    mocker.patch("handler_generator.s3_io.put_script", return_value="a" * 64)
+    put_manifest = mocker.patch("handler_generator.s3_io.put_manifest")
+    result = handler_generator.lambda_handler(_s3_event(), _lambda_context())
+    return result, put_manifest.call_args.args[2]
+
+
+class TestKnowledgeBaseDisabled:
+    @pytest.mark.parametrize("value", [None, "", "   "])
+    def test_generation_call_and_manifest_are_identical_to_the_previous_contract(
+        self, generator_env, mocker, monkeypatch, value
+    ):
+        if value is None:
+            monkeypatch.delenv("KNOWLEDGE_BASE_ID", raising=False)
+        else:
+            monkeypatch.setenv("KNOWLEDGE_BASE_ID", value)
+        # Un valor inválido de las otras variables no debe importar si no hay base.
+        monkeypatch.setenv("KNOWLEDGE_BASE_MAX_RESULTS", "no-es-un-numero")
+        monkeypatch.setenv("KNOWLEDGE_BASE_FORTIOS_VERSION", "7.4")
+        retrieve = mocker.patch("knowledge_retriever.retrieve")
+        calls = []
+
+        def fake_generate(*args, **kwargs):
+            calls.append((args, kwargs))
+            return OK_RESULT
+
+        result, manifest = _run_and_capture_manifest(mocker, fake_generate)
+
+        assert result["status"] == "invoked"
+        assert len(calls) == 1
+        assert calls[0][1] == {"max_attempts": llm_client.MAX_GENERATION_ATTEMPTS}
+        assert list(manifest) == [
+            "run_id",
+            "policy_key",
+            "policy_sha256",
+            "script_key",
+            "script_sha256",
+            "checks",
+            "attempts",
+            "model",
+            "generated_at",
+        ]
+        retrieve.assert_not_called()
+
+
+class TestKnowledgeBaseEnabled:
+    @pytest.fixture
+    def knowledge_env(self, generator_env, monkeypatch):
+        monkeypatch.setenv("KNOWLEDGE_BASE_ID", "KBTEST0001")
+        monkeypatch.delenv("KNOWLEDGE_BASE_MAX_RESULTS", raising=False)
+        monkeypatch.delenv("KNOWLEDGE_BASE_FORTIOS_VERSION", raising=False)
+
+    def test_provider_queries_the_retriever_once_per_control(self, knowledge_env, mocker):
+        retrieve = mocker.patch(
+            "knowledge_retriever.retrieve",
+            return_value=[
+                knowledge_retriever.RetrievedFragment(
+                    text="texto-de-referencia", source_uri=KNOWLEDGE_SOURCE_URI, score=0.9
+                )
+            ],
+        )
+        contexts = []
+
+        def fake_generate(chunks, endpoint_catalog, *, max_attempts, reference_provider):
+            contexts.append(reference_provider(SAMPLE_CHECKS))
+            return {**OK_RESULT, "knowledge_base": contexts[0].manifest_block}
+
+        result, manifest = _run_and_capture_manifest(mocker, fake_generate)
+
+        assert result["status"] == "invoked"
+        retrieve.assert_called_once()
+        assert retrieve.call_args.kwargs["knowledge_base_id"] == "KBTEST0001"
+        assert retrieve.call_args.kwargs["max_results"] == 5
+        assert retrieve.call_args.kwargs["metadata_filter"] is None
+        assert "texto-de-referencia" in contexts[0].prompt_section
+        assert manifest["knowledge_base"] == KNOWLEDGE_BASE_BLOCK
+        assert "texto-de-referencia" not in json.dumps(manifest)
+        assert "123456789012" not in json.dumps(manifest)
+        assert "123456789012" not in contexts[0].prompt_section
+
+    def test_fortios_version_env_reaches_the_retriever_as_a_filter(
+        self, knowledge_env, mocker, monkeypatch
+    ):
+        monkeypatch.setenv("KNOWLEDGE_BASE_FORTIOS_VERSION", "7.4")
+        retrieve = mocker.patch("knowledge_retriever.retrieve", return_value=[])
+
+        def fake_generate(chunks, endpoint_catalog, *, max_attempts, reference_provider):
+            block = reference_provider(SAMPLE_CHECKS).manifest_block
+            return {**OK_RESULT, "knowledge_base": block}
+
+        _, manifest = _run_and_capture_manifest(mocker, fake_generate)
+
+        assert retrieve.call_args.kwargs["metadata_filter"] == {
+            "equals": {"key": "fortios_version", "value": "7.4"}
+        }
+        assert manifest["knowledge_base"]["filter"] == {"fortios_version": "7.4"}
+
+    def test_retrieval_failure_does_not_fail_generation_and_is_recorded(
+        self, knowledge_env, mocker
+    ):
+        mocker.patch(
+            "knowledge_retriever.retrieve",
+            side_effect=knowledge_retriever.KnowledgeRetrievalError("AccessDeniedException"),
+        )
+
+        def fake_generate(chunks, endpoint_catalog, *, max_attempts, reference_provider):
+            context = reference_provider(SAMPLE_CHECKS)
+            assert context.prompt_section == ""
+            return {**OK_RESULT, "knowledge_base": context.manifest_block}
+
+        result, manifest = _run_and_capture_manifest(mocker, fake_generate)
+
+        assert result["status"] == "invoked"
+        assert manifest["knowledge_base"]["enabled"] is True
+        assert manifest["knowledge_base"]["controls_with_references"] == 0
+        assert manifest["knowledge_base"]["retrievals_failed"] == 1
+        assert manifest["knowledge_base"]["references"] == {}
+
+    def test_end_to_end_reference_reaches_the_reduce_prompt_and_the_manifest(
+        self, knowledge_env, mocker
+    ):
+        """Sin doblar llm_client: map -> Retrieve -> reduce -> manifest."""
+        mocker.patch(
+            "knowledge_retriever.retrieve",
+            return_value=[
+                knowledge_retriever.RetrievedFragment(
+                    text="texto-de-referencia", source_uri=KNOWLEDGE_SOURCE_URI, score=0.9
+                )
+            ],
+        )
+        map_response = {"checks": [{k: v for k, v in SAMPLE_CHECKS[0].items() if k != "check_id"}]}
+        prompts = []
+
+        def fake_converse(system_prompt, user_prompt, *, max_tokens, stage, attempt=None):
+            prompts.append((stage, system_prompt, user_prompt))
+            text = json.dumps(map_response) if stage == "map" else VALID_SCRIPT
+            return SimpleNamespace(text=text)
+
+        _mock_lambda_only(mocker)
+        mocker.patch("handler_generator.s3_io.get_policy", return_value=b"%PDF fake")
+        mocker.patch("handler_generator.extractor.extract", return_value=("texto", []))
+        mocker.patch("handler_generator.chunker.chunk", return_value=SINGLE_CHUNK)
+        mocker.patch("bedrock_client.converse", side_effect=fake_converse)
+        mocker.patch("handler_generator.s3_io.put_script", return_value="a" * 64)
+        put_manifest = mocker.patch("handler_generator.s3_io.put_manifest")
+
+        result = handler_generator.lambda_handler(_s3_event(), _lambda_context())
+
+        assert result["status"] == "invoked"
+        assert [stage for stage, _, _ in prompts] == ["map", "reduce"]
+        assert "texto-de-referencia" not in prompts[0][2]
+        assert "texto-de-referencia" in prompts[1][2]
+        assert "--- check_id=chk-0001 ---" in prompts[1][2]
+        assert prompts[1][1].endswith(llm_client.REFERENCE_SYSTEM_NOTE)
+        manifest = put_manifest.call_args.args[2]
+        assert manifest["knowledge_base"]["references"] == {
+            "chk-0001": [{"source": "fortinet/hardening.pdf", "score": 0.9}]
+        }
+
+    def test_generation_failure_report_is_unchanged_when_enabled(self, knowledge_env, mocker):
+        _mock_lambda_only(mocker)
+        _mock_happy_collaborators(
+            mocker,
+            generate_result={
+                "status": "generation_failed",
+                "attempts": 3,
+                "errors": [],
+                "knowledge_base": KNOWLEDGE_BASE_BLOCK,
+            },
+        )
+        put_report = mocker.patch("handler_generator.s3_io.put_report")
+        put_manifest = mocker.patch("handler_generator.s3_io.put_manifest")
+
+        result = handler_generator.lambda_handler(_s3_event(), _lambda_context())
+
+        assert result == {"status": "generation_failed", "run_id": result["run_id"], "attempts": 3}
+        assert put_report.call_count == 2
+        put_manifest.assert_not_called()

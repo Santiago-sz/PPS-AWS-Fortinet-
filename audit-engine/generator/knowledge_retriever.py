@@ -2,16 +2,20 @@
 Recuperacion de fragmentos desde una Knowledge Base administrada de Amazon
 Bedrock (operacion `Retrieve` de `bedrock-agent-runtime`).
 
-Estado: base para un RAG vectorial, APAGADA por defecto. Ningun handler ni
-`llm_client` importa este modulo todavia; incorporar los fragmentos al prompt
-es un cambio posterior (modifica prompts y obliga a regrabar las fixtures de
-evals). La recuperacion es ADITIVA: aporta contexto de apoyo y nunca
-reemplaza el map/reduce completo sobre la normativa, que es lo que conserva
-la trazabilidad por clausula.
+Estado: base para un RAG vectorial, APAGADA por defecto. Lo usa
+`reference_context` (una consulta por control, entre map y reduce) solo
+cuando `handler_generator` encuentra `KNOWLEDGE_BASE_ID` configurado; las
+evals de recuperacion (`evals/retrieval_eval.py`) lo usan en modo live. La
+recuperacion es ADITIVA: aporta contexto de apoyo y nunca reemplaza el
+map/reduce completo sobre la normativa, que es lo que conserva la
+trazabilidad por clausula.
 
 Contrato:
-  - `load_config()` lee `KNOWLEDGE_BASE_ID` y `KNOWLEDGE_BASE_MAX_RESULTS`.
-    Id ausente o en blanco => recuperacion deshabilitada (`enabled=False`).
+  - `load_config()` lee `KNOWLEDGE_BASE_ID`, `KNOWLEDGE_BASE_MAX_RESULTS` y
+    `KNOWLEDGE_BASE_FORTIOS_VERSION`. Id ausente o en blanco => recuperacion
+    deshabilitada (`enabled=False`). Version en blanco => sin filtro.
+  - `build_request()` es el UNICO lugar donde se arma la peticion; la
+    configuracion de busqueda usada se elige con `SEARCH_CONFIGURATION_KEY`.
   - `retrieve()` hace UNA llamada `Retrieve` y devuelve `RetrievedFragment`.
     No pagina (`nextToken` se ignora): `max_results` acota el resultado.
   - Entradas invalidas levantan `ValueError` ANTES de llamar al servicio.
@@ -36,6 +40,7 @@ import logging
 import os
 import time
 from dataclasses import dataclass
+from urllib.parse import unquote, urlparse
 
 import boto3
 from botocore.config import Config
@@ -47,6 +52,11 @@ logger = logging.getLogger(__name__)
 
 KNOWLEDGE_BASE_ID_ENV = "KNOWLEDGE_BASE_ID"
 KNOWLEDGE_BASE_MAX_RESULTS_ENV = "KNOWLEDGE_BASE_MAX_RESULTS"
+KNOWLEDGE_BASE_FORTIOS_VERSION_ENV = "KNOWLEDGE_BASE_FORTIOS_VERSION"
+
+# Clave de metadatos con la que se etiquetan los documentos de la base. El
+# filtro opcional compara por igualdad contra esta clave.
+FORTIOS_VERSION_METADATA_KEY = "fortios_version"
 
 DEFAULT_MAX_RESULTS = 5
 
@@ -57,9 +67,35 @@ DEFAULT_MAX_RESULTS = 5
 #     `KnowledgeBaseQuery`, campo `retrievalQuery`): min 0, max 20000.
 #   - Shape `KnowledgeBaseVectorSearchConfigurationNumberOfResultsInteger`
 #     (`numberOfResults`): min 1, max 100.
+#   - Shape `FilterKey` (miembro `key` de `FilterAttribute`): min 1, max 100.
 MAX_QUERY_CHARS = 20000
 MIN_RESULTS = 1
 MAX_RESULTS = 100
+MAX_FILTER_KEY_CHARS = 100
+
+# Configuracion de busqueda que se envia en `retrievalConfiguration`. El
+# modelo de servicio (shape `KnowledgeBaseRetrievalConfiguration`, estructura
+# comun, no union) declara dos miembros opcionales:
+#   - "vectorSearchConfiguration"  (`KnowledgeBaseVectorSearchConfiguration`)
+#   - "managedSearchConfiguration" (`ManagedSearchConfiguration`)
+# Ambos aceptan `numberOfResults` (1..100) y `filter` (`RetrievalFilter`), que
+# es todo lo que usa este modulo. El modelo no indica cual corresponde a cada
+# tipo de base; lo define el servicio.
+#
+# VERIFICADO contra la base desplegada el 2026-11-18: una Knowledge Base de
+# tipo MANAGED rechaza "vectorSearchConfiguration" con `ValidationException`
+# ("vectorSearchConfiguration is not supported for managed knowledge bases.
+# Use managedSearchConfiguration instead.") y acepta
+# `{"managedSearchConfiguration": {"numberOfResults": 3}}`.
+#
+# SIN VERIFICAR contra el servicio: el miembro `filter` dentro de
+# `managedSearchConfiguration`. El modelo de servicio lo declara
+# (`ManagedSearchConfiguration.filter` -> `RetrievalFilter`), pero no se probo
+# ninguna consulta con filtro.
+#
+# Para una base con almacen vectorial propio, cambiar SOLO esta linea por
+# "vectorSearchConfiguration".
+SEARCH_CONFIGURATION_KEY = "managedSearchConfiguration"
 
 _CLIENT_CONFIG = Config(retries={"max_attempts": 5, "mode": "adaptive"}, read_timeout=30)
 
@@ -70,15 +106,51 @@ class KnowledgeRetrievalError(Exception):
     """La llamada `Retrieve` fallo o la respuesta no tiene la forma esperada."""
 
 
+def source_identifier(uri: str | None) -> str | None:
+    """Identificador de origen sin el nombre del bucket: la clave del objeto.
+
+    El servicio devuelve el origen como URL HTTPS
+    (`https://<bucket>.s3.amazonaws.com/<clave>`, forma observada el
+    2026-11-18) y el nombre del bucket incluye el id de cuenta. Todo lo que
+    sale de la recuperacion hacia prompts, manifest, reportes, eventos o
+    fixtures debe usar este identificador, nunca el URI completo.
+
+    Acepta tambien `s3://<bucket>/<clave>`, la forma path-style
+    (`https://s3.<region>.amazonaws.com/<bucket>/<clave>`) y una clave ya
+    suelta. De cualquier otra URL conserva solo la ruta. Devuelve None si no
+    queda una clave.
+    """
+    if not isinstance(uri, str) or not uri.strip():
+        return None
+    parsed = urlparse(uri.strip())
+    if not parsed.scheme:
+        return uri.strip()
+    key = parsed.path.lstrip("/")
+    host = (parsed.hostname or "").lower()
+    path_style = host.endswith("amazonaws.com") and (host.startswith(("s3.", "s3-")))
+    if parsed.scheme in ("http", "https") and path_style:
+        # El primer segmento de la ruta es el bucket.
+        key = key.partition("/")[2]
+    return unquote(key) or None
+
+
 @dataclass(frozen=True)
 class RetrievalConfig:
     knowledge_base_id: str
     max_results: int
+    fortios_version: str = ""
 
     @property
     def enabled(self) -> bool:
         """True solo si hay una Knowledge Base configurada."""
         return bool(self.knowledge_base_id)
+
+    @property
+    def metadata_filter(self) -> dict | None:
+        """Filtro `equals` sobre `fortios_version`, o None si no hay version."""
+        if not self.fortios_version:
+            return None
+        return equals_filter(FORTIOS_VERSION_METADATA_KEY, self.fortios_version)
 
 
 @dataclass(frozen=True)
@@ -95,20 +167,27 @@ def load_config() -> RetrievalConfig:
     deshabilitada. `KNOWLEDGE_BASE_MAX_RESULTS` ausente o en blanco usa
     `DEFAULT_MAX_RESULTS`; un valor no entero o fuera de 1..100 levanta
     `ValueError` (falla explicita en vez de corregir en silencio).
+    `KNOWLEDGE_BASE_FORTIOS_VERSION` ausente o en blanco deja la consulta
+    sin filtro de metadatos.
     """
     knowledge_base_id = os.environ.get(KNOWLEDGE_BASE_ID_ENV, "").strip()
+    fortios_version = os.environ.get(KNOWLEDGE_BASE_FORTIOS_VERSION_ENV, "").strip()
     raw_max_results = os.environ.get(KNOWLEDGE_BASE_MAX_RESULTS_ENV, "").strip()
-    if not raw_max_results:
-        return RetrievalConfig(knowledge_base_id=knowledge_base_id, max_results=DEFAULT_MAX_RESULTS)
-    try:
-        max_results = int(raw_max_results)
-    except ValueError:
-        raise ValueError(f"{KNOWLEDGE_BASE_MAX_RESULTS_ENV} must be an integer") from None
-    if not MIN_RESULTS <= max_results <= MAX_RESULTS:
-        raise ValueError(
-            f"{KNOWLEDGE_BASE_MAX_RESULTS_ENV} must be between {MIN_RESULTS} and {MAX_RESULTS}"
-        )
-    return RetrievalConfig(knowledge_base_id=knowledge_base_id, max_results=max_results)
+    max_results = DEFAULT_MAX_RESULTS
+    if raw_max_results:
+        try:
+            max_results = int(raw_max_results)
+        except ValueError:
+            raise ValueError(f"{KNOWLEDGE_BASE_MAX_RESULTS_ENV} must be an integer") from None
+        if not MIN_RESULTS <= max_results <= MAX_RESULTS:
+            raise ValueError(
+                f"{KNOWLEDGE_BASE_MAX_RESULTS_ENV} must be between {MIN_RESULTS} and {MAX_RESULTS}"
+            )
+    return RetrievalConfig(
+        knowledge_base_id=knowledge_base_id,
+        max_results=max_results,
+        fortios_version=fortios_version,
+    )
 
 
 def get_client():
@@ -125,16 +204,41 @@ def reset_client() -> None:
     _client = None
 
 
-def build_request(query: str, *, knowledge_base_id: str, max_results: int) -> dict:
-    """Arma el payload exacto de `Retrieve` -- separado para poder testearlo."""
+def equals_filter(key: str, value: str) -> dict:
+    """Filtro de metadatos por igualdad (`RetrievalFilter.equals`, cuyo valor
+    es un `FilterAttribute` con `key` y `value` obligatorios)."""
+    if not isinstance(key, str) or not 1 <= len(key) <= MAX_FILTER_KEY_CHARS:
+        raise ValueError(f"filter key must have between 1 and {MAX_FILTER_KEY_CHARS} characters")
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("filter value must not be empty")
+    return {"equals": {"key": key, "value": value}}
+
+
+def build_request(
+    query: str,
+    *,
+    knowledge_base_id: str,
+    max_results: int,
+    metadata_filter: dict | None = None,
+) -> dict:
+    """Arma el payload exacto de `Retrieve` -- unico punto de construccion.
+
+    La configuracion de busqueda se ubica bajo `SEARCH_CONFIGURATION_KEY`;
+    `metadata_filter` (un `RetrievalFilter`) solo se envia si no es None.
+    """
+    search_configuration: dict = {"numberOfResults": max_results}
+    if metadata_filter is not None:
+        search_configuration["filter"] = metadata_filter
     return {
         "knowledgeBaseId": knowledge_base_id,
         "retrievalQuery": {"text": query},
-        "retrievalConfiguration": {"vectorSearchConfiguration": {"numberOfResults": max_results}},
+        "retrievalConfiguration": {SEARCH_CONFIGURATION_KEY: search_configuration},
     }
 
 
-def _validate_inputs(query: str, knowledge_base_id: str, max_results: int) -> None:
+def _validate_inputs(
+    query: str, knowledge_base_id: str, max_results: int, metadata_filter: dict | None
+) -> None:
     # Los mensajes describen la regla incumplida, nunca el valor recibido.
     if not isinstance(knowledge_base_id, str) or not knowledge_base_id.strip():
         raise ValueError("knowledge_base_id must not be empty")
@@ -146,6 +250,10 @@ def _validate_inputs(query: str, knowledge_base_id: str, max_results: int) -> No
         raise ValueError("query must not be empty")
     if len(query) > MAX_QUERY_CHARS:
         raise ValueError(f"query exceeds the Retrieve limit of {MAX_QUERY_CHARS} characters")
+    if metadata_filter is not None and (
+        not isinstance(metadata_filter, dict) or not metadata_filter
+    ):
+        raise ValueError("metadata_filter must be a non-empty filter object")
 
 
 def _to_fragments(response: dict) -> list[RetrievedFragment]:
@@ -173,12 +281,14 @@ def retrieve(
     *,
     knowledge_base_id: str,
     max_results: int = DEFAULT_MAX_RESULTS,
+    metadata_filter: dict | None = None,
     client=None,
 ) -> list[RetrievedFragment]:
     """Una llamada sincronica a `Retrieve` sobre la Knowledge Base indicada.
 
     Devuelve los fragmentos con texto, en el orden que entrega el servicio;
-    los resultados sin contenido textual se omiten.
+    los resultados sin contenido textual se omiten. `metadata_filter`
+    (opcional) restringe la busqueda por metadatos; ver `equals_filter`.
 
     Validacion de la consulta: una consulta vacia o solo con espacios, o que
     supere `MAX_QUERY_CHARS`, levanta `ValueError` sin llamar al servicio.
@@ -194,9 +304,14 @@ def retrieve(
     Levanta `KnowledgeRetrievalError` ante cualquier fallo del SDK, del
     servicio o de la forma de la respuesta.
     """
-    _validate_inputs(query, knowledge_base_id, max_results)
+    _validate_inputs(query, knowledge_base_id, max_results, metadata_filter)
     kb_client = client or get_client()
-    request = build_request(query, knowledge_base_id=knowledge_base_id, max_results=max_results)
+    request = build_request(
+        query,
+        knowledge_base_id=knowledge_base_id,
+        max_results=max_results,
+        metadata_filter=metadata_filter,
+    )
 
     started = time.perf_counter()
     try:

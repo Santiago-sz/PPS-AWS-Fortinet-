@@ -69,14 +69,22 @@ def build_manifest(
     attempts: int,
     model: str,
     generated_at: str,
+    knowledge_base: dict | None = None,
 ) -> dict:
     """Arma un RunManifest según el contrato de design.md (Interfaces/Contracts).
 
     Argumentos solo por nombre -- son 9 campos del mismo tipo primitivo en
     varios casos (dos `str` que son hashes, dos `str` que son keys); un
     posicional mal ordenado sería un bug silencioso.
+
+    `knowledge_base` es un bloque ADITIVO y opcional: resultado de la
+    recuperación de documentación de referencia (si estuvo habilitada, cuántos
+    controles obtuvieron referencia, cuántas consultas fallaron y, por
+    `check_id`, origen y puntaje de cada fragmento usado; nunca su texto).
+    Con `None` la clave no se escribe y el manifest es idéntico al anterior;
+    un manifest sin la clave significa recuperación deshabilitada.
     """
-    return {
+    manifest = {
         "run_id": run_id,
         "policy_key": policy_key,
         "policy_sha256": policy_sha256,
@@ -87,6 +95,9 @@ def build_manifest(
         "model": model,
         "generated_at": generated_at,
     }
+    if knowledge_base is not None:
+        manifest["knowledge_base"] = knowledge_base
+    return manifest
 
 
 def put_manifest(bucket: str, key: str, manifest: dict) -> None:
