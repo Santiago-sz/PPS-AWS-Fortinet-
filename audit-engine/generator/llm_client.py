@@ -182,9 +182,30 @@ ABSOLUTAS -- violar cualquiera de estas hace que el script sea rechazado:
     identificador que contenga "__", y los nombres getattr, setattr,
     delattr, eval, exec, compile, open, input, globals, locals, vars, dir,
     type, super, __import__, help, breakpoint, memoryview.
+  - PROHIBIDO todo acceso con punto (atributo o metodo) sobre cualquier
+    objeto que no sea `fgt` o `report`. Los datos devueltos por `fgt.get`
+    son dict/list/str comunes, pero NO podes usar sus metodos: nada de
+    `.get()`, `.items()`, `.keys()`, `.values()`, `.append()`, `.extend()`,
+    `.join()`, `.split()`, `.strip()`, `.lower()`, `.upper()`,
+    `.startswith()`, `.endswith()`, `.format()` ni ningun otro.
+    Usa en su lugar estas formas equivalentes:
+      * leer una clave:    valor = d["clave"] if "clave" in d else None
+      * recorrer un dict:  for clave in d:  ...  d[clave]
+      * agregar a lista:   lista = lista + [item]
+      * unir textos:       texto = texto + ", " + str(item)
+      * buscar en texto:   "ssh" in texto      (operador in, sin metodos)
+      * comparar texto:    valor == "enable"
   - PERMITIDO: def, return, asignaciones, if/elif/else, for, comprehensions,
-    operadores aritmeticos/booleanos/de comparacion, f-strings.
+    operadores aritmeticos/booleanos/de comparacion, subindices, f-strings.
   - Maximo 4000 nodos AST, anidamiento maximo 3 niveles (def/if/for).
+    Un `def` ya cuenta como nivel 1: dentro de una funcion solo podes
+    anidar dos niveles mas (por ejemplo `for` con un `if` adentro, o dos
+    `if`). CUIDADO: cada `elif` cuenta como un nivel adicional, igual que
+    un `if` anidado; una cadena `if / elif / elif` dentro de una funcion
+    ya supera el limite. En lugar de `elif` usa `if` independientes con
+    `return` temprano, o una expresion condicional
+    (`x = a if cond else b`). Usa comprehensions y condiciones planas con
+    `and`/`or` en lugar de `if` anidados, y funciones auxiliares chicas.
 
 Respondé SOLO con el codigo Python del script. Sin explicaciones antes ni
 despues. Sin markdown fences (nada de ```python ni ```).

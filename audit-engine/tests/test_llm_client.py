@@ -547,8 +547,14 @@ class TestPromptsWithoutKnowledgeBaseAreByteIdentical:
     recuperación. Con la Knowledge Base deshabilitada ningún prompt cambia."""
 
     def test_system_prompts_are_unchanged(self):
+        # El hash de REDUCE_SYSTEM_PROMPT se actualizó de forma deliberada el
+        # 2026-11-18 (antes cd045c41…, calculado sobre e86bbc1). La primera
+        # corrida en vivo mostró que el modelo usaba métodos de dict/list/str
+        # y cadenas elif que el validador rechaza; el prompt ahora describe
+        # esas restricciones. El validador no cambió. Este test sigue fijando
+        # que habilitar o no la Knowledge Base no altera el prompt base.
         assert _sha256(llm_client.REDUCE_SYSTEM_PROMPT) == (
-            "cd045c41c3f1b94eddb5de53477c6f6abb531d90ae3783e98ec9ea7d6999232f"
+            "dad11799c122f324d5265351f1772ddbebf62e1fe386007333d20eb67dce219a"
         )
         assert _sha256(MAP_SYSTEM_PROMPT) == (
             "5c0d6b7cc69a18cf10da46f06d597b213b90f060964abbab221a4bd1c7180704"

@@ -1,278 +1,31 @@
 {
   "policy": "politica-registro-y-ntp",
-  "recorded_at": "hand-written",
-  "model_id": "canned",
-  "_comment": "1 map + 1 reduce valido al primer intento. Con el catalogo ampliado el map ya produce checks para FortiAnalyzer/syslog (2.1-2.2, log_fortianalyzer/log_syslogd), registro de la denegacion implicita (3.1, log_settings) y NTP (4.1, ntp).",
+  "recorded_at": "2026-11-18T03:57:21+00:00",
+  "model_id": "us.anthropic.claude-sonnet-4-6",
   "responses": [
     {
       "stage": "map",
-      "input_tokens": 2870,
-      "output_tokens": 1520,
-      "cache_write_tokens": 1020,
-      "latency_ms": 10900,
-      "json": {
-        "checks": [
-          {
-            "title": "Envío de registros a una plataforma centralizada (FortiAnalyzer o syslog)",
-            "clause_ref": {
-              "chunk_id": "chunk-0001",
-              "heading_path": ["Política de registro de eventos, sincronización horaria y resolución de nombres"],
-              "page": null,
-              "quote": "El firewall debe enviar todos sus registros de eventos y de tráfico a la plataforma de registro centralizado de la organización (FortiAnalyzer o servidor syslog institucional)."
-            },
-            "endpoints": ["log_fortianalyzer", "log_syslogd"],
-            "severity": "high",
-            "intent": "Verificar que log.fortianalyzer/setting o log.syslogd/setting tengan status=enable y un server configurado",
-            "remediation": {
-              "summary": "Habilitar el envío de logs a FortiAnalyzer o al servidor syslog institucional.",
-              "steps": ["Log & Report > Log Settings > Remote Logging and Archiving > FortiAnalyzer o Syslog"],
-              "fortigate_cli": "config log syslogd setting\n    set status enable\n    set server \"10.0.0.50\"\nend"
-            }
-          },
-          {
-            "title": "Canal cifrado para el envío de registros",
-            "clause_ref": {
-              "chunk_id": "chunk-0001",
-              "heading_path": ["Política de registro de eventos, sincronización horaria y resolución de nombres"],
-              "page": null,
-              "quote": "El envío de registros debe utilizar un canal cifrado cuando la plataforma de destino lo soporte."
-            },
-            "endpoints": ["log_fortianalyzer", "log_syslogd"],
-            "severity": "medium",
-            "intent": "Verificar que el destino habilitado use enc-algorithm distinto de disable (FortiAnalyzer) o mode reliable con enc-algorithm distinto de disable (syslog)",
-            "remediation": {
-              "summary": "Activar TLS (modo reliable + enc-algorithm high) en el destino de logs habilitado.",
-              "steps": ["Log & Report > Log Settings > Syslog > Mode: Reliable", "CLI: set enc-algorithm high"],
-              "fortigate_cli": "config log syslogd setting\n    set mode reliable\n    set enc-algorithm high\nend"
-            }
-          },
-          {
-            "title": "Registro de tráfico habilitado para todas las sesiones en cada política de firewall",
-            "clause_ref": {
-              "chunk_id": "chunk-0001",
-              "heading_path": ["Política de registro de eventos, sincronización horaria y resolución de nombres"],
-              "page": null,
-              "quote": "Toda política de firewall debe tener habilitado el registro de tráfico para todas las sesiones (registro de sesiones permitidas y denegadas), no solo para las violaciones de seguridad."
-            },
-            "endpoints": ["firewall_policies"],
-            "severity": "high",
-            "intent": "Verificar que cada política de firewall tenga logtraffic=all",
-            "remediation": {
-              "summary": "Configurar logtraffic all en las políticas de firewall que registran solo violaciones o nada.",
-              "steps": ["Policy & Objects > Firewall Policy > editar > Log Allowed Traffic: All Sessions"],
-              "fortigate_cli": "config firewall policy\n    edit <policyid>\n        set logtraffic all\n    next\nend"
-            }
-          },
-          {
-            "title": "Registro de la política implícita de denegación habilitado",
-            "clause_ref": {
-              "chunk_id": "chunk-0001",
-              "heading_path": ["Política de registro de eventos, sincronización horaria y resolución de nombres"],
-              "page": null,
-              "quote": "Toda política de firewall debe tener habilitado el registro de tráfico para todas las sesiones (registro de sesiones permitidas y denegadas), no solo para las violaciones de seguridad."
-            },
-            "endpoints": ["log_settings"],
-            "severity": "medium",
-            "intent": "Verificar que fwpolicy-implicit-log esté en enable en log/setting para registrar las sesiones denegadas por la política implícita",
-            "remediation": {
-              "summary": "Habilitar el registro de la política implícita de denegación.",
-              "steps": ["Policy & Objects > Firewall Policy > Implicit Deny > Log Violation Traffic"],
-              "fortigate_cli": "config log setting\n    set fwpolicy-implicit-log enable\nend"
-            }
-          },
-          {
-            "title": "Sincronización horaria por NTP habilitada contra servidores institucionales",
-            "clause_ref": {
-              "chunk_id": "chunk-0001",
-              "heading_path": ["Política de registro de eventos, sincronización horaria y resolución de nombres"],
-              "page": null,
-              "quote": "El firewall debe sincronizar su reloj mediante NTP contra los servidores de hora institucionales."
-            },
-            "endpoints": ["ntp"],
-            "severity": "medium",
-            "intent": "Verificar que system/ntp tenga ntpsync=enable, type=custom y al menos un servidor en ntpserver",
-            "remediation": {
-              "summary": "Habilitar NTP con los servidores de hora institucionales en lugar de FortiGuard.",
-              "steps": ["System > Settings > System Time > Setup: Synchronize with NTP Server > Specify"],
-              "fortigate_cli": "config system ntp\n    set ntpsync enable\n    set type custom\n    config ntpserver\n        edit 1\n            set server \"10.0.0.123\"\n        next\n    end\nend"
-            }
-          },
-          {
-            "title": "Zona horaria configurada en America/Argentina/Buenos_Aires",
-            "clause_ref": {
-              "chunk_id": "chunk-0001",
-              "heading_path": ["Política de registro de eventos, sincronización horaria y resolución de nombres"],
-              "page": null,
-              "quote": "La zona horaria configurada en el equipo debe corresponder a la zona horaria de Argentina (America/Argentina/Buenos_Aires), de modo que las marcas de tiempo de los registros sean comparables con el resto de la infraestructura."
-            },
-            "endpoints": ["system_global"],
-            "severity": "medium",
-            "intent": "Verificar que timezone en system/global sea America/Argentina/Buenos_Aires",
-            "remediation": {
-              "summary": "Cambiar la zona horaria del equipo a America/Argentina/Buenos_Aires.",
-              "steps": ["System > Settings > Time Zone"],
-              "fortigate_cli": "config system global\n    set timezone \"America/Argentina/Buenos_Aires\"\nend"
-            }
-          },
-          {
-            "title": "Servidores DNS primario y secundario dentro del rango interno 10.0.0.0/8",
-            "clause_ref": {
-              "chunk_id": "chunk-0001",
-              "heading_path": ["Política de registro de eventos, sincronización horaria y resolución de nombres"],
-              "page": null,
-              "quote": "El firewall debe utilizar exclusivamente los servidores DNS internos de la organización, ubicados en el rango 10.0.0.0/8, como servidores DNS primario y secundario."
-            },
-            "endpoints": ["dns"],
-            "severity": "medium",
-            "intent": "Verificar que primary y secondary de system/dns pertenezcan a 10.0.0.0/8",
-            "remediation": {
-              "summary": "Reemplazar los resolutores públicos por los servidores DNS internos de la organización.",
-              "steps": ["Network > DNS > Specify: primario y secundario internos"],
-              "fortigate_cli": "config system dns\n    set primary 10.0.0.53\n    set secondary 10.0.1.53\nend"
-            }
-          },
-          {
-            "title": "Nombre de host con el prefijo institucional FGT-",
-            "clause_ref": {
-              "chunk_id": "chunk-0001",
-              "heading_path": ["Política de registro de eventos, sincronización horaria y resolución de nombres"],
-              "page": null,
-              "quote": "El nombre de host del firewall debe seguir la convención institucional y comenzar con el prefijo FGT-."
-            },
-            "endpoints": ["system_global"],
-            "severity": "low",
-            "intent": "Verificar que hostname en system/global comience con FGT-",
-            "remediation": {
-              "summary": "Renombrar el equipo siguiendo la convención FGT-<sede>-<nn>.",
-              "steps": ["System > Settings > Host name"],
-              "fortigate_cli": "config system global\n    set hostname \"FGT-SEDE-01\"\nend"
-            }
-          }
-        ]
-      }
+      "attempt": null,
+      "text": "```json\n{\n  \"checks\": [\n    {\n      \"title\": \"Registro centralizado habilitado en FortiAnalyzer\",\n      \"clause_ref\": {\n        \"chunk_id\": \"chunk-0001\",\n        \"heading_path\": [\"Política de registro de eventos, sincronización horaria y resolución de nombres\"],\n        \"page\": null,\n        \"quote\": \"El firewall debe enviar todos sus registros de eventos y de tráfico a la plataforma de registro centralizado de la organización (FortiAnalyzer o servidor syslog institucional).\"\n      },\n      \"endpoints\": [\"log_fortianalyzer\"],\n      \"severity\": \"high\",\n      \"intent\": \"Verificar que el envío de logs a FortiAnalyzer esté configurado y habilitado en el equipo.\",\n      \"remediation\": {\n        \"summary\": \"Habilitar el envío de logs a FortiAnalyzer configurando la IP/FQDN del servidor y activando el estado.\",\n        \"steps\": [\n          \"Ir a Log & Report > Log Settings > FortiAnalyzer.\",\n          \"Configurar la dirección IP del servidor FortiAnalyzer institucional.\",\n          \"Establecer el estado en 'Enable'.\",\n          \"Verificar la conectividad con el botón 'Test Connectivity'.\"\n        ],\n        \"fortigate_cli\": \"config log fortianalyzer setting\\n    set status enable\\n    set server <IP_FORTIANALYZER>\\nend\"\n      }\n    },\n    {\n      \"title\": \"Registro centralizado habilitado en servidor syslog institucional\",\n      \"clause_ref\": {\n        \"chunk_id\": \"chunk-0001\",\n        \"heading_path\": [\"Política de registro de eventos, sincronización horaria y resolución de nombres\"],\n        \"page\": null,\n        \"quote\": \"El firewall debe enviar todos sus registros de eventos y de tráfico a la plataforma de registro centralizado de la organización (FortiAnalyzer o servidor syslog institucional).\"\n      },\n      \"endpoints\": [\"log_syslogd\"],\n      \"severity\": \"high\",\n      \"intent\": \"Verificar que el envío de logs a un servidor syslog institucional esté configurado y habilitado si FortiAnalyzer no es el destino principal.\",\n      \"remediation\": {\n        \"summary\": \"Habilitar el envío de logs al servidor syslog institucional configurando la IP y el puerto correspondiente.\",\n        \"steps\": [\n          \"Ir a Log & Report > Log Settings > Syslog.\",\n          \"Configurar la dirección IP del servidor syslog institucional.\",\n          \"Establecer el estado en 'Enable'.\",\n          \"Configurar el modo de transporte cifrado (TLS) si el servidor lo soporta.\"\n        ],\n        \"fortigate_cli\": \"config log syslogd setting\\n    set status enable\\n    set server <IP_SYSLOG>\\n    set mode reliable\\nend\"\n      }\n    },\n    {\n      \"title\": \"Configuración de log global habilitada (log settings)\",\n      \"clause_ref\": {\n        \"chunk_id\": \"chunk-0001\",\n        \"heading_path\": [\"Política de registro de eventos, sincronización horaria y resolución de nombres\"],\n        \"page\": null,\n        \"quote\": \"El firewall debe enviar todos sus registros de eventos y de tráfico a la plataforma de registro centralizado de la organización (FortiAnalyzer o servidor syslog institucional).\"\n      },\n      \"endpoints\": [\"log_settings\"],\n      \"severity\": \"high\",\n      \"intent\": \"Verificar que la configuración global de logging esté activa y cubra eventos y tráfico.\",\n      \"remediation\": {\n        \"summary\": \"Revisar y habilitar las categorías de log globales para eventos y tráfico en la configuración de log del sistema.\",\n        \"steps\": [\n          \"Ir a Log & Report > Log Settings.\",\n          \"Verificar que el logging de 'Event Logging' y 'Local Traffic' estén habilitados.\",\n          \"Guardar los cambios.\"\n        ],\n        \"fortigate_cli\": \"config log setting\\n    set resolve-ip disable\\nend\"\n      }\n    },\n    {\n      \"title\": \"Registro de tráfico habilitado en todas las políticas de firewall\",\n      \"clause_ref\": {\n        \"chunk_id\": \"chunk-0001\",\n        \"heading_path\": [\"Política de registro de eventos, sincronización horaria y resolución de nombres\"],\n        \"page\": null,\n        \"quote\": \"Toda política de firewall debe tener habilitado el registro de tráfico para todas las sesiones (registro de sesiones permitidas y denegadas), no solo para las violaciones de seguridad.\"\n      },\n      \"endpoints\": [\"firewall_policies\"],\n      \"severity\": \"high\",\n      \"intent\": \"Verificar que cada política de firewall tenga logtraffic configurado en 'all' (sesiones permitidas y denegadas), no en 'utm' ni en 'disable'.\",\n      \"remediation\": {\n        \"summary\": \"Para cada política con logtraffic distinto de 'all', actualizar la configuración para registrar todas las sesiones.\",\n        \"steps\": [\n          \"Ir a Policy & Objects > Firewall Policy.\",\n          \"Editar cada política y en la sección 'Logging Options' seleccionar 'Log All Sessions'.\",\n          \"Guardar los cambios en cada política afectada.\"\n        ],\n        \"fortigate_cli\": \"config firewall policy\\n    edit <ID_POLITICA>\\n        set logtraffic all\\n    next\\nend\"\n      }\n    },\n    {\n      \"title\": \"NTP configurado apuntando a servidores institucionales\",\n      \"clause_ref\": {\n        \"chunk_id\": \"chunk-0001\",\n        \"heading_path\": [\"Política de registro de eventos, sincronización horaria y resolución de nombres\"],\n        \"page\": null,\n        \"quote\": \"El firewall debe sincronizar su reloj mediante NTP contra los servidores de hora institucionales.\"\n      },\n      \"endpoints\": [\"ntp\"],\n      \"severity\": \"high\",\n      \"intent\": \"Verificar que el NTP esté habilitado y configurado con los servidores NTP institucionales de la organización.\",\n      \"remediation\": {\n        \"summary\": \"Configurar el NTP del firewall para que sincronice exclusivamente contra los servidores NTP institucionales.\",\n        \"steps\": [\n          \"Ir a System > Settings.\",\n          \"En la sección 'NTP', seleccionar 'Specify' y agregar la IP/FQDN de los servidores NTP institucionales.\",\n          \"Habilitar la sincronización NTP y guardar.\"\n        ],\n        \"fortigate_cli\": \"config system ntp\\n    set type custom\\n    set ntpsync enable\\n    config ntpserver\\n        edit 1\\n            set server <IP_NTP_INSTITUCIONAL>\\n        next\\n    end\\nend\"\n      }\n    },\n    {\n      \"title\": \"Zona horaria configurada como America/Argentina/Buenos_Aires\",\n      \"clause_ref\": {\n        \"chunk_id\": \"chunk-0001\",\n        \"heading_path\": [\"Política de registro de eventos, sincronización horaria y resolución de nombres\"],\n        \"page\": null,\n        \"quote\": \"La zona horaria configurada en el equipo debe corresponder a la zona horaria de Argentina (America/Argentina/Buenos_Aires), de modo que las marcas de tiempo de los registros sean comparables con el resto de la infraestructura.\"\n      },\n      \"endpoints\": [\"system_global\"],\n      \"severity\": \"medium\",\n      \"intent\": \"Verificar que la zona horaria del sistema esté configurada en America/Argentina/Buenos_Aires para coherencia en las marcas de tiempo de logs.\",\n      \"remediation\": {\n        \"summary\": \"Actualizar la zona horaria del sistema a America/Argentina/Buenos_Aires en la configuración global.\",\n        \"steps\": [\n          \"Ir a System > Settings.\",\n          \"En el campo 'Time Zone', seleccionar '(GMT-3:00) Buenos Aires'.\",\n          \"Guardar los cambios.\"\n        ],\n        \"fortigate_cli\": \"config system global\\n    set timezone 12\\nend\"\n      }\n    },\n    {\n      \"title\": \"DNS configurado exclusivamente con servidores internos en rango 10.0.0.0/8\",\n      \"clause_ref\": {\n        \"chunk_id\": \"chunk-0001\",\n        \"heading_path\": [\"Política de registro de eventos, sincronización horaria y resolución de nombres\"],\n        \"page\": null,\n        \"quote\": \"El firewall debe utilizar exclusivamente los servidores DNS internos de la organización, ubicados en el rango 10.0.0.0/8, como servidores DNS primario y secundario.\"\n      },\n      \"endpoints\": [\"dns\"],\n      \"severity\": \"high\",\n      \"intent\": \"Verificar que los servidores DNS primario y secundario configurados pertenezcan al rango 10.0.0.0/8 y no sean resolutores públicos de terceros.\",\n      \"remediation\": {\n        \"summary\": \"Reemplazar los servidores DNS configurados por los servidores DNS internos de la organización dentro del rango 10.0.0.0/8.\",\n        \"steps\": [\n          \"Ir a Network > DNS.\",\n          \"Reemplazar el DNS primario y secundario por las IPs de los servidores DNS internos (rango 10.0.0.0/8).\",\n          \"Guardar los cambios.\"\n        ],\n        \"fortigate_cli\": \"config system dns\\n    set primary <IP_DNS_INTERNO_PRIMARIO>\\n    set secondary <IP_DNS_INTERNO_SECUNDARIO>\\nend\"\n      }\n    },\n    {\n      \"title\": \"Nombre de host del firewall comienza con prefijo FGT-\",\n      \"clause_ref\": {\n        \"chunk_id\": \"chunk-0001\",\n        \"heading_path\": [\"Política de registro de eventos, sincronización horaria y resolución de nombres\"],\n        \"page\": null,\n        \"quote\": \"El nombre de host del firewall debe seguir la convención institucional y comenzar con el prefijo FGT-.\"\n      },\n      \"endpoints\": [\"system_global\"],\n      \"severity\": \"low\",\n      \"intent\": \"Verificar que el hostname del equipo comience con 'FGT-' conforme a la convención institucional.\",\n      \"remediation\": {\n        \"summary\": \"Actualizar el hostname del firewall para que comience con el prefijo FGT- según la convención institucional.\",\n        \"steps\": [\n          \"Ir a System > Settings.\",\n          \"Modificar el campo 'Hostname' para que comience con 'FGT-' seguido del identificador del equipo.\",\n          \"Guardar los cambios.\"\n        ],\n        \"fortigate_cli\": \"config system global\\n    set hostname FGT-<NOMBRE_EQUIPO>\\nend\"\n      }\n    }\n  ]\n}\n```",
+      "input_tokens": 1438,
+      "output_tokens": 2795,
+      "cache_read_tokens": 0,
+      "cache_write_tokens": 0,
+      "latency_ms": 16859.0,
+      "model_id": "us.anthropic.claude-sonnet-4-6",
+      "stop_reason": "end_turn"
     },
     {
       "stage": "reduce",
       "attempt": 1,
-      "input_tokens": 2740,
-      "output_tokens": 1710,
-      "cache_read_tokens": 640,
-      "latency_ms": 16200,
-      "lines": [
-        "faz = fgt.get(\"log_fortianalyzer\")",
-        "syslog = fgt.get(\"log_syslogd\")",
-        "policies = fgt.get(\"firewall_policies\")",
-        "logset = fgt.get(\"log_settings\")",
-        "ntp = fgt.get(\"ntp\")",
-        "sysglobal = fgt.get(\"system_global\")",
-        "dns = fgt.get(\"dns\")",
-        "",
-        "",
-        "def value_of(data, key):",
-        "    if isinstance(data, dict) and key in data:",
-        "        return data[key]",
-        "    return None",
-        "",
-        "",
-        "def first_item(data):",
-        "    if isinstance(data, list) and len(data) > 0:",
-        "        return data[0]",
-        "    return data",
-        "",
-        "",
-        "EMPTY = (\"\", \"None\", \"0.0.0.0\")",
-        "faz_cfg = first_item(faz)",
-        "sys_cfg = first_item(syslog)",
-        "faz_on = str(value_of(faz_cfg, \"status\")) == \"enable\" and str(value_of(faz_cfg, \"server\")) not in EMPTY",
-        "sys_on = str(value_of(sys_cfg, \"status\")) == \"enable\" and str(value_of(sys_cfg, \"server\")) not in EMPTY",
-        "",
-        "# chk-0001 - registro centralizado habilitado (FortiAnalyzer o syslog)",
-        "if faz is None and syslog is None:",
-        "    report.finding(\"chk-0001\", \"indeterminate\", \"log.fortianalyzer/setting y log.syslogd/setting no disponibles\", endpoints_used=[\"log_fortianalyzer\", \"log_syslogd\"])",
-        "elif faz_on or sys_on:",
-        "    report.finding(\"chk-0001\", \"pass\", f\"fortianalyzer={faz_on} syslog={sys_on}\", endpoints_used=[\"log_fortianalyzer\", \"log_syslogd\"])",
-        "else:",
-        "    report.finding(\"chk-0001\", \"fail\", \"sin destino de registro centralizado habilitado (ni FortiAnalyzer ni syslog)\", endpoints_used=[\"log_fortianalyzer\", \"log_syslogd\"])",
-        "",
-        "# chk-0002 - canal cifrado en el destino habilitado",
-        "faz_enc = str(value_of(faz_cfg, \"enc-algorithm\"))",
-        "sys_enc = str(value_of(sys_cfg, \"enc-algorithm\"))",
-        "sys_mode = str(value_of(sys_cfg, \"mode\"))",
-        "faz_secure = faz_on and faz_enc not in (\"disable\", \"None\")",
-        "sys_secure = sys_on and sys_mode == \"reliable\" and sys_enc not in (\"disable\", \"None\")",
-        "if faz is None and syslog is None:",
-        "    report.finding(\"chk-0002\", \"indeterminate\", \"log.fortianalyzer/setting y log.syslogd/setting no disponibles\", endpoints_used=[\"log_fortianalyzer\", \"log_syslogd\"])",
-        "elif not faz_on and not sys_on:",
-        "    report.finding(\"chk-0002\", \"fail\", \"no hay destino de registro habilitado sobre el cual evaluar el cifrado\", endpoints_used=[\"log_fortianalyzer\", \"log_syslogd\"])",
-        "elif faz_secure or sys_secure:",
-        "    report.finding(\"chk-0002\", \"pass\", f\"fortianalyzer enc={faz_enc} syslog mode={sys_mode} enc={sys_enc}\", endpoints_used=[\"log_fortianalyzer\", \"log_syslogd\"])",
-        "else:",
-        "    report.finding(\"chk-0002\", \"fail\", f\"envio de logs sin cifrar: fortianalyzer enc={faz_enc} syslog mode={sys_mode} enc={sys_enc}\", endpoints_used=[\"log_fortianalyzer\", \"log_syslogd\"])",
-        "",
-        "# chk-0003 - logtraffic all en todas las politicas de firewall",
-        "policy_list = policies if isinstance(policies, list) else []",
-        "not_logging = [str(value_of(p, \"policyid\")) for p in policy_list if str(value_of(p, \"logtraffic\")) != \"all\"]",
-        "if policies is None:",
-        "    report.finding(\"chk-0003\", \"indeterminate\", \"firewall/policy no disponible\", endpoints_used=[\"firewall_policies\"])",
-        "elif not_logging:",
-        "    report.finding(\"chk-0003\", \"fail\", f\"politicas sin logtraffic all: {not_logging}\", endpoints_used=[\"firewall_policies\"])",
-        "else:",
-        "    report.finding(\"chk-0003\", \"pass\", f\"{len(policy_list)} politicas con logtraffic all\", endpoints_used=[\"firewall_policies\"])",
-        "",
-        "# chk-0004 - registro de la politica implicita de denegacion",
-        "implicit_log = str(value_of(first_item(logset), \"fwpolicy-implicit-log\"))",
-        "if logset is None:",
-        "    report.finding(\"chk-0004\", \"indeterminate\", \"log/setting no disponible\", endpoints_used=[\"log_settings\"])",
-        "elif implicit_log == \"enable\":",
-        "    report.finding(\"chk-0004\", \"pass\", \"fwpolicy-implicit-log=enable\", endpoints_used=[\"log_settings\"])",
-        "else:",
-        "    report.finding(\"chk-0004\", \"fail\", f\"fwpolicy-implicit-log={implicit_log}\", endpoints_used=[\"log_settings\"])",
-        "",
-        "# chk-0005 - NTP habilitado contra servidores propios",
-        "ntp_cfg = first_item(ntp)",
-        "ntpsync = str(value_of(ntp_cfg, \"ntpsync\"))",
-        "ntp_type = str(value_of(ntp_cfg, \"type\"))",
-        "ntp_servers = value_of(ntp_cfg, \"ntpserver\")",
-        "server_list = ntp_servers if isinstance(ntp_servers, list) else []",
-        "server_names = [str(value_of(s, \"server\")) for s in server_list if str(value_of(s, \"server\")) not in EMPTY]",
-        "if ntp is None:",
-        "    report.finding(\"chk-0005\", \"indeterminate\", \"system/ntp no disponible\", endpoints_used=[\"ntp\"])",
-        "elif ntpsync != \"enable\":",
-        "    report.finding(\"chk-0005\", \"fail\", f\"ntpsync={ntpsync}\", endpoints_used=[\"ntp\"])",
-        "elif ntp_type == \"custom\" and server_names:",
-        "    report.finding(\"chk-0005\", \"pass\", f\"ntpsync=enable servidores={server_names}\", endpoints_used=[\"ntp\"])",
-        "else:",
-        "    report.finding(\"chk-0005\", \"fail\", f\"NTP no apunta a servidores institucionales: type={ntp_type} servidores={server_names}\", endpoints_used=[\"ntp\"])",
-        "",
-        "# chk-0006 - zona horaria",
-        "tz = str(value_of(sysglobal, \"timezone\"))",
-        "if sysglobal is None:",
-        "    report.finding(\"chk-0006\", \"indeterminate\", \"system/global no disponible\", endpoints_used=[\"system_global\"])",
-        "elif tz == \"America/Argentina/Buenos_Aires\":",
-        "    report.finding(\"chk-0006\", \"pass\", f\"timezone={tz}\", endpoints_used=[\"system_global\"])",
-        "else:",
-        "    report.finding(\"chk-0006\", \"fail\", f\"timezone={tz}\", endpoints_used=[\"system_global\"])",
-        "",
-        "# chk-0007 - DNS internos (10.0.0.0/8)",
-        "primary = str(value_of(dns, \"primary\"))",
-        "secondary = str(value_of(dns, \"secondary\"))",
-        "secondary_ok = secondary in EMPTY or secondary[:3] == \"10.\"",
-        "if dns is None:",
-        "    report.finding(\"chk-0007\", \"indeterminate\", \"system/dns no disponible\", endpoints_used=[\"dns\"])",
-        "elif primary[:3] == \"10.\" and secondary_ok:",
-        "    report.finding(\"chk-0007\", \"pass\", f\"primary={primary} secondary={secondary}\", endpoints_used=[\"dns\"])",
-        "else:",
-        "    report.finding(\"chk-0007\", \"fail\", f\"resolutores fuera de 10.0.0.0/8: primary={primary} secondary={secondary}\", endpoints_used=[\"dns\"])",
-        "",
-        "# chk-0008 - prefijo del hostname",
-        "host = str(value_of(sysglobal, \"hostname\"))",
-        "if sysglobal is None:",
-        "    report.finding(\"chk-0008\", \"indeterminate\", \"system/global no disponible\", endpoints_used=[\"system_global\"])",
-        "elif host[:4] == \"FGT-\":",
-        "    report.finding(\"chk-0008\", \"pass\", f\"hostname={host}\", endpoints_used=[\"system_global\"])",
-        "else:",
-        "    report.finding(\"chk-0008\", \"fail\", f\"hostname={host} no comienza con FGT-\", endpoints_used=[\"system_global\"])"
-      ]
+      "text": "def check_ip_in_10(ip):\n    parts = ip + \".0.0.0.0\"\n    segments = []\n    current = \"\"\n    for ch in parts:\n        if ch == \".\":\n            segments = segments + [current]\n            current = \"\"\n        else:\n            current = current + ch\n    first = int(segments[0]) if len(segments) > 0 else -1\n    return first == 10\n\nfa = fgt.get(\"log_fortianalyzer\")\nfa_status = fa[\"status\"] if \"status\" in fa else \"disable\"\nfa_server = fa[\"server\"] if \"server\" in fa else \"\"\nif fa_status == \"enable\" and fa_server != \"\":\n    report.finding(\"chk-0001\", \"pass\", \"FortiAnalyzer habilitado, servidor: \" + str(fa_server), endpoints_used=[\"log_fortianalyzer\"])\nelse:\n    report.finding(\"chk-0001\", \"fail\", \"FortiAnalyzer no habilitado o sin servidor. status=\" + str(fa_status) + \" server=\" + str(fa_server), endpoints_used=[\"log_fortianalyzer\"])\n\nsl = fgt.get(\"log_syslogd\")\nsl_status = sl[\"status\"] if \"status\" in sl else \"disable\"\nsl_server = sl[\"server\"] if \"server\" in sl else \"\"\nif sl_status == \"enable\" and sl_server != \"\":\n    report.finding(\"chk-0002\", \"pass\", \"Syslog habilitado, servidor: \" + str(sl_server), endpoints_used=[\"log_syslogd\"])\nelse:\n    report.finding(\"chk-0002\", \"fail\", \"Syslog no habilitado o sin servidor. status=\" + str(sl_status) + \" server=\" + str(sl_server), endpoints_used=[\"log_syslogd\"])\n\nls = fgt.get(\"log_settings\")\nls_fwpolicy = ls[\"fwpolicy-implicit-log\"] if \"fwpolicy-implicit-log\" in ls else \"disable\"\nls_local = ls[\"local-in-allow\"] if \"local-in-allow\" in ls else \"disable\"\nls_forward = ls[\"forward-traffic\"] if \"forward-traffic\" in ls else \"disable\"\nls_event = ls[\"event\"] if \"event\" in ls else \"disable\"\nissues = []\nif ls_forward != \"enable\":\n    issues = issues + [\"forward-traffic=\" + str(ls_forward)]\nif ls_event != \"enable\":\n    issues = issues + [\"event=\" + str(ls_event)]\nif len(issues) == 0:\n    report.finding(\"chk-0003\", \"pass\", \"Log settings activo. forward-traffic=\" + str(ls_forward) + \" event=\" + str(ls_event), endpoints_used=[\"log_settings\"])\nelse:\n    ev = \"\"\n    for i in issues:\n        ev = ev + i + \" \"\n    report.finding(\"chk-0003\", \"fail\", \"Log settings incompleto: \" + ev, endpoints_used=[\"log_settings\"])\n\nfps = fgt.get(\"firewall_policies\")\nbad_policies = []\nfor pol in fps:\n    lt = pol[\"logtraffic\"] if \"logtraffic\" in pol else \"disable\"\n    if lt != \"all\":\n        pid = pol[\"policyid\"] if \"policyid\" in pol else \"unknown\"\n        pname = pol[\"name\"] if \"name\" in pol else \"\"\n        bad_policies = bad_policies + [str(pid) + \"(\" + str(pname) + \"):logtraffic=\" + str(lt)]\nif len(bad_policies) == 0:\n    report.finding(\"chk-0004\", \"pass\", \"Todas las politicas tienen logtraffic=all. Total=\" + str(len(fps)), endpoints_used=[\"firewall_policies\"])\nelse:\n    ev2 = \"\"\n    for b in bad_policies:\n        ev2 = ev2 + b + \"; \"\n    report.finding(\"chk-0004\", \"fail\", \"Politicas sin logtraffic=all: \" + ev2, endpoints_used=[\"firewall_policies\"])\n\nntp_data = fgt.get(\"ntp\")\nntp_status = ntp_data[\"ntpsync\"] if \"ntpsync\" in ntp_data else \"disable\"\nntp_servers = ntp_data[\"ntpserver\"] if \"ntpserver\" in ntp_data else []\nif ntp_status == \"enable\" and len(ntp_servers) > 0:\n    srv_ev = \"\"\n    for s in ntp_servers:\n        sname = s[\"server\"] if \"server\" in s else str(s)\n        srv_ev = srv_ev + sname + \" \"\n    report.finding(\"chk-0005\", \"pass\", \"NTP habilitado. Servidores: \" + srv_ev, endpoints_used=[\"ntp\"])\nelse:\n    report.finding(\"chk-0005\", \"fail\", \"NTP no habilitado o sin servidores. ntpsync=\" + str(ntp_status) + \" servidores=\" + str(len(ntp_servers)), endpoints_used=[\"ntp\"])\n\nsg = fgt.get(\"system_global\")\ntz = sg[\"timezone\"] if \"timezone\" in sg else \"\"\nbuenos_aires_tz = \"28\"\nbuenos_aires_name = \"America/Argentina/Buenos_Aires\"\nif str(tz) == buenos_aires_tz or str(tz) == buenos_aires_name:\n    report.finding(\"chk-0006\", \"pass\", \"Zona horaria correcta: \" + str(tz), endpoints_used=[\"system_global\"])\nelse:\n    report.finding(\"chk-0006\", \"fail\", \"Zona horaria incorrecta: \" + str(tz) + \" (esperado: \" + buenos_aires_name + \" o \" + buenos_aires_tz + \")\", endpoints_used=[\"system_global\"])\n\ndns_data = fgt.get(\"dns\")\ndns_primary = dns_data[\"primary\"] if \"primary\" in dns_data else \"\"\ndns_secondary = dns_data[\"secondary\"] if \"secondary\" in dns_data else \"\"\np_ok = check_ip_in_10(str(dns_primary)) if dns_primary != \"\" else False\ns_ok = check_ip_in_10(str(dns_secondary)) if dns_secondary != \"\" else True\nif p_ok and s_ok:\n    report.finding(\"chk-0007\", \"pass\", \"DNS en rango 10.x. primario=\" + str(dns_primary) + \" secundario=\" + str(dns_secondary), endpoints_used=[\"dns\"])\nelse:\n    report.finding(\"chk-0007\", \"fail\", \"DNS fuera de rango 10.x. primario=\" + str(dns_primary) + \" secundario=\" + str(dns_secondary), endpoints_used=[\"dns\"])\n\nhostname = sg[\"hostname\"] if \"hostname\" in sg else \"\"\nprefix_ok = len(str(hostname)) >= 4 and str(hostname)[0] == \"F\" and str(hostname)[1] == \"G\" and str(hostname)[2] == \"T\" and str(hostname)[3] == \"-\"\nif prefix_ok:\n    report.finding(\"chk-0008\", \"pass\", \"Hostname cumple prefijo FGT-: \" + str(hostname), endpoints_used=[\"system_global\"])\nelse:\n    report.finding(\"chk-0008\", \"fail\", \"Hostname no cumple prefijo FGT-: \" + str(hostname), endpoints_used=[\"system_global\"])",
+      "input_tokens": 1023,
+      "output_tokens": 1871,
+      "cache_read_tokens": 1054,
+      "cache_write_tokens": 0,
+      "latency_ms": 10888.0,
+      "model_id": "us.anthropic.claude-sonnet-4-6",
+      "stop_reason": "end_turn"
     }
   ]
 }
