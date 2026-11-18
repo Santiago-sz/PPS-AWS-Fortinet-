@@ -10,7 +10,7 @@ Convenciones:
 
 - `<...>` = valor a reemplazar. Nunca pegar tokens ni claves en archivos del repo.
 - Raíz del repo: `C:\Users\santi\dev\PPS-AWS-Fortinet-`. Pipeline: `audit-pipeline\`.
-- Perfil AWS: `pps-tesis`. Cuenta `656051538542`. Región `us-east-1`.
+- Perfil AWS: `<AWS_PROFILE>`. Cuenta `<ACCOUNT_ID>`. Región `us-east-1`.
 
 ---
 
@@ -33,7 +33,7 @@ Google Drive Desktop inyecta `desktop.ini` dentro de `.git` y toca los
 binarios de providers de Terraform, lo que corrompe el checksum de
 `.terraform.lock.hcl` (`missing or corrupted provider plugins`) y ha roto
 `git fetch` en el pasado. Por eso el clon de trabajo vive en `C:\Users\santi\dev`.
-Las copias bajo `G:\Mi unidad\TESIS\PPS prueba\` **quedaron obsoletas** (no
+Las copias bajo `<LOCAL_PATH>\PPS prueba\` **quedaron obsoletas** (no
 contienen el trabajo de 2026-11-04): no editar ni correr nada desde ahí.
 
 ```powershell
@@ -92,30 +92,30 @@ y `$env:X = "v"` por `export X=v`.
 
 ---
 
-## 3. Perfil AWS `pps-tesis`
+## 3. Perfil AWS `<AWS_PROFILE>`
 
-Credenciales programáticas del usuario IAM `SantiUsuarioDePrueba1`
+Credenciales programáticas del usuario IAM `<IAM_USER>`
 (AdministratorAccess en la cuenta de prueba). No pegar los valores en ningún
 archivo del repositorio.
 
 ```powershell
-aws configure set aws_access_key_id     <ACCESS_KEY_ID>     --profile pps-tesis
-aws configure set aws_secret_access_key <SECRET_ACCESS_KEY> --profile pps-tesis
-aws configure set region us-east-1 --profile pps-tesis
-aws configure set output json      --profile pps-tesis
-aws sts get-caller-identity --profile pps-tesis
+aws configure set aws_access_key_id     <ACCESS_KEY_ID>     --profile <AWS_PROFILE>
+aws configure set aws_secret_access_key <SECRET_ACCESS_KEY> --profile <AWS_PROFILE>
+aws configure set region us-east-1 --profile <AWS_PROFILE>
+aws configure set output json      --profile <AWS_PROFILE>
+aws sts get-caller-identity --profile <AWS_PROFILE>
 ```
 
-`get-caller-identity` debe devolver `"Account": "656051538542"`.
+`get-caller-identity` debe devolver `"Account": "<ACCOUNT_ID>"`.
 
 Para el resto del runbook:
 
 ```powershell
-$env:AWS_PROFILE = "pps-tesis"      # PowerShell
+$env:AWS_PROFILE = "<AWS_PROFILE>"      # PowerShell
 ```
 
 ```bash
-export AWS_PROFILE=pps-tesis        # Git Bash
+export AWS_PROFILE=<AWS_PROFILE>        # Git Bash
 ```
 
 ---
@@ -125,7 +125,7 @@ export AWS_PROFILE=pps-tesis        # Git Bash
 ### 4.1 Formulario de caso de uso (ya enviado para esta cuenta)
 
 El acceso a los modelos Anthropic exige un formulario de caso de uso por
-cuenta. **Para `656051538542` ya fue enviado y aceptado**; no repetirlo salvo
+cuenta. **Para `<ACCOUNT_ID>` ya fue enviado y aceptado**; no repetirlo salvo
 que se use otra cuenta. Se puede hacer desde la consola (Bedrock → Model
 access) o por CLI:
 
@@ -220,7 +220,7 @@ Completar (el archivo está ignorado por Git):
 PowerShell:
 
 ```powershell
-$env:AWS_PROFILE = "pps-tesis"
+$env:AWS_PROFILE = "<AWS_PROFILE>"
 $env:TF_DATA_DIR = "C:\Users\santi\.terraform-data\pps-audit-pipeline"
 New-Item -ItemType Directory -Force $env:TF_DATA_DIR | Out-Null
 cd C:\Users\santi\dev\PPS-AWS-Fortinet-\audit-pipeline\terraform
@@ -234,7 +234,7 @@ terraform apply tfplan
 Git Bash:
 
 ```bash
-export AWS_PROFILE=pps-tesis
+export AWS_PROFILE=<AWS_PROFILE>
 export TF_DATA_DIR="C:/Users/santi/.terraform-data/pps-audit-pipeline"
 mkdir -p "$TF_DATA_DIR"
 cd /c/Users/santi/dev/PPS-AWS-Fortinet-/audit-pipeline/terraform
@@ -329,7 +329,7 @@ aparecerán en `pps-api aws sync` (el sync solo correlaciona auditorías
 enviadas desde la API local, por `policy_key`).
 
 ```powershell
-$env:AWS_PROFILE = "pps-tesis"
+$env:AWS_PROFILE = "<AWS_PROFILE>"
 cd C:\Users\santi\dev\PPS-AWS-Fortinet-\audit-pipeline\terraform
 $POLICIES = terraform output -raw policies_bucket
 $REPORTS  = terraform output -raw reports_bucket
@@ -357,7 +357,7 @@ Git Bash: `POLICIES=$(terraform output -raw policies_bucket)` y `"$POLICIES"`.
 1. `.env` en la raíz del repo (copiar `.env.example`; ignorado por Git):
 
    ```dotenv
-   AWS_PROFILE=pps-tesis
+   AWS_PROFILE=<AWS_PROFILE>
    AWS_REGION=us-east-1
    PPS_POLICIES_BUCKET=<policies_bucket>
    PPS_REPORTS_BUCKET=<reports_bucket>
@@ -395,7 +395,7 @@ Git Bash: `POLICIES=$(terraform output -raw policies_bucket)` y `"$POLICIES"`.
    ```powershell
    cd C:\Users\santi\dev\PPS-AWS-Fortinet-
    .\.venv\Scripts\pps-api --env-file .env aws dispatch     # sube policies/{audit_id}.pdf
-   aws logs tail "/aws/lambda/<generator_function_name>" --follow --region us-east-1 --profile pps-tesis
+   aws logs tail "/aws/lambda/<generator_function_name>" --follow --region us-east-1 --profile <AWS_PROFILE>
    # cuando el executor termine (o el generador falle):
    .\.venv\Scripts\pps-api --env-file .env aws sync
    ```
@@ -436,8 +436,8 @@ completas: log group `/aws/bedrock/pps-prod-model-invocations`.
 
    ```powershell
    .\.venv\Scripts\pps-api --env-file .env aws list-pending            # run_ids con manifest y sin reporte
-   aws s3 cp "s3://<reports_bucket>/artifacts/<run_id>/manifest.json" - --profile pps-tesis   # controles + remediaciones propuestas
-   aws s3 cp "s3://<reports_bucket>/artifacts/<run_id>/script.py" -    --profile pps-tesis   # script a ejecutar
+   aws s3 cp "s3://<reports_bucket>/artifacts/<run_id>/manifest.json" - --profile <AWS_PROFILE>   # controles + remediaciones propuestas
+   aws s3 cp "s3://<reports_bucket>/artifacts/<run_id>/script.py" -    --profile <AWS_PROFILE>   # script a ejecutar
    .\.venv\Scripts\pps-api --env-file .env aws approve <run_id>        # usa PPS_EXECUTOR_FUNCTION; o --executor-function <nombre|arn>
    .\.venv\Scripts\pps-api --env-file .env aws sync
    ```
@@ -456,7 +456,7 @@ el hash antes de ejecutar.
 cd C:\Users\santi\dev\PPS-AWS-Fortinet-\audit-pipeline
 $env:PYTHONUTF8 = "1"
 ..\.venv\Scripts\python.exe evals\run_evals.py --mode offline                 # sin red; lo que corre CI
-$env:AWS_PROFILE = "pps-tesis"; $env:AWS_REGION = "us-east-1"
+$env:AWS_PROFILE = "<AWS_PROFILE>"; $env:AWS_REGION = "us-east-1"
 ..\.venv\Scripts\python.exe evals\run_evals.py --mode live                    # Bedrock real (requiere cuota > 0)
 ..\.venv\Scripts\python.exe evals\run_evals.py --mode live --record           # re-graba evals/recorded/*.json
 ..\.venv\Scripts\python.exe evals\run_evals.py --mode live --policy politica-contrasenas

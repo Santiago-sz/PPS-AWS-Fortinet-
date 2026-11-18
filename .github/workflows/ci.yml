@@ -45,7 +45,8 @@ jobs:
         run: python -m ruff format --check generator/ executor/ contracts/ legacy/ tests/ evals/ scripts/build_layer.py
       - name: pytest
         # En Linux el test del backstop SIGALRM del sandbox corre de verdad
-        # (en Windows se salta): se espera 351 passed, 0 skipped.
+        # (en Windows se salta). Conteo esperado, inferido de la corrida en
+        # Windows (460 passed, 1 skipped) y no observado: 461 passed, 0 skipped.
         run: python -m pytest -q -p no:cacheprovider
 
   api:

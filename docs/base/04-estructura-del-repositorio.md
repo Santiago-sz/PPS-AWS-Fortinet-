@@ -107,7 +107,7 @@ PPS-AWS-Fortinet-/
 
 ## Copias obsoletas fuera del repositorio
 
-`G:\Mi unidad\TESIS\PPS prueba\` (carpetas `lambda`, `terraform`, `scripts`,
+`<LOCAL_PATH>\PPS prueba\` (carpetas `lambda`, `terraform`, `scripts`,
 `P-Terraform-Forti-AWS`, `.venv`) es el prototipo anterior a la fusión en
 GitHub y **no contiene** el trabajo de 2026-11-04. Se conserva solo como
 historial; el clon de trabajo es `C:\Users\santi\dev\PPS-AWS-Fortinet-`.

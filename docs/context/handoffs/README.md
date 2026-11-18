@@ -7,10 +7,10 @@ con la rama, el commit y los cambios pendientes de Git.
 
 | Tarea | Estado |
 |---|---|
-| [2026-11-17-bedrock-knowledge-base](2026-11-17-bedrock-knowledge-base.md) | Base de RAG implementada localmente y deshabilitada por defecto; sin commits; revisión y merge pendientes; sin cambios en AWS |
-| [2026-11-15-functional-test-readiness](2026-11-15-functional-test-readiness.md) | Tres correcciones verificadas; revisión y merge pendientes |
+| [2026-11-17-bedrock-knowledge-base](2026-11-17-bedrock-knowledge-base.md) | Base de RAG en commits `16b45d3` y `e86bbc1` (CI de `e86bbc1` aprobado). Incremento del 2026-11-18 sin commit: fragmentos recuperados en la fase reduce, trazabilidad en manifest y reporte, filtro por versión y evals de recuperación. Deshabilitada por defecto; revisión y merge pendientes |
+| [2026-11-15-functional-test-readiness](2026-11-15-functional-test-readiness.md) | Tres correcciones verificadas, CI en Linux aprobado el 2026-11-15 e integradas en `master` |
 | [2026-11-05-skills-hooks](2026-11-05-skills-hooks.md) | Seis skills validadas y hooks definidos; implementación/activación pendiente |
-| [2026-11-05-reorganizacion-repositorio](2026-11-05-reorganizacion-repositorio.md) | Arquitectura implementada y verificada localmente; CI remoto pendiente |
+| [2026-11-05-reorganizacion-repositorio](2026-11-05-reorganizacion-repositorio.md) | Arquitectura implementada, integrada en `master` y con CI remoto aprobado (2026-11-15) |
 | [2026-11-05-contexto-inicial](2026-11-05-contexto-inicial.md) | Primera iteración documental; definición de AGENTS, skills y hooks pendiente |
 
 ## Convención

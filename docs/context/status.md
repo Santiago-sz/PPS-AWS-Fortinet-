@@ -1,6 +1,6 @@
 # Estado documental y pendientes
 
-Síntesis: 2026-11-05. Fuente principal:
+Síntesis: 2026-11-05; actualizado el 2026-11-18. Fuente principal:
 [estado base al 2026-11-04](../base/07-estado-y-pendientes.md), incluida su
 actualización WU 5. No se consultó AWS para producir este documento.
 
@@ -9,7 +9,7 @@ actualización WU 5. No se consultó AWS para producir este documento.
 | Tema | Último estado de la base | Cómo usarlo |
 |---|---|---|
 | Despliegue del pipeline | WU 5 informa 42 recursos desplegados en `us-east-1`, cerrando P2 | Antecedente de despliegue; comprobar recursos actuales si la tarea depende de ellos |
-| Bedrock | Cuota aplicada 0 y errores de throttling; pendiente P1 | Bloqueo histórico, pendiente de nueva comprobación |
+| Bedrock | Cuota aplicada 0 y errores de throttling; pendiente P1 | Bloqueo histórico; resuelto según lo informado el 2026-11-18 (ver «Hechos registrados») |
 | E2E | WU 5 informa dos pruebas de cableado con fallo Bedrock y sincronización del reporte a API/GUI | No equivale a auditoría exitosa con generación real y FortiGate |
 | Catálogo | WU 5 informa ampliación de 11 a 31 endpoints GET; P5 cerrado | Confirmar catálogo vigente antes de ampliarlo |
 | Evals | Fixtures manuales ampliadas a 5, 9 y 8 controles por normativa | Grabación live pendiente según la base |
@@ -24,10 +24,11 @@ La rama y el árbol de trabajo actuales se obtienen de Git, no de ese relato.
 
 ## Trabajo que requiere nueva evaluación
 
-- Cuota Bedrock, corrida live y auditoría E2E con evidencia real.
+- Corrida live de las evals y auditoría E2E con evidencia real. La cuota de
+  Bedrock dejó de ser un bloqueo el 2026-11-18 (ver más abajo).
 - Conectividad FortiGate, perfil GET, token y validación TLS, siguiendo
   [la base de conectividad](../base/06-conexion-fortigate.md).
-- Confirmación SNS, resultados efectivos de CI y prueba SIGALRM en Linux.
+- Confirmación SNS.
 - Restricción de egreso del executor, deduplicación e índice de reportes.
 - Corpus de evals más amplio: documentos largos, múltiples grupos map y casos
   adversariales. El corpus pequeño no acredita robustez general.
@@ -35,11 +36,30 @@ La rama y el árbol de trabajo actuales se obtienen de Git, no de ese relato.
   [checkov-report.md](../../infrastructure/pipeline/checkov-report.md); la base informa
   109 aprobados y 29 fallidos justificados, no ausencia de hallazgos.
 
-- Knowledge Base de Bedrock (2026-11-17): base implementada localmente y
-  deshabilitada por defecto; falta desplegar el módulo, definir el corpus e
-  incorporar los fragmentos al prompt. Según el encargo de esa fecha, la cuota
-  del modelo en la cuenta sigue en 0 con dos pedidos de aumento presentados.
+- Knowledge Base de Bedrock (2026-11-17 y 2026-11-18): deshabilitada por
+  defecto. El generador ya incorpora los fragmentos recuperados a la fase
+  reduce y registra las fuentes en el manifest y en el reporte (incremento del
+  2026-11-18, sin commit al cierre de esa sesión). Falta definir el corpus,
+  comprobar la base real, regrabar las evals en vivo y decidir el merge.
   Detalle en [el handoff](handoffs/2026-11-17-bedrock-knowledge-base.md).
+
+## Hechos registrados
+
+Cada fila indica fecha y fuente. Lo informado en un encargo no fue observado
+por el agente que lo registró.
+
+| Fecha | Hecho | Fuente |
+|---|---|---|
+| 2026-11-15 | CI en Linux aprobado (Ubuntu, Python 3.12): motor con 284 tests aprobados sin omitidos, incluido el backstop SIGALRM real | [Run 43720573002](https://github.com/Santiago-sz/PPS-AWS-Fortinet-/actions/runs/43720573002), registrado en el [handoff de esa tarea](handoffs/2026-11-15-functional-test-readiness.md) |
+| 2026-11-18 | Las correcciones de `functional-test-readiness` y la reorganización del repositorio están integradas en `master` | Git: `c314de8` y `ea6e63d` son ancestros de `master` |
+| 2026-11-18 | El CI del commit `e86bbc1` de `feature/bedrock-knowledge-base` aprobó sus cinco jobs en Linux | [Run 44227778670](https://github.com/Santiago-sz/PPS-AWS-Fortinet-/actions/runs/44227778670), informado en el encargo; la cantidad de tests aprobados en Linux no fue observada y no se registra |
+| 2026-11-18 | Pedidos de cuota de Bedrock cerrados. Cuota aplicada de Claude Sonnet 4.6, inferencia entre regiones: 6.000.000 tokens por minuto y 10 pedidos por minuto (se habían pedido 10.000) | Informado en el encargo; no se consultó AWS |
+| 2026-11-18 | Una llamada mínima a Converse respondió correctamente | Informado en el encargo; no se consultó AWS |
+
+Con 10 pedidos por minuto, una corrida live hace pocas llamadas por normativa
+(una por grupo de map y hasta tres de reduce), pero varias corridas seguidas o
+una normativa larga pueden alcanzar el límite; el cliente usa reintentos
+adaptativos.
 
 Las referencias a recursos, versiones y cuotas son históricas. Esta lista no
 autoriza despliegues, cambios IAM, modificaciones del firewall ni costos live.

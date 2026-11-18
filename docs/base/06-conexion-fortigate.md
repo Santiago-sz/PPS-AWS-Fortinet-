@@ -2,8 +2,8 @@
 
 Diagrama: `diagrams/04-conectividad-fortigate.png`.
 
-Estado actual: en la cuenta `656051538542` **no existe** ningún FortiGate ni
-VPN. Hay dos VPC: la default (`172.31.0.0/16`) y `vpc-0542264dd516d931e`
+Estado actual: en la cuenta `<ACCOUNT_ID>` **no existe** ningún FortiGate ni
+VPN. Hay dos VPC: la default (`172.31.0.0/16`) y `<VPC_ID>`
 (`10.42.0.0/16`). La carpeta `fortigate-sandbox-2026-06-07/` despliega una
 FortiGate-VM en **`sa-east-1`** (otra región y otra VPC, `10.0.0.0/16`), por lo
 que no es alcanzable por IP privada desde `us-east-1` sin peering inter-región.
@@ -75,7 +75,7 @@ El token se muestra **una sola vez**. Cargarlo en Secrets Manager
 
 ```powershell
 aws secretsmanager put-secret-value --secret-id <fortigate_secret_arn> `
-  --secret-string '{"token":"<TOKEN>","host":"<IP_O_HOSTNAME>"}' --region us-east-1 --profile pps-tesis
+  --secret-string '{"token":"<TOKEN>","host":"<IP_O_HOSTNAME>"}' --region us-east-1 --profile <AWS_PROFILE>
 ```
 
 Regenerar la clave invalida la anterior: repetir `put-secret-value`.

@@ -17,7 +17,7 @@ integra en una vista de conjunto.
 | [07-estado-y-pendientes.md](07-estado-y-pendientes.md) | Qué se hizo el 2026-11-04 por unidad de trabajo, números de verificación, hechos de la cuenta, pendientes y cómo retomar. |
 
 Informe orientado a la tesis (fuera del repositorio):
-`G:\Mi unidad\TESIS\FASE1-INFORME-PARA-TESIS.md`.
+`<LOCAL_PATH>\FASE1-INFORME-PARA-TESIS.md`.
 
 ## Galería de diagramas
 

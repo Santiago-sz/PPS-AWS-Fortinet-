@@ -2,7 +2,7 @@
 
 Formato: contexto / decisión / consecuencias. Complementa la tabla
 "Architecture Decisions" de `openspec/changes/policy-code-generation/design.md`
-(en `G:\Mi unidad\TESIS\openspec\`), que fija las decisiones #1–#9 originales
+(en `<LOCAL_PATH>\openspec\`), que fija las decisiones #1–#9 originales
 (bucket separado, puntero asíncrono, map/reduce, clause_ref server-side,
 sandbox en capas, denegar `While`/`Try`, retry solo en el generador, layer
 para parsers, bandera NIST).
@@ -57,7 +57,7 @@ para parsers, bandera NIST).
   providers de Terraform (`missing or corrupted provider plugins`).
 - **Decisión.** Clon de trabajo en `C:\Users\santi\dev\PPS-AWS-Fortinet-`;
   `TF_DATA_DIR` fuera del árbol; `desktop.ini` en `.gitignore`. Las copias de
-  `G:\Mi unidad\TESIS\PPS prueba\` quedan congeladas.
+  `<LOCAL_PATH>\PPS prueba\` quedan congeladas.
 - **Consecuencias.** (+) Git y Terraform estables; CI reproducible.
   (−) El respaldo pasa a ser GitHub (hay que hacer push); los documentos de
   tesis siguen en Drive, por lo que conviven dos ubicaciones.
@@ -88,7 +88,7 @@ para parsers, bandera NIST).
 ## ADR-07 — Modelo `us.anthropic.claude-sonnet-4-6`
 
 - **Contexto.** Se evaluó `claude-sonnet-5-5`; **no está disponible para la
-  cuenta 656051538542**. `us.anthropic.claude-sonnet-4-6` figura ACTIVE.
+  cuenta <ACCOUNT_ID>**. `us.anthropic.claude-sonnet-4-6` figura ACTIVE.
 - **Decisión.** `DEFAULT_MODEL_ID = "us.anthropic.claude-sonnet-4-6"` en
   `bedrock_client.py` y `var.bedrock_model_id` en Terraform; perfil de
   inferencia cross-region (`us.`) y permiso IAM sobre `foundation-model/anthropic.*`
