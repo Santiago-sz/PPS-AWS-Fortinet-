@@ -48,14 +48,18 @@ logger = logging.getLogger(__name__)
 MAX_RETRIEVE_CALLS = 40
 
 # Tope de caracteres de texto recuperado que se agrega al prompt de reduce,
-# sumando todos los controles (aprox. 3000 tokens).
-MAX_REFERENCE_CHARS = 12_000
+# sumando todos los controles (aprox. 20.000 tokens). Calibrado con el primer
+# E2E real (2026-11-18): con 12.000 solo 5 de 17 controles recibian referencia
+# y se descartaban 20 fragmentos.
+MAX_REFERENCE_CHARS = 80_000
 
 # Tope de caracteres de texto recuperado por control. Evita que un control
 # con fragmentos largos consuma el presupuesto de los demas. Tamanos
 # observados en la base real el 2026-11-18 para una consulta: 9.943, 1.463,
-# 1.109 y 1.082 caracteres.
-MAX_REFERENCE_CHARS_PER_CONTROL = 3_000
+# 1.109 y 1.082 caracteres. Con 3.000 el fragmento mejor puntuado quedaba
+# siempre afuera y en el primer E2E real se omitieron 32 fragmentos; se subio
+# a 10.000 para admitir un fragmento grande completo.
+MAX_REFERENCE_CHARS_PER_CONTROL = 10_000
 
 REFERENCE_SECTION_START = "=== INICIO DOCUMENTACION DE REFERENCIA ==="
 REFERENCE_SECTION_END = "=== FIN DOCUMENTACION DE REFERENCIA ==="

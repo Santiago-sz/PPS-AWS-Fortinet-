@@ -201,8 +201,8 @@ class TestCollect:
 class TestCaps:
     def test_caps_are_explicit_constants(self):
         assert MAX_RETRIEVE_CALLS == 40
-        assert MAX_REFERENCE_CHARS == 12_000
-        assert MAX_REFERENCE_CHARS_PER_CONTROL == 3_000
+        assert MAX_REFERENCE_CHARS == 80_000
+        assert MAX_REFERENCE_CHARS_PER_CONTROL == 10_000
 
     def test_retrieve_calls_are_capped_and_skipped_controls_are_counted(self, monkeypatch):
         monkeypatch.setattr(reference_context, "MAX_RETRIEVE_CALLS", 2)
@@ -327,7 +327,10 @@ class TestPerControlBudget:
     """Tamaños observados el 2026-11-18 para una consulta: 9.943, 1.463, 1.109
     y 1.082 caracteres. Un fragmento nunca se recorta: entra entero o se omite."""
 
-    def test_oversized_fragment_is_skipped_and_the_next_ones_that_fit_are_used(self):
+    def test_oversized_fragment_is_skipped_and_the_next_ones_that_fit_are_used(self, monkeypatch):
+        # El mecanismo se prueba con un presupuesto fijo, independiente del
+        # valor calibrado de la constante.
+        monkeypatch.setattr(reference_context, "MAX_REFERENCE_CHARS_PER_CONTROL", 3_000)
         retriever = FakeRetriever(
             default=[
                 _fragment("G" * 9_943, "s3://kb/grande.pdf", 0.9),
@@ -361,7 +364,8 @@ class TestPerControlBudget:
         assert "B" not in section
         assert "C" * 5 in section
 
-    def test_one_control_cannot_use_the_budget_of_the_others(self):
+    def test_one_control_cannot_use_the_budget_of_the_others(self, monkeypatch):
+        monkeypatch.setattr(reference_context, "MAX_REFERENCE_CHARS_PER_CONTROL", 3_000)
         checks = [_check(1), _check(2)]
         retriever = FakeRetriever(default=[_fragment("X" * 2_000), _fragment("Y" * 2_000)])
 
