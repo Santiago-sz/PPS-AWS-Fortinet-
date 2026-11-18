@@ -21,11 +21,15 @@ resolver, independientemente de con cuál se ejecuta.
 Layout del zip (requisito de Lambda Layers): todo bajo un directorio
 top-level `python/`, que Lambda agrega al PYTHONPATH de la función.
 
-IMPORTANTE: boto3/botocore NO entran en el layer. El runtime python3.12 de
-Lambda ya los trae preinstalados y `layer-requirements.txt` no los lista,
-así que pip tampoco los arrastra como dependencia transitiva (pypdf,
-python-docx y lxml no dependen de boto3). Este script lo verifica al final
-y falla si aparecieran.
+IMPORTANTE: desde el 2026-11-18 el layer SÍ incluye boto3/botocore, con
+versión fija en `layer-requirements.txt`. Motivo: el boto3 preinstalado en
+el runtime python3.12 de Lambda no conocía `managedSearchConfiguration`, el
+único parámetro de búsqueda que acepta una Knowledge Base administrada de
+Bedrock; en el primer E2E las 16 consultas fallaron con
+`ParamValidationError`. Un layer tiene precedencia sobre el SDK del runtime,
+así que `policy_generator` (la única función que usa este layer) pasa a usar
+la versión fijada. `audit_executor` no usa el layer y sigue con el SDK del
+runtime. Este script verifica al final que ambos paquetes estén presentes.
 
 Uso:
     python scripts/build_layer.py
@@ -56,9 +60,10 @@ REPO_ROOT = SCRIPT_DIR.parent
 DEFAULT_REQUIREMENTS = SCRIPT_DIR / "layer-requirements.txt"
 DEFAULT_OUTPUT = REPO_ROOT / "layers" / "pps-doc-parsers.zip"
 
-# Paquetes que jamás deben viajar en el layer: el runtime de Lambda ya los
-# provee y duplicarlos solo agrega tamaño y riesgo de conflicto de versión.
-FORBIDDEN_TOP_LEVEL = ("boto3", "botocore", "s3transfer")
+# Paquetes que no deben viajar en el layer. Hasta el 2026-11-18 incluía
+# boto3/botocore/s3transfer; se quitaron de esta lista porque el layer ahora
+# los incluye a propósito (ver el bloque IMPORTANTE del docstring).
+FORBIDDEN_TOP_LEVEL: tuple[str, ...] = ()
 
 # Marcadores que confirman que el contenido esperado quedó en el layout
 # correcto (`python/<paquete>/__init__.py`).
@@ -66,6 +71,8 @@ EXPECTED_MARKERS = (
     "python/pypdf/__init__.py",
     "python/docx/__init__.py",
     "python/lxml/__init__.py",
+    "python/boto3/__init__.py",
+    "python/botocore/__init__.py",
 )
 
 
