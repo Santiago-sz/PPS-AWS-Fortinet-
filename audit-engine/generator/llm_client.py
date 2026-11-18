@@ -328,8 +328,11 @@ def _map_chunk_group(group: list[dict], endpoint_catalog: list[str]) -> list[dic
     user_prompt = _build_map_user_prompt(group, endpoint_catalog)
     raw_text = _call_model(MAP_SYSTEM_PROMPT, user_prompt, MAP_MAX_TOKENS, stage="map")
 
+    # El modelo a veces envuelve el JSON en un bloque ```json ... ``` aunque
+    # el prompt pida JSON puro (observado en vivo el 2026-11-18). Se quita
+    # solo ese envoltorio; el contenido se valida igual que antes.
     try:
-        parsed = json.loads(raw_text)
+        parsed = json.loads(_strip_code_fences(raw_text))
     except json.JSONDecodeError as e:
         raise MapResponseParseError(f"model map response is not valid JSON: {e}") from e
 

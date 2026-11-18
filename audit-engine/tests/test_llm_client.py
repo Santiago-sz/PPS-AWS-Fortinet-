@@ -277,6 +277,26 @@ class TestMapChunksToChecks:
         with pytest.raises(MapResponseParseError):
             map_chunks_to_checks(chunks, ENDPOINT_CATALOG)
 
+    def test_map_response_wrapped_in_code_fences_is_parsed(self, mocker):
+        # Observado en vivo (2026-11-18): el modelo a veces envuelve el JSON
+        # de la fase map en un bloque ```json ... ```, aunque el prompt pida
+        # JSON puro. El contenido es válido y no debe descartarse.
+        chunks = [_make_chunk("chunk-0001", "Los administradores deben tener bloqueo.")]
+        fenced = "```json\n" + json.dumps(ONE_CHECK_MAP_RESPONSE) + "\n```"
+        _mock_bedrock(mocker, [bedrock_converse_response(fenced)])
+
+        checks = map_chunks_to_checks(chunks, ENDPOINT_CATALOG)
+
+        assert len(checks) == 1
+        assert checks[0]["title"] == "Admin lockout enabled"
+
+    def test_fenced_map_response_with_invalid_json_still_raises_parse_error(self, mocker):
+        chunks = [_make_chunk("chunk-0001", "texto")]
+        _mock_bedrock(mocker, [bedrock_converse_response("```json\nno soy json\n```")])
+
+        with pytest.raises(MapResponseParseError):
+            map_chunks_to_checks(chunks, ENDPOINT_CATALOG)
+
     def test_bedrock_failure_surfaces_as_claude_call_error(self, mocker):
         chunks = [_make_chunk("chunk-0001", "texto")]
         _mock_bedrock(
