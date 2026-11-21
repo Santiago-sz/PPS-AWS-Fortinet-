@@ -1,6 +1,6 @@
 # P-001 · Definición del proyecto
 
-Versión 1, presentada el 21 de noviembre de 2026. Aprobación y carga pendientes. Se revisó el cuerpo del capítulo I, incluida la tabla 1, en la pestaña t.0 del [informe](https://docs.google.com/document/d/1Xe4F3dk1vfgj5ROYR11ACfVK3YQc-43Za8wE-QnbIDA/edit?tab=t.0). La evaluación se refiere al contenido. La comprobación de la portadilla y la paginación queda para la revisión formal.
+Versión 2, presentada el 21 de noviembre de 2026. Aprobación y carga pendientes. Se revisó el cuerpo del capítulo I, incluida la tabla 1, en la pestaña t.0 del [informe](https://docs.google.com/document/d/1Xe4F3dk1vfgj5ROYR11ACfVK3YQc-43Za8wE-QnbIDA/edit?tab=t.0). La evaluación se refiere al contenido. La comprobación de la portadilla y la paginación queda para la revisión formal.
 
 ## Diagnóstico
 
@@ -21,7 +21,7 @@ La [ficha reglamentaria](../requisitos/01-definicion-del-proyecto.md) recoge el 
 
 **I.II. Misión, visión y objetivos.** La misión de PostureGuard es facilitar la revisión de configuraciones FortiGate mediante informes que permiten rastrear cada hallazgo hasta la cláusula que lo origina. Su visión es que equipos de redes y auditoría de instituciones con normativas propias puedan reutilizar este método y revisar sus resultados de manera independiente.
 
-El objetivo general es desarrollar un prototipo que transforme una normativa en verificaciones de solo lectura sobre un FortiGate y presente los resultados al responsable de la auditoría. Los objetivos específicos son:
+El objetivo general es desarrollar un prototipo que audite la configuración de un firewall FortiGate frente a una normativa mediante consultas con permisos de solo lectura y presente los hallazgos con su evidencia y las propuestas de remediación correspondientes. La auditoría concluye con la entrega de las recomendaciones al responsable del equipo. Los objetivos específicos son:
 
 1. Extraer del documento los controles verificables y conservar su referencia normativa.
 2. Generar un script de auditoría y validar las operaciones que puede realizar.
@@ -51,4 +51,4 @@ Cuando se habilita la ejecución, el ejecutor comprueba la integridad del script
 
 ## Decisiones para el autor
 
-Confirmar si la delimitación del prototipo mantiene vigente un objetivo académico más amplio aprobado por la cátedra y si «ENTIDAD» es la denominación que debe conservarse. El relato de las PPS procede del borrador de los autores. Confirmar los aportes institucionales antes de describir una alianza bajo el ODS 17. Al aprobar una versión, revisar las citas vinculadas a los pasajes sustituidos y su correspondencia con la bibliografía. El resumen y el capítulo III quedan como referencias cruzadas para una revisión posterior.
+El autor confirma la auditoría de FortiGate con permisos de solo lectura y propuestas de remediación como alcance del proyecto. Queda por confirmar si «ENTIDAD» es la denominación que debe conservarse. El relato de las PPS procede del borrador de los autores. Confirmar los aportes institucionales antes de describir una alianza bajo el ODS 17. Al aprobar una versión, revisar las citas vinculadas a los pasajes sustituidos y su correspondencia con la bibliografía. El resumen y el capítulo III quedan como referencias cruzadas para una revisión posterior.
