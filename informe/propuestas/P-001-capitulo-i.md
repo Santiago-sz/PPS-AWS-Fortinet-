@@ -2,16 +2,18 @@
 
 Versión 3, presentada el 21 de noviembre de 2026. Aprobación y carga pendientes. Se revisó el cuerpo del capítulo I, incluida la tabla 1, en la pestaña t.0 del [informe](https://docs.google.com/document/d/1Xe4F3dk1vfgj5ROYR11ACfVK3YQc-43Za8wE-QnbIDA/edit?tab=t.0). La evaluación se refiere al contenido. La comprobación de la portadilla y la paginación queda para la revisión formal.
 
-## Diagnóstico
+## Estado de los seis requisitos de contenido
 
-| Requisito | Ubicación y estado | Fundamento y cambio propuesto |
-|---|---|---|
-| R-01-01 Origen | I.I · Parcial | El relato identifica las PPS en ZConsulting, la propuesta de Sergio Lapertosa y la incorporación del segundo integrante. Conservar ese antecedente. Falta explicar cómo se delimitó el prototipo. Una referencia general de AWS no acredita un vínculo comercial o institucional concreto. |
-| R-01-02 Misión, visión y objetivos | I.II · Parcial | Los cinco objetivos incluyen respuesta automática, Access Analyzer y monitoreo continuo. Reformular los objetivos alrededor de los entregables verificables. Conservar la adopción regional como aspiración. |
-| R-01-03 Necesidad | I.III · Parcial | Se reconoce el esfuerzo manual. Precisar qué debe resolver el auditor al pasar de una cláusula a la evidencia. Revisar también las tres respuestas del Golden Circle, donde reaparece la corrección automática. |
-| R-01-04 ODS y diferenciales | I.IV y tabla 1 · Parcial | Se explican cuatro asociaciones. La reducción de esfuerzo y la alianza requieren respaldo. La tabla atribuye remediación autónoma, mapeo NIST/ISO y un puntaje global al producto. Sustituir esas filas por capacidades trazables. |
-| R-01-05 Descripción breve | I.V, descripción general · Parcial | Hay una presentación general, pero promete supervisar consumo y recursos ociosos. Identificar usuario, entrada, equipo auditado y resultado. |
-| R-01-06 Descripción detallada | I.V, descripción funcional · Parcial | La secuencia describe supervisión cloud y acciones correctivas. Reescribir el recorrido de una normativa y las condiciones necesarias para obtener un resultado. |
+La versión 3 cubre los seis requisitos en el texto propuesto y está pendiente de aprobación y carga. La columna de Google Docs conserva el diagnóstico de la lectura inicial del 21 de noviembre.
+
+| Requisito | Google Docs al revisar | Cobertura en la propuesta v3 | Fundamento del diagnóstico inicial |
+|---|---|---|---|
+| R-01-01 Origen | I.I · Parcial | Cubierto | El relato identifica las PPS en ZConsulting, la propuesta de Sergio Lapertosa y la incorporación del segundo integrante. Conservar ese antecedente. Falta explicar cómo se delimitó el prototipo. Una referencia general de AWS no acredita un vínculo comercial o institucional concreto. |
+| R-01-02 Misión, visión y objetivos | I.II · Parcial | Cubierto | Los cinco objetivos incluyen respuesta automática, Access Analyzer y monitoreo continuo. Reformular los objetivos alrededor de los entregables verificables. Conservar la adopción regional como aspiración. |
+| R-01-03 Necesidad | I.III · Parcial | Cubierto | Se reconoce el esfuerzo manual. Precisar qué debe resolver el auditor al pasar de una cláusula a la evidencia. Revisar también las tres respuestas del Golden Circle, donde reaparece la corrección automática. |
+| R-01-04 ODS y diferenciales | I.IV y tabla 1 · Parcial | Cubierto | Se explican cuatro asociaciones. La reducción de esfuerzo y la alianza requieren respaldo. La tabla atribuye remediación autónoma, mapeo NIST/ISO y un puntaje global al producto. Sustituir esas filas por capacidades trazables. |
+| R-01-05 Descripción breve | I.V, descripción general · Parcial | Cubierto | Hay una presentación general, pero promete supervisar consumo y recursos ociosos. Identificar usuario, entrada, equipo auditado y resultado. |
+| R-01-06 Descripción detallada | I.V, descripción funcional · Parcial | Cubierto | La secuencia describe supervisión cloud y acciones correctivas. Reescribir el recorrido de una normativa y las condiciones necesarias para obtener un resultado. |
 
 La [ficha reglamentaria](../requisitos/01-definicion-del-proyecto.md) recoge el art. 24.3.1. El contraste técnico toma como referencia el capítulo IX y el repositorio en `b262cff`, en particular el [generador](../../audit-engine/generator/handler_generator.py), el [ejecutor](../../audit-engine/executor/handler_executor.py) y el [registro de validación local](../../docs/context/handoffs/2026-11-15-local-functional-validation.md). Ese registro acredita el recorrido GUI/API con resultados sintéticos. La validación completa con el equipo institucional figura pendiente en el informe consultado.
 

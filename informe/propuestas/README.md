@@ -3,8 +3,11 @@
 No hay propuestas de texto aprobadas ni cargadas en Google Docs al 2026-11-21.
 Los hallazgos preliminares se guardan en [contexto](../contexto.md).
 
-Crear una ficha `P-001-tema.md`, seguida de identificadores correlativos, por
-incremento revisable. Usar estos campos:
+Para cada propuesta, copiar la [plantilla](plantilla.md) y asignarle el siguiente
+identificador correlativo. El [capítulo I](P-001-capitulo-i.md) sirve de ejemplo.
+Conservar la evaluación de Google Docs con su fecha de lectura. Al preparar
+una nueva versión, actualizar el encabezado y la cobertura de cada requisito
+según el texto de esa versión. Registrar aparte la aprobación y la carga.
 
 | Campo | Contenido |
 |---|---|

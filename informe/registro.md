@@ -94,3 +94,5 @@ Actualización: P-001 v3 incorpora las cuatro respuestas del autor sobre origen,
 Se presentó [P-001 v1](propuestas/P-001-capitulo-i.md) con seis requisitos parcialmente cubiertos, revisión de la tabla 1 y texto propuesto para I.I a I.V. Pendientes de respuesta el alcance académico aprobado y la descripción de los vínculos institucionales. Carga en Google Docs pendiente de aprobación.
 
 El autor confirmó el alcance de auditoría FortiGate con permisos de solo lectura y propuestas de remediación. P-001 v2 incorpora la decisión en el objetivo general. Su carga sigue pendiente de revisión.
+
+El autor adoptó el formato de P-001 para las próximas propuestas. La [plantilla](propuestas/plantilla.md) conserva el diagnóstico inicial, muestra la cobertura de la versión propuesta y registra la aprobación editorial y la carga.
