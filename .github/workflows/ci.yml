@@ -47,13 +47,13 @@ jobs:
         # (scripts/layer-requirements.txt). Este job no ejecuta checkov.
         run: python -m pip install "boto3==1.43.123"
       - name: ruff check
-        run: python -m ruff check generator/ executor/ contracts/ legacy/ tests/ evals/ scripts/build_layer.py
+        run: python -m ruff check generator/ executor/ contracts/ legacy/ tests/ evals/ scripts/
       - name: ruff format --check
-        run: python -m ruff format --check generator/ executor/ contracts/ legacy/ tests/ evals/ scripts/build_layer.py
+        run: python -m ruff format --check generator/ executor/ contracts/ legacy/ tests/ evals/ scripts/
       - name: pytest
         # En Linux el test del backstop SIGALRM del sandbox corre de verdad
         # (en Windows se salta). Conteo esperado, inferido de la corrida en
-        # Windows (464 passed, 1 skipped) y no observado: 465 passed, 0 skipped.
+        # Windows (501 passed, 1 skipped) y no observado: 502 passed, 0 skipped.
         run: python -m pytest -q -p no:cacheprovider
 
   api:

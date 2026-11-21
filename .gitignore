@@ -46,3 +46,6 @@ tfplan
 
 # draw.io autosave temp files
 .$*.dtmp
+
+# Local executor runs (scripts/run_executor_local.py): reports with real findings, never tracked
+audit-engine/local-runs/

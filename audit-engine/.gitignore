@@ -30,3 +30,6 @@ desktop.ini
 # Terraform plan output (never commit a plan: it can embed variable values)
 tfplan
 *.tfplan
+
+# Local executor runs (scripts/run_executor_local.py): reports with real findings, never tracked
+local-runs/
