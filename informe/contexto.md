@@ -5,6 +5,8 @@ capítulos definidos; revisión integral y configuración del agente pendientes.
 
 ## Objetivo y acuerdos del autor
 
+En la redacción del proyecto, «reporte de auditoría» designa el resultado que PostureGuard permite exportar en Markdown o JSON. «Informe académico» designa el documento de la PPS.
+
 El alcance confirmado por el autor es auditar la configuración de FortiGate con permisos de solo lectura y presentar propuestas de remediación. Las referencias a CSPM e IAM en la idea original se conservan como antecedentes. Este criterio guía el resumen, los objetivos, los capítulos técnicos y las conclusiones.
 
 - Continuar el informe existente sobre el desarrollo del proyecto PPS/PIF:

@@ -95,4 +95,4 @@ Estado vigente: P-001 v3 incorpora las confirmaciones del autor sobre cronologí
 Desde la base limpia `b262cff` de la rama del informe se consultó el capítulo y su tabla de diferenciales con Google Docs. La [propuesta P-001](../../../informe/propuestas/P-001-capitulo-i.md) reúne los seis requisitos, sus hallazgos y el reemplazo propuesto. Próximo paso: resolver las consultas con los autores y revisar la propuesta antes de cualquier carga. El cambio es documental y el merge está pendiente.
 El autor resolvió la consulta de alcance. Continuar con P-001 v2 en informe/propuestas y consultar las atribuciones institucionales pendientes antes de cerrar el capítulo.
 
-Al retomar, usar P-001 v3, pendiente de aprobación editorial. Para nuevas propuestas, partir de la [plantilla acordada](../../../informe/propuestas/plantilla.md).
+Al retomar, usar P-001 v4, pendiente de aprobación editorial. Emplear «reporte» para los resultados exportables de PostureGuard. Para nuevas propuestas, partir de la [plantilla acordada](../../../informe/propuestas/plantilla.md).

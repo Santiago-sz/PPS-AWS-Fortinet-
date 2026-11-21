@@ -96,3 +96,5 @@ Se presentó [P-001 v1](propuestas/P-001-capitulo-i.md) con seis requisitos parc
 El autor confirmó el alcance de auditoría FortiGate con permisos de solo lectura y propuestas de remediación. P-001 v2 incorpora la decisión en el objetivo general. Su carga sigue pendiente de revisión.
 
 El autor adoptó el formato de P-001 para las próximas propuestas. La [plantilla](propuestas/plantilla.md) conserva el diagnóstico inicial, muestra la cobertura de la versión propuesta y registra la aprobación editorial y la carga.
+
+P-001 v4 incorpora la denominación «reporte» para el resultado de la auditoría en todo el texto propuesto del capítulo I.
