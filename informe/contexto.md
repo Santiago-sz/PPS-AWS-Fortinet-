@@ -103,6 +103,5 @@ autor; consultar el [índice de requisitos](requisitos/README.md). Separan el
 temario reglamentario de los criterios de revisión específicos de PostureGuard.
 No se marcaron requisitos como cumplidos ni se editó Google Docs.
 
-Confirmar las responsabilidades del agente y preparar una matriz completa de
-cumplimiento y un diagnóstico por capítulo. Presentar el orden de corrección
-y el primer bloque de texto propuesto antes de solicitar aprobación de carga.
+La revisión comenzó por el capítulo I. La [propuesta P-001](propuestas/P-001-capitulo-i.md)
+contiene el diagnóstico de los seis requisitos y la redacción para revisión del autor.

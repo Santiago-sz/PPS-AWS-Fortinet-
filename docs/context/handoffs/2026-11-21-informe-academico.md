@@ -87,3 +87,7 @@
   futuro de sus cambios pendiente de revisión y autorización. Google Docs intacto.
 - Próximo paso académico: confirmar responsabilidades del agente y revisar
   cumplimiento de requisitos por capítulo con propuestas previas a su carga.
+
+## Revisión del capítulo I
+
+Desde la base limpia `b262cff` de la rama del informe se consultó el capítulo y su tabla de diferenciales con Google Docs. La [propuesta P-001](../../../informe/propuestas/P-001-capitulo-i.md) reúne los seis requisitos, sus hallazgos y el reemplazo propuesto. Próximo paso: resolver las consultas con los autores y revisar la propuesta antes de cualquier carga. El cambio es documental y el merge está pendiente.

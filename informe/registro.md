@@ -86,3 +86,7 @@ una vez confirmado el alcance de trabajo del agente.
   `origin/master` antes de eliminarla localmente con `git branch -d` y en GitHub.
 - Se mantiene la regla de presentar y aprobar cambios antes de editar Google
   Docs. El trabajo nuevo en esta rama no tiene autorización anticipada de merge.
+
+## 2026-11-21 — Revisión del capítulo I
+
+Se presentó [P-001 v1](propuestas/P-001-capitulo-i.md) con seis requisitos parcialmente cubiertos, revisión de la tabla 1 y texto propuesto para I.I a I.V. Pendientes de respuesta el alcance académico aprobado y la descripción de los vínculos institucionales. Carga en Google Docs pendiente de aprobación.
