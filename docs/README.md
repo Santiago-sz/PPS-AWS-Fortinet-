@@ -1,5 +1,7 @@
 # Documentación del proyecto
 
+- [Informe académico PPS/PIF](../informe/README.md): contexto del informe en
+  Google Docs, requisitos, investigación, evidencia y propuestas para revisión.
 - [Contexto para agentes](context/README.md): primera iteración del conocimiento
   del proyecto, rutas de consulta y continuidad de tareas.
 - [Documentación base](base/README.md): documentación operativa y de diseño
