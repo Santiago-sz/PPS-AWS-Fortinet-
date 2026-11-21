@@ -89,6 +89,8 @@ una vez confirmado el alcance de trabajo del agente.
 
 ## 2026-11-21 — Revisión del capítulo I
 
+Actualización: P-001 v3 incorpora las cuatro respuestas del autor sobre origen, RAG, revisión manual de políticas y anonimización. La versión completa espera aprobación editorial.
+
 Se presentó [P-001 v1](propuestas/P-001-capitulo-i.md) con seis requisitos parcialmente cubiertos, revisión de la tabla 1 y texto propuesto para I.I a I.V. Pendientes de respuesta el alcance académico aprobado y la descripción de los vínculos institucionales. Carga en Google Docs pendiente de aprobación.
 
 El autor confirmó el alcance de auditoría FortiGate con permisos de solo lectura y propuestas de remediación. P-001 v2 incorpora la decisión en el objetivo general. Su carga sigue pendiente de revisión.

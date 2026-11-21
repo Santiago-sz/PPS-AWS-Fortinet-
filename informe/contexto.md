@@ -47,6 +47,8 @@ No se ha cargado ningún cambio en Google Docs durante esta tarea.
 
 ## Relación con el desarrollo
 
+Los autores sitúan el origen en las PPS de 2026 en ZConsulting y la incorporación de Santiago Guglielmone en el segundo cuatrimestre. El RAG motivó acotar el contexto de referencia a FortiGate. Se utiliza «institución pública» para el ámbito que facilitó las herramientas y donde se realizaron las pruebas. El personal de redes y ciberseguridad revisa políticas cuya nomenclatura desigual dificulta localizarlas.
+
 El proyecto audita FortiGate a partir de normativas PDF/DOCX mediante generación
 Bedrock, validación estática y sandbox; sus remediaciones son recomendaciones.
 Fuente de límites: [AGENTS.md](../AGENTS.md). Consultar el
