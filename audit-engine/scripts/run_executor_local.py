@@ -37,7 +37,7 @@ Environment:
   SANDBOX_WALL_CLOCK_SECONDS  optional, same meaning as in the Lambda
   SANDBOX_MAX_FGT_CALLS       optional, same meaning as in the Lambda
   LOG_LEVEL                   optional, default INFO
-  AWS credentials through the normal boto3 chain (AWS_PROFILE, AWS_REGION).
+  AWS credentials through the normal boto3 chain (AWS_PROFILE, AWS_DEFAULT_REGION).
 
 Usage (from audit-engine/):
   python scripts/run_executor_local.py <run_id>
