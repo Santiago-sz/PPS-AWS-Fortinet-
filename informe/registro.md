@@ -98,3 +98,5 @@ El autor confirmó el alcance de auditoría FortiGate con permisos de solo lectu
 El autor adoptó el formato de P-001 para las próximas propuestas. La [plantilla](propuestas/plantilla.md) conserva el diagnóstico inicial, muestra la cobertura de la versión propuesta y registra la aprobación editorial y la carga.
 
 P-001 v4 incorpora la denominación «reporte» para el resultado de la auditoría en todo el texto propuesto del capítulo I.
+
+P-001 v6 incorpora las mejoras solicitadas sobre RAG, objetivos, necesidad y estilo. Conserva el Golden Circle y las cuatro filas de la tabla de v5, incorpora la referencia del PNUD y vincula los diferenciales con la revisión manual. La aprobación editorial y la carga están pendientes.
