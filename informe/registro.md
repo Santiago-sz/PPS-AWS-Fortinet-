@@ -70,3 +70,19 @@ una vez confirmado el alcance de trabajo del agente.
   Se configuró el seguimiento remoto de la rama. La comprobación del índice
   detectó líneas vacías extra al final de las trece fichas; se corrigieron y
   `git diff --cached --check` pasó antes del commit. Sin merge en `master`.
+
+## 2026-11-21 — Merge y nueva rama del informe
+
+- El autor pidió merge en `master` y una nueva rama para trabajar el documento.
+- Se actualizaron referencias remotas y se comprobó árbol limpio, rama anterior
+  sincronizada y ausencia de commits remotos pendientes en `master`.
+- Merge sin conflictos de `feature/local-functional-validation` (`286c172`) a
+  `master`: `3d355bb`. Se publicó correctamente en `origin/master`.
+- El árbol del merge coincide con el de la rama integrada; se comprobó el diff
+  documental sin errores de espacios. No se cambió código ni se repitieron tests
+  del producto: el incremento integrado es exclusivamente documental.
+- Se creó `feature/informe-academico` desde `master` en `3d355bb`.
+- Se verificó la integración de la rama anterior tanto localmente como en
+  `origin/master` antes de eliminarla localmente con `git branch -d` y en GitHub.
+- Se mantiene la regla de presentar y aprobar cambios antes de editar Google
+  Docs. El trabajo nuevo en esta rama no tiene autorización anticipada de merge.

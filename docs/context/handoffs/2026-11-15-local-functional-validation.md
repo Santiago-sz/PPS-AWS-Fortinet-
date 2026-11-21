@@ -107,3 +107,13 @@ arrastre, accesibilidad o reinicio completo del proceso GUI. El reporte sintéti
 no acredita auditoría real. Próximo paso: preparar la verificación de entorno AWS
 y conectividad; cualquier operación mutante requiere pedido explícito.
 Revisión y merge siguen pendientes; sin autorización de push.
+
+## Cierre de integración — 2026-11-21
+
+El autor autorizó el merge de `feature/local-functional-validation` a `master`.
+Se integró la rama en `286c172`, incluido el contexto inicial del informe, mediante
+el merge `3d355bb`, publicado en `origin/master`. Se comprobó la integración de
+todos sus commits antes de eliminar la rama local con borrado seguro y la remota.
+La continuación del informe corresponde a `feature/informe-academico`, creada
+desde ese `master`. Los límites históricos de pruebas sintéticas se mantienen;
+este cierre no acredita validación E2E real.

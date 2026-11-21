@@ -78,7 +78,23 @@ sin commit. El resultado de la publicación debe comprobarse contra el remoto.
 Publicación inicial completada: commit `266b402` subido correctamente a
 `origin/feature/local-functional-validation`, con seguimiento remoto configurado.
 El registro de esta publicación se conserva en un commit documental posterior.
-El merge en `master` sigue pendiente de autorización explícita.
+El merge estaba pendiente de autorización al cerrar esa publicación; se completó
+por pedido posterior del autor, según el estado vigente que sigue.
+
+## Rama vigente y merge autorizado — 2026-11-21
+
+- El autor autorizó integrar la rama anterior en `master` y abrir una rama para
+  continuar el informe. No se autorizaron cambios en Google Docs por este pedido.
+- Merge sin conflictos: `3d355bb`, desde `feature/local-functional-validation`
+  en `286c172` hacia `master`; integración publicada en `origin/master`.
+- Rama actual del informe: `feature/informe-academico`, creada desde `master`
+  en `3d355bb`. Continuar esta tarea en esa rama, sin abrir otra por sesión.
+- Se comprobó que todos los commits de la rama anterior estaban integrados en
+  `master` y publicados en `origin/master`; después se eliminó la rama anterior
+  localmente con borrado seguro y en el remoto, conforme a AGENTS.md, sección 11.
+- Las referencias anteriores a falta de autorización o archivos sin commit
+  describen etapas históricas. Los nuevos cambios del informe requieren su
+  propia revisión antes de otro merge; la aprobación no se extiende a ellos.
 
 ## Continuación del trabajo académico
 

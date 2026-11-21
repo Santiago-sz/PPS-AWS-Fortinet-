@@ -7,8 +7,8 @@ con la rama, el commit y los cambios pendientes de Git.
 
 | Tarea | Estado |
 |---|---|
-| [2026-11-21-informe-academico](2026-11-21-informe-academico.md) | Estructura y contexto inicial en `/informe`; revisión del autor pendiente |
-| [2026-11-15-local-functional-validation](2026-11-15-local-functional-validation.md) | Smoke GUI/API real local aprobado; revisión manual y E2E pendientes |
+| [2026-11-21-informe-academico](2026-11-21-informe-academico.md) | Base documental integrada; continuación en `feature/informe-academico` |
+| [2026-11-15-local-functional-validation](2026-11-15-local-functional-validation.md) | Flujo local aceptado e integrado en `master`; E2E real pendiente; rama terminada eliminada |
 | [2026-11-15-branch-cleanup-policy](2026-11-15-branch-cleanup-policy.md) | Regla de limpieza de ramas; merge pendiente |
 | [2026-11-15-functional-test-readiness](2026-11-15-functional-test-readiness.md) | Tres correcciones verificadas; revisión y merge pendientes |
 | [2026-11-05-skills-hooks](2026-11-05-skills-hooks.md) | Seis skills validadas y hooks definidos; implementación/activación pendiente |

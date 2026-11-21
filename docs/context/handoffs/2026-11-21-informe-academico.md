@@ -2,6 +2,8 @@
 
 - Fecha e identificador: 2026-11-21, informe-academico.
 - Estado: estructura y contexto inicial creados; revisión del autor pendiente.
+- Estado vigente: base documental integrada en `master`; continuación en
+  `feature/informe-academico` desde `3d355bb`, según autorización posterior.
 - Objetivo: conservar requisitos, investigación, evidencia, propuestas y contexto
   del informe académico en `/informe`, vinculados con el desarrollo del proyecto.
 - Contexto de detalle y siguiente paso: [informe/contexto.md](../../../informe/contexto.md).
@@ -66,3 +68,22 @@
   se corrigieron antes del commit y `git diff --cached --check` quedó limpio.
   Este resultado se guarda en un commit documental de seguimiento. Merge en
   `master` pendiente de autorización; Google Docs sin cambios.
+
+## Merge autorizado y continuidad — 2026-11-21
+
+- Autorización explícita del autor: merge a `master` y nueva rama para el informe.
+- Origen integrado: `feature/local-functional-validation`, último commit
+  `286c172`; destino: `master`, merge `3d355bb`, publicado en `origin/master`.
+- Nueva rama: `feature/informe-academico`, creada desde `master` en `3d355bb`.
+  Reutilizarla para continuar el informe. No hay cambios preexistentes pendientes.
+- Limpieza realizada: rama anterior eliminada localmente con `git branch -d` y
+  en el remoto, después de comprobar que sus commits estaban integrados y que
+  esa integración estaba publicada en `origin/master`.
+- Skills: pps-review y pps-handoff. Comprobaciones: fetch, sincronización de
+  ramas, diff documental, merge sin conflictos, árbol idéntico al origen y
+  comprobación de ancestros antes de la limpieza. No se modificó código ni se
+  ejecutaron suites del producto para esta operación documental/Git.
+- Esta entrada y el contexto registran el resultado desde la nueva rama. Merge
+  futuro de sus cambios pendiente de revisión y autorización. Google Docs intacto.
+- Próximo paso académico: confirmar responsabilidades del agente y revisar
+  cumplimiento de requisitos por capítulo con propuestas previas a su carga.
