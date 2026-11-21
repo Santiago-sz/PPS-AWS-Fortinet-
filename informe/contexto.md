@@ -75,6 +75,11 @@ anteriores; los cambios del informe se agrupan en un commit propio. La
 autorización de push reemplaza la decisión inicial de mantener estos archivos
 sin commit. El resultado de la publicación debe comprobarse contra el remoto.
 
+Publicación inicial completada: commit `266b402` subido correctamente a
+`origin/feature/local-functional-validation`, con seguimiento remoto configurado.
+El registro de esta publicación se conserva en un commit documental posterior.
+El merge en `master` sigue pendiente de autorización explícita.
+
 ## Continuación del trabajo académico
 
 Se añadieron fichas de requisitos para los capítulos I a XIII a pedido del

@@ -60,3 +60,9 @@
   al redactar esta entrada previa al commit.
 - Verificación previa al commit: 24 archivos Markdown y 121 enlaces locales
   comprobados; 13 capítulos y 53 requisitos únicos; `git diff --check` correcto.
+- Resultado: `266b402` creado y publicado correctamente en
+  `origin/feature/local-functional-validation`; seguimiento remoto configurado.
+  La comprobación del índice detectó líneas vacías finales en las trece fichas;
+  se corrigieron antes del commit y `git diff --cached --check` quedó limpio.
+  Este resultado se guarda en un commit documental de seguimiento. Merge en
+  `master` pendiente de autorización; Google Docs sin cambios.

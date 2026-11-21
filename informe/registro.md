@@ -65,3 +65,8 @@ una vez confirmado el alcance de trabajo del agente.
 - La rama incluye los commits anteriores de validación funcional. No se cambia
   su historia ni se publican otras ramas por este pedido.
 - Comprobar identidad del commit remoto y limpieza del árbol después del push.
+- Resultado: commit documental `266b402`, 24 archivos y 962 líneas añadidas,
+  publicado correctamente en `origin/feature/local-functional-validation`.
+  Se configuró el seguimiento remoto de la rama. La comprobación del índice
+  detectó líneas vacías extra al final de las trece fichas; se corrigieron y
+  `git diff --cached --check` pasó antes del commit. Sin merge en `master`.
