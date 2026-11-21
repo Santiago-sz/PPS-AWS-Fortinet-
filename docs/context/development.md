@@ -42,8 +42,8 @@ Desde `audit-engine/`, usando el intérprete del entorno elegido:
 
 ```powershell
 ../.venv/Scripts/python.exe -m pytest -q -p no:cacheprovider
-../.venv/Scripts/python.exe -m ruff check generator/ executor/ contracts/ legacy/ tests/ evals/ scripts/build_layer.py
-../.venv/Scripts/python.exe -m ruff format --check generator/ executor/ contracts/ legacy/ tests/ evals/ scripts/build_layer.py
+../.venv/Scripts/python.exe -m ruff check generator/ executor/ contracts/ legacy/ tests/ evals/ scripts/
+../.venv/Scripts/python.exe -m ruff format --check generator/ executor/ contracts/ legacy/ tests/ evals/ scripts/
 ../.venv/Scripts/python.exe evals/run_evals.py --mode offline
 ```
 
@@ -72,3 +72,5 @@ revisarlas y planificar la grabación live según el contrato del proyecto.
 
 No guardar tokens ni credenciales en código, fixtures, documentación o handoffs.
 El token FortiGate vive en Secrets Manager; las llamadas a Bedrock usan IAM.
+La única excepción es la [ejecución local](local-executor-run.md) de la primera
+prueba, que lo lee de la variable de entorno `FORTIGATE_TOKEN` de la sesión.

@@ -1,6 +1,6 @@
 # Estado documental y pendientes
 
-Síntesis: 2026-11-05; actualizado el 2026-11-18. Fuente principal:
+Síntesis: 2026-11-05; actualizado el 2026-11-21. Fuente principal:
 [estado base al 2026-11-04](../base/07-estado-y-pendientes.md), incluida su
 actualización WU 5. No se consultó AWS para producir este documento.
 
@@ -16,7 +16,7 @@ actualización WU 5. No se consultó AWS para producir este documento.
 | TLS | WU 5 informa variable Terraform `fortigate_verify_ssl`; P11 cerrado | No repetir como pendiente la descripción anterior del documento de conectividad |
 | Correcciones documentales | WU 5 da P12 por aplicado salvo `.env.example` | Revisar archivo actual antes de editar |
 | SNS | WU 5 informa suscripción pendiente de confirmación | No asumir entrega de correo actual |
-| FortiGate/VPN | La base no registra equipo conectado al pipeline | Verificar conectividad real; el laboratorio es independiente |
+| FortiGate/VPN | La base no registra equipo conectado al pipeline | Verificar conectividad real; el laboratorio es independiente. Para la primera prueba existe la ejecución local (ver «Trabajo que requiere nueva evaluación») |
 
 Las afirmaciones iniciales «infra no desplegada» y «cambios sin commitear» en la
 base describen una etapa anterior. No usar P2/P5/P11 como pendientes abiertos.
@@ -28,6 +28,14 @@ La rama y el árbol de trabajo actuales se obtienen de Git, no de ese relato.
   Bedrock dejó de ser un bloqueo el 2026-11-18 (ver más abajo).
 - Conectividad FortiGate, perfil GET, token y validación TLS, siguiendo
   [la base de conectividad](../base/06-conexion-fortigate.md).
+- **Primera prueba contra un FortiGate real: pendiente.** El equipo disponible
+  solo es alcanzable por una VPN de usuario desde una estación Windows, por lo
+  que la etapa de ejecución se corre en esa estación con
+  `audit-engine/scripts/run_executor_local.py` (2026-11-21), siguiendo
+  [la guía de ejecución local](local-executor-run.md). El script está cubierto
+  por tests con S3 y FortiGate simulados; no se ejecutó contra AWS ni contra un
+  equipo real. La arquitectura objetivo sigue siendo VPN Site-to-Site IPsec con
+  el executor en una VPC.
 - Confirmación SNS.
 - Restricción de egreso del executor, deduplicación e índice de reportes.
 - Corpus de evals más amplio: documentos largos, múltiples grupos map y casos
@@ -55,6 +63,7 @@ por el agente que lo registró.
 | 2026-11-18 | El CI del commit `e86bbc1` de `feature/bedrock-knowledge-base` aprobó sus cinco jobs en Linux | [Run 44227778670](https://github.com/Santiago-sz/PPS-AWS-Fortinet-/actions/runs/44227778670), informado en el encargo; la cantidad de tests aprobados en Linux no fue observada y no se registra |
 | 2026-11-18 | Pedidos de cuota de Bedrock cerrados. Cuota aplicada de Claude Sonnet 4.6, inferencia entre regiones: 6.000.000 tokens por minuto y 10 pedidos por minuto (se habían pedido 10.000) | Informado en el encargo; no se consultó AWS |
 | 2026-11-18 | Una llamada mínima a Converse respondió correctamente | Informado en el encargo; no se consultó AWS |
+| 2026-11-21 | Existe un camino de ejecución local del executor (`scripts/run_executor_local.py`), fuera del paquete de la Lambda. Suite del motor en Windows: 501 aprobados y 1 omitido | Commit `8edc38d` y [handoff](handoffs/2026-11-21-local-executor-runner.md); corrida local, sin AWS ni FortiGate |
 
 Con 10 pedidos por minuto, una corrida live hace pocas llamadas por normativa
 (una por grupo de map y hasta tres de reduce), pero varias corridas seguidas o

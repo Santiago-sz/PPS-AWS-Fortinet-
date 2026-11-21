@@ -25,6 +25,7 @@ contexto necesario; al retomar una tarea, leer su handoff y contrastarlo con Git
 | Preparar entorno o verificar cambios | [development.md](development.md) | [TESTING.md](../../audit-engine/TESTING.md), [runbook base](../base/02-paso-a-paso-despliegue-y-prueba.md) |
 | Entender una elección técnica | [decisions/README.md](decisions/README.md) | [Registro base](../base/05-decisiones.md) |
 | Consultar despliegue, bloqueos y deuda | [status.md](status.md) | [Estado histórico](../base/07-estado-y-pendientes.md), [conectividad](../base/06-conexion-fortigate.md) |
+| Ejecutar la primera prueba contra un FortiGate real | [local-executor-run.md](local-executor-run.md) | [Conectividad](../base/06-conexion-fortigate.md), `audit-engine/scripts/run_executor_local.py` |
 | Continuar una tarea | [handoffs/README.md](handoffs/README.md) | Handoff correspondiente al identificador y rama de la tarea |
 | Entender o continuar el RAG con Bedrock | [rag/README.md](rag/README.md) | [Módulo knowledge-base](../../infrastructure/knowledge-base/README.md), [decisión 10](decisions/10-bedrock-knowledge-base.md) |
 

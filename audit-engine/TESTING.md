@@ -39,8 +39,10 @@ cd audit-engine
 ../.venv/Scripts/python.exe -m pytest -q -p no:cacheprovider
 ```
 
-Verificación local del 2026-11-18 (Windows, Python 3.12, `.venv`, pytest
-8.3.5): **464 tests passed, 1 skipped**. La del 2026-11-17 daba 350 passed,
+Verificación local del 2026-11-21 (Windows, Python 3.12, `.venv`, pytest
+8.3.5): **501 tests passed, 1 skipped**; los 37 nuevos son los de la ejecución
+local del executor (`test_run_executor_local.py`). La del 2026-11-18 daba 464
+passed, 1 skipped. La del 2026-11-17 daba 350 passed,
 1 skipped; la diferencia son los 110 tests del uso de la Knowledge Base en la
 generación, su trazabilidad y las evals de recuperación (ver abajo). La del
 2026-11-15 (Python 3.11, `.venv-gui`, pytest 9.1.1) daba 283 passed, 1 skipped.
@@ -48,7 +50,7 @@ generación, su trazabilidad y las evals de recuperación (ver abajo). La del
 `test_sandbox.py::TestWallClockBudgetViaSignalBackstop`; en Linux/CI ese
 test corre de verdad. CI en Linux aprobó el 2026-11-15, con 284 tests y ese
 test incluido, y de nuevo para el commit `e86bbc1` según lo informado el
-2026-11-18; para el estado actual se espera 465 passed sin omitidos, valor
+2026-11-18; para el estado actual se espera 502 passed sin omitidos, valor
 inferido y no observado.) Todos mockean AWS
 (S3/Secrets Manager/SNS/`lambda:InvokeFunction`/Bedrock)/FortiGate — nunca se
 hace red real, se puede correr sin credenciales ni conectividad.
@@ -111,6 +113,7 @@ La versión de boto3 del runtime de Lambda no fue comprobada.
 | `test_handler_generator.py` | Entrypoint S3-triggered `policy_generator` — flujo feliz, compuerta `AUTO_EXECUTE` (`awaiting_approval` sin invocar executor), reintentos agotados, sin controles verificables, fallo del modelo, fallo de extracción; evento `generator_result`; con `KNOWLEDGE_BASE_ID` vacío la llamada al generador y el manifest no cambian, y con valor se consulta una vez por control, se registra el bloque `knowledge_base` y un fallo de recuperación no interrumpe la generación |
 | `test_handler_executor.py` | Entrypoint async `audit_executor` — re-validación independiente; integridad `script_sha256` ANTES del AST; tolerancia a fallo parcial de endpoint; presupuesto agotado reporta `status="truncated"`; los hallazgos llevan las `references` del manifest y un manifest anterior sin el bloque sigue funcionando |
 | `test_integration_generator_executor.py` | Contrato generator→executor de punta a punta con S3 real (`moto`): manifest+script llegan sin cambios; script alterado se rechaza; `report.json`/`report.md` quedan donde el bridge local los busca; `AUTO_EXECUTE=false` deja artifacts firmados sin invocar |
+| `test_run_executor_local.py` | Ejecución local del executor (`scripts/run_executor_local.py`) con S3 de `moto` y un cliente FortiGate simulado: escribe JSON y Markdown solo en disco, sin `put` a S3, SNS ni Secrets Manager; hash distinto y rechazo del validador abortan antes de ejecutar; la comprobación de conectividad fallida termina con código 3 sin ejecutar el sandbox; variables faltantes, `run_id` inválido y token con espacios dan un mensaje claro; el token no aparece en stdout, stderr, registros ni reporte; presupuesto del sandbox por entorno; el script queda fuera del paquete de la Lambda |
 | `test_evals_offline.py` | Smoke test del harness de evals (`evals/run_evals.py --mode offline`) en el mismo proceso: exit 0, archivo de resultados, métricas presentes, el ciclo de reintento ejercitado por una fixture, `bedrock_client.converse` restaurado |
 
 Útil:
@@ -130,9 +133,9 @@ agrega las áreas del motor al `pythonpath` para que los tests puedan hacer
 ## 3. Correr el linter (ruff)
 
 ```bash
-../.venv/Scripts/python.exe -m ruff check generator/ executor/ contracts/ legacy/ tests/          # lint (pyflakes + pycodestyle + isort + pyupgrade + bugbear)
-../.venv/Scripts/python.exe -m ruff format --check generator/ executor/ contracts/ legacy/ tests/ # verifica formato sin modificar
-../.venv/Scripts/python.exe -m ruff format generator/ executor/ contracts/ legacy/ tests/         # aplica el formato
+../.venv/Scripts/python.exe -m ruff check generator/ executor/ contracts/ legacy/ tests/ evals/ scripts/          # lint (pyflakes + pycodestyle + isort + pyupgrade + bugbear)
+../.venv/Scripts/python.exe -m ruff format --check generator/ executor/ contracts/ legacy/ tests/ evals/ scripts/ # verifica formato sin modificar
+../.venv/Scripts/python.exe -m ruff format generator/ executor/ contracts/ legacy/ tests/ evals/ scripts/         # aplica el formato
 ```
 
 Configuración en `pyproject.toml` (`[tool.ruff]` / `[tool.ruff.lint]`).

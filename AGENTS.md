@@ -26,7 +26,7 @@ permiten revisar los resultados sin credenciales AWS.
 | `infrastructure/knowledge-base/` | Módulo Terraform aislado (provider aws 6.x, estado propio) de la Knowledge Base administrada de Bedrock: bucket de documentos, rol de servicio, base `MANAGED` y data source S3. No desplegado; ver su `README.md`. | Canónico, opcional |
 | `local-api/` | Servidor HTTP/HTTPS local (`pps_api/server`), servicios y SQLite; puente separado en `pps_api/aws` (`pps-api aws dispatch|sync|list-pending|approve`). | Canónico |
 | `audit-engine/evals/` | Harness de evaluación del generador (normativas sintéticas, fixtures grabadas, métricas, umbrales) y de la recuperación de la Knowledge Base (`--suite retrieval`, fixture sintética). | Canónico |
-| `audit-engine/scripts/` | `build_layer.py` / `build_layer.sh` (Lambda Layer pypdf+python-docx+lxml y, desde el 2026-11-18, boto3 con versión fija). | Canónico |
+| `audit-engine/scripts/` | `build_layer.py` / `build_layer.sh` (Lambda Layer pypdf+python-docx+lxml y, desde el 2026-11-18, boto3 con versión fija). `run_executor_local.py` (2026-11-21): ejecución local de la etapa del executor para la primera prueba por VPN de usuario; no se empaqueta en la Lambda. | Canónico |
 | `gui/` | App de escritorio PySide6 (consola de auditorías; sin credenciales AWS). | Canónico |
 | `infrastructure/fortigate-lab/` | Terraform de un FortiGate VM de laboratorio en AWS (entorno de pruebas). | Independiente |
 | `lambda/`, `terraform/` (raíz) | **Copias legacy obsoletas** del pipeline original. Ver `README-LEGACY.md` en cada una. | **No editar, no borrar** |
@@ -90,6 +90,18 @@ Base habilitada, `kb_retrieve` por consulta y `kb_references` con el resumen
 de la corrida) y métricas EMF en el namespace `PPS/AuditPipeline`. Logging de
 invocaciones de Bedrock (`bedrock_logging.tf`) es **account-wide por región**.
 
+Ejecución local (`scripts/run_executor_local.py`, primera prueba por VPN de
+usuario): mismo orden que `audit_executor` (hash, re-validación, sandbox) con
+los módulos del executor sin modificar, más una comprobación de conectividad
+previa. Env requeridas `S3_BUCKET` (o `--bucket`), `FORTIGATE_HOST` y
+`FORTIGATE_TOKEN`; opcionales `FORTIGATE_VERIFY_SSL`,
+`SANDBOX_WALL_CLOCK_SECONDS`, `SANDBOX_MAX_FGT_CALLS`, `LOG_LEVEL`. Solo lee de
+S3 (`artifacts/*`); no escribe en S3, no publica en SNS ni usa Secrets Manager,
+y el reporte queda en `audit-engine/local-runs/` (ignorado por Git). El token
+nunca se acepta por argumento ni se imprime. Las reglas 1, 2, 3 y 5 de la
+sección 3 se aplican igual. Guía:
+[ejecución local](docs/context/local-executor-run.md).
+
 Knowledge Base (opcional): solo el generador consulta, una vez por control,
 entre map y reduce (`reference_context`, topes `MAX_RETRIEVE_CALLS`,
 `MAX_REFERENCE_CHARS_PER_CONTROL` y `MAX_REFERENCE_CHARS`; un fragmento de
@@ -109,9 +121,9 @@ Todo desde `audit-engine/` con el venv de la raíz (`../.venv`), detalle en
 `audit-engine/TESTING.md`:
 
 ```bash
-../.venv/Scripts/python.exe -m pytest -q -p no:cacheprovider        # 464 passed, 1 skipped (Windows)
-../.venv/Scripts/python.exe -m ruff check generator/ executor/ contracts/ legacy/ tests/ evals/ scripts/build_layer.py
-../.venv/Scripts/python.exe -m ruff format --check generator/ executor/ contracts/ legacy/ tests/ evals/ scripts/build_layer.py
+../.venv/Scripts/python.exe -m pytest -q -p no:cacheprovider        # 501 passed, 1 skipped (Windows)
+../.venv/Scripts/python.exe -m ruff check generator/ executor/ contracts/ legacy/ tests/ evals/ scripts/
+../.venv/Scripts/python.exe -m ruff format --check generator/ executor/ contracts/ legacy/ tests/ evals/ scripts/
 ../.venv/Scripts/python.exe scripts/build_layer.py                    # layers/pps-doc-parsers.zip
 TF_DATA_DIR=C:/Users/<usuario>/.terraform-data/pps-audit-pipeline terraform -chdir=../infrastructure/pipeline fmt -check -recursive
 TF_DATA_DIR=... terraform -chdir=../infrastructure/pipeline init -backend=false && TF_DATA_DIR=... terraform -chdir=../infrastructure/pipeline validate
@@ -120,6 +132,7 @@ PYTHONUTF8=1 ../.venv/Scripts/python.exe -m checkov.main -d ../infrastructure/pi
 # y TF_DATA_DIR=C:/Users/<usuario>/.terraform-data/pps-knowledge-base (no requiere el layer)
 ../.venv/Scripts/python.exe evals/run_evals.py --mode offline
 ../.venv/Scripts/python.exe evals/run_evals.py --suite retrieval --mode offline   # fixture sintética
+../.venv/Scripts/python.exe scripts/run_executor_local.py <run_id>   # ejecución local; contacta AWS y el FortiGate: solo por pedido explícito
 ```
 
 API y desktop: `pip install -e "local-api[dev]"` + `pytest` en

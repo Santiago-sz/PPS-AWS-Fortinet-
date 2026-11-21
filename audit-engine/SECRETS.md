@@ -30,6 +30,17 @@ directamente en Secrets Manager mediante un canal autorizado (ver el output
 sustituir el placeholder por credenciales reales en los archivos `.tf`, ya que
 quedarían en el código y el estado de Terraform.
 
+## Ejecución local del executor
+
+`scripts/run_executor_local.py` (primera prueba por VPN de usuario) no usa
+Secrets Manager: lee el token de la variable de entorno `FORTIGATE_TOKEN` de la
+sesión que lo ejecuta. No lo acepta como argumento, no lo imprime ni lo
+registra, y lo reemplaza por `[REDACTED]` si aparece en un mensaje de registro
+o en el contenido del reporte. Rechaza, sin mostrarlo, un valor con espacios o
+caracteres de control. No guardar ese token en archivos `.env`, en el
+repositorio ni en el historial de la consola. Procedimiento en
+[la guía de ejecución local](../docs/context/local-executor-run.md).
+
 ## Acceso al modelo en Bedrock
 
 Antes del primer run hay que habilitar el acceso al modelo una única vez por

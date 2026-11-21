@@ -99,3 +99,18 @@ el árbol de trabajo **sin commitear**.
   fuera de Latin-1; un guion largo (U+2014) en `description` hacía fallar el
   `apply` con `ValidationError`. Corregido en los `.tf` (solo ASCII/Latin-1
   en descripciones IAM).
+
+## 7. Actualización (2026-11-21)
+
+- **Ejecución local del executor** para la primera prueba contra un FortiGate
+  real, alcanzable solo por una VPN de usuario desde una estación Windows:
+  `audit-engine/scripts/run_executor_local.py`. Lee el script y el manifest de
+  S3, repite la verificación de hash y la validación, comprueba la conectividad
+  y ejecuta el mismo sandbox. Escribe el reporte solo en disco local; no
+  escribe en S3, no publica en SNS ni usa Secrets Manager. Guía:
+  `docs/context/local-executor-run.md`; opción (d) en `06-conexion-fortigate.md`.
+- **P3 sigue abierto**: la prueba contra el FortiGate real todavía no se
+  realizó. El script solo fue verificado con tests (S3 simulado y cliente
+  FortiGate simulado).
+- La arquitectura objetivo no cambia: VPN Site-to-Site IPsec con el executor en
+  una VPC (opción (a), P9).
