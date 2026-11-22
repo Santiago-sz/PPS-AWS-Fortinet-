@@ -73,10 +73,11 @@ La rama y el árbol de trabajo actuales se obtienen de Git, no de ese relato.
   2026-11-18). Desplegada el 2026-11-18. El 2026-11-21 se cargó el corpus
   definitivo (25 documentos: Fortinet 7.6, NIST, STIG de DISA y normativa de
   Argentina y España) y una ingesta nueva dejó el índice sincronizado con el
-  bucket, sin fallos y sin las normativas de ejemplo retiradas. Falta ajustar
-  y grabar la evaluación de recuperación en vivo, regrabar las evals de
-  generación, decidir el retiro de la guía de FortiOS 8.0.0 y decidir el
-  merge. Detalle en [el resumen del RAG](rag/README.md), el
+  bucket, sin fallos y sin las normativas de ejemplo retiradas. Ese mismo día
+  se retiró la guía de FortiOS 8.0.0, que no corresponde al equipo auditado
+  (7.6.8), con lo que el corpus queda en 24 documentos. Falta ajustar y grabar
+  la evaluación de recuperación en vivo, regrabar las evals de generación y
+  decidir el merge. Detalle en [el resumen del RAG](rag/README.md), el
   [manifiesto del corpus](rag/corpus.md) y
   [el handoff](handoffs/2026-11-17-bedrock-knowledge-base.md).
 

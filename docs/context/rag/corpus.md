@@ -52,11 +52,13 @@ redistribuyen fuera del bucket privado.
 |---|---|---|---|---|
 | `fortinet/FortiOS-7.6.0-Best_Practices.pdf` | FortiOS Best Practices | FortiOS 7.6.0; edición del 14/09/2026 | <https://fortinetweb.s3.amazonaws.com/docs.fortinet.com/v2/attachments/c0e909b9-2fef-11ef-8c42-fa163e15d75b/FortiOS-7.6.0-Best_Practices.pdf> | Ninguna |
 | `fortinet/FortiOS-7.6.8-CLI_Reference-extracto.pdf` | FortiOS CLI Reference (extracto) | FortiOS 7.6.8; edición del 22/10/2026 | <https://fortinetweb.s3.amazonaws.com/docs.fortinet.com/v2/attachments/1c34e924-cbe3-11f1-8c5a-8e4c95ff11ac/FortiOS-7.6.8-CLI_Reference.pdf> | 4.1 |
-| `fortinet/FortiOS-8.0.0-Best_Practices.pdf` | FortiOS Best Practices | FortiOS 8.0.0; fecha de edición no relevada | docs.fortinet.com, documento «Best Practices» de FortiOS 8.0.0 (URL de descarga no registrada al cargarlo el 2026-11-18) | Ninguna |
 
-La guía de 8.0.0 se cargó el 2026-11-18, cuando la versión del equipo no se
-conocía. No corresponde al equipo auditado; se conserva hasta que el dueño
-del repositorio decida retirarla (ver sección 7).
+La guía «Best Practices» de FortiOS 8.0.0
+(`fortinet/FortiOS-8.0.0-Best_Practices.pdf`), cargada el 2026-11-18 cuando la
+versión del equipo no se conocía, se retiró del bucket el 2026-11-21 junto con
+su archivo de metadatos: no corresponde al equipo auditado (FortiOS 7.6.8) y
+competía en la recuperación con la guía de 7.6.0. La ingesta `L0GF2MB3YJ`
+sincronizó el índice después del retiro.
 
 ### NIST
 
@@ -134,7 +136,6 @@ que usa el filtro opcional del generador (`KNOWLEDGE_BASE_FORTIOS_VERSION`):
 |---|---|
 | `fortinet/FortiOS-7.6.0-Best_Practices.pdf` | `7.6` |
 | `fortinet/FortiOS-7.6.8-CLI_Reference-extracto.pdf` | `7.6` |
-| `fortinet/FortiOS-8.0.0-Best_Practices.pdf` | `8.0` |
 
 El valor es la rama de versión, no la versión exacta, para que un solo valor
 de filtro alcance a los dos documentos de 7.6. Formato del archivo, según la
@@ -267,9 +268,6 @@ imágenes de la Knowledge Base (ver el resultado en el
 
 ## 7. Decisiones abiertas
 
-- Retirar `fortinet/FortiOS-8.0.0-Best_Practices.pdf`. Compite en la
-  recuperación con la guía de 7.6.0 y describe una versión que el equipo no
-  ejecuta.
 - Transcribir a texto los anexos de la Resolución AAIP 47/2018 si la
   recuperación sobre el PDF de imágenes no resulta suficiente.
 - Ajustar `expected_sources` de `audit-engine/evals/retrieval/questions.json`

@@ -96,8 +96,10 @@ Otros resultados:
   referencia de CLI (0,60). El filtro funciona dentro de
   `managedSearchConfiguration` y deja fuera todo documento sin el atributo.
 - **Guía de 8.0.0.** Sin filtro, en la consulta sobre *trusted hosts*
-  apareció la guía de FortiOS 8.0.0 y no la de 7.6.0. Su retiro es una decisión abierta
-  (manifiesto, sección 7).
+  apareció la guía de FortiOS 8.0.0 y no la de 7.6.0. Por eso se retiró del
+  bucket el 2026-11-21 y la ingesta `L0GF2MB3YJ` sincronizó el índice
+  (manifiesto, sección de documentos de Fortinet). Las menciones a esa guía
+  en este documento describen el estado anterior al retiro.
 
 **No verificado en esta sesión:** la evaluación de recuperación en vivo
 (`--suite retrieval --mode live`), cuyas fuentes esperadas siguen siendo
