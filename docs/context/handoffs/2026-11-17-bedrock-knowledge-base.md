@@ -399,3 +399,44 @@ commits por paquete en esta rama y consulta de merge a `master`.
   reemplazar la guía de Fortinet por la de la versión del equipo; regrabar la
   evaluación de recuperación contra el conjunto real; medir la variación en
   la cantidad de controles extraídos entre ejecuciones.
+
+## Actualización 2026-11-21: corpus definitivo e ingesta completa
+
+- Autorización: el dueño del repositorio autorizó de forma explícita, en la
+  sesión, dos tipos de escritura en AWS: objetos en el bucket de conocimiento
+  e inicio de ingestas en el origen de datos existente. Nada más se modificó:
+  ni la Knowledge Base, ni el origen de datos, ni IAM, ni Lambdas, ni otros
+  buckets; sin Terraform. No se disparó el generador ni se contactó ningún
+  FortiGate.
+- Base: `5cce6b4`. Árbol inicial limpio salvo `pps-reporte.json` en la raíz,
+  ajeno a esta tarea y sin tocar.
+- Skills: `amazon-bedrock` (referencias de Knowledge Base administrada).
+- Hecho: causa de los dos fallos del trabajo `93LXHYAEHA` (el trabajo se
+  detuvo antes de procesarlos); corpus de 25 documentos cargado en el bucket y
+  reflejado en la copia local; ingesta `R4MQ9D7QQZ` en `COMPLETE` con 0
+  fallidos y las tres normativas de ejemplo fuera del índice; recuperación
+  comprobada con consultas de solo lectura, incluida la primera prueba del
+  filtro por `fortios_version`. Resultados en el
+  [resumen de trabajo](../rag/README.md); documentos, fuentes y conversiones
+  en el [manifiesto del corpus](../rag/corpus.md).
+- No se borró ningún objeto del bucket.
+- Código: `audit-engine/scripts/stig_to_markdown.py` y sus tests (commit
+  `e6250e6`). TDD: los 21 tests se escribieron primero y fallaron los 21
+  contra un esqueleto sin comportamiento; tras implementar, 21 aprobados. Las
+  demás conversiones (extracto del PDF de CLI, limpieza de las páginas de
+  Infoleg, PDF de imágenes) se hicieron con scripts descartables fuera del
+  repositorio; el manifiesto registra qué hizo cada una.
+- Verificaciones (Windows): `pytest` 522 aprobados y 1 omitido; `ruff check`
+  y `ruff format --check` sin observaciones. No se tocó Terraform ni código
+  del generador o del executor, por lo que no se corrieron `validate`,
+  Checkov ni las evaluaciones.
+- Decisiones a revisar: metadatos `fortios_version` con la rama (`7.6`,
+  `8.0`) y no la versión exacta; extracto de la referencia de CLI en lugar
+  del documento completo; anexos de la Resolución AAIP 47/2018 cargados como
+  PDF de imágenes sin transcribir; la guía de FortiOS 8.0.0 se conserva.
+- Pendientes: retirar o no la guía de 8.0.0; ajustar `expected_sources` y
+  grabar la evaluación de recuperación en vivo; regrabar las evals de
+  generación con el corpus nuevo; decidir si se habilita el filtro en el
+  pipeline; las dos fuentes que requieren un paso manual (CIS Benchmark y
+  CCN-STIC-1406).
+- Merge: no autorizado. Commits locales sin publicar.

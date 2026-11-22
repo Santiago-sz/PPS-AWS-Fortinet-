@@ -28,6 +28,7 @@ contexto necesario; al retomar una tarea, leer su handoff y contrastarlo con Git
 | Ejecutar la primera prueba contra un FortiGate real | [local-executor-run.md](local-executor-run.md) | [Conectividad](../base/06-conexion-fortigate.md), `audit-engine/scripts/run_executor_local.py` |
 | Continuar una tarea | [handoffs/README.md](handoffs/README.md) | Handoff correspondiente al identificador y rama de la tarea |
 | Entender o continuar el RAG con Bedrock | [rag/README.md](rag/README.md) | [Módulo knowledge-base](../../infrastructure/knowledge-base/README.md), [decisión 10](decisions/10-bedrock-knowledge-base.md) |
+| Consultar o ampliar los documentos de la Knowledge Base | [rag/corpus.md](rag/corpus.md) | Manifiesto del corpus: claves, fuentes, condiciones de uso, conversiones y procedimiento de carga |
 
 ## Uso y mantenimiento
 

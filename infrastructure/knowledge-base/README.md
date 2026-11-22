@@ -168,4 +168,8 @@ despliegue correcto.
 - La API `Retrieve` ofrece `vectorSearchConfiguration` y también
   `managedSearchConfiguration`. `knowledge_retriever.py` usa la primera; falta
   confirmar con una base real cuál corresponde al tipo `MANAGED`.
-- El corpus de documentos todavía no está definido.
+- El corpus de documentos se definió y cargó el 2026-11-21; su lista y el
+  procedimiento de carga están en
+  [el manifiesto del corpus](../../docs/context/rag/corpus.md). El ejemplo de
+  `retrieve` de este documento usa `vectorSearchConfiguration`, que una base
+  `MANAGED` rechaza: la forma válida es `managedSearchConfiguration`.

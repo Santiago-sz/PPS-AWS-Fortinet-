@@ -1,11 +1,9 @@
 # RAG con Amazon Bedrock: resumen de trabajo
 
-Fecha: 2026-11-17; actualizado el 2026-11-18. Rama:
+Fecha: 2026-11-17; actualizado el 2026-11-18 y el 2026-11-21. Rama:
 `feature/bedrock-knowledge-base`, creada desde `master` en `32e0ac5`. Estado:
-base en los commits `16b45d3` y `e86bbc1`; el incremento del 2026-11-18
-(fragmentos en la generación, trazabilidad, filtro y evals de recuperación)
-está implementado y verificado en local, sin commit. Revisión y merge
-pendientes. Este documento no registra el estado del despliegue en AWS.
+implementado, desplegado y con el corpus cargado e indexado (ver las dos
+secciones de estado que siguen). Revisión y merge pendientes.
 
 Este documento resume lo realizado y sirve como punto de entrada para retomar
 el trabajo. El detalle vive en una sola fuente por tema:
@@ -13,11 +11,100 @@ el trabajo. El detalle vive en una sola fuente por tema:
 | Tema | Fuente de detalle |
 |---|---|
 | Módulo Terraform, costos, despliegue e ingesta | [README del módulo](../../../infrastructure/knowledge-base/README.md) |
+| Documentos cargados, fuentes, condiciones de uso, conversiones y procedimiento de carga | [Manifiesto del corpus](corpus.md) |
 | Decisión de diseño y alternativas descartadas | [Decisión 10](../decisions/10-bedrock-knowledge-base.md) |
 | Uso de los fragmentos en la generación y trazabilidad | [Decisión 11](../decisions/11-referencias-en-generacion.md) |
 | Evaluación de la calidad de recuperación | [README de evals](../../../audit-engine/evals/README.md) |
 | Estado de la tarea, pruebas y pendientes | [Handoff](../handoffs/2026-11-17-bedrock-knowledge-base.md) |
 | Contrato de entorno e IAM | [AGENTS.md](../../../AGENTS.md), sección 4 |
+
+## Estado al 2026-11-21: corpus ampliado e índice sincronizado
+
+A pedido del dueño del repositorio se cargaron los documentos de referencia
+nuevos en el bucket de conocimiento y se ejecutó una ingesta. Fueron las
+únicas escrituras en AWS: no se modificó la Knowledge Base, el origen de
+datos, IAM ni ningún otro recurso, y no se ejecutó Terraform. Donde las
+secciones siguientes describan el índice desfasado o el corpus sin definir,
+vale lo que se indica aquí.
+
+**Causa de los dos fallos de la primera ingesta.** El trabajo `93LXHYAEHA`
+(2026-11-18) informa como único motivo «Connector run was stopped before this
+document was processed»: los dos documentos no fallaron por su formato ni por
+su tamaño, sino porque el trabajo se detuvo antes de procesarlos. No había
+nada que convertir.
+
+**Corpus.** 25 documentos, 24,45 MB, en seis prefijos (`fortinet/`, `nist/`,
+`disa/`, `argentina/`, `espana/`, `propio/`). El detalle por documento está
+en el [manifiesto del corpus](corpus.md). No se borró ningún objeto del
+bucket.
+
+**Ingesta.** Trabajo `R4MQ9D7QQZ`, iniciado el 2026-11-22 a las 01:14 UTC:
+
+| Dato | Valor |
+|---|---|
+| Estado final | `COMPLETE`, a las 01:24 UTC (10 minutos) |
+| Documentos examinados | 25 |
+| Archivos de metadatos examinados | 3 |
+| Documentos nuevos indexados | 23 |
+| Archivos de metadatos aplicados a un documento ya indexado | 1 |
+| Documentos modificados indexados | 0 |
+| Documentos quitados del índice | 3 |
+| Documentos fallidos | 0 |
+| Documentos omitidos | 0 |
+
+Los tres documentos quitados son las normativas de ejemplo
+`propio/politica-*.md`, que se habían retirado del bucket el 2026-11-18 y
+seguían en el índice. El estado por documento
+(`list-knowledge-base-documents`) muestra los 25 documentos del bucket
+indexados y esas tres claves como `NOT_FOUND`. `nist/NIST.CSWP.29-CSF-2.0.pdf`
+figura como `IGNORED` porque ya estaba indexado y no cambió; una consulta lo
+devuelve con normalidad.
+
+**Recuperación comprobada** con consultas `Retrieve` de solo lectura (cinco
+resultados pedidos; se anota el mejor puntaje de cada documento):
+
+| Consulta | Documentos devueltos |
+|---|---|
+| «How is the minimum password length configured in the FortiOS system password policy?» | `fortinet/FortiOS-7.6.8-CLI_Reference-extracto.pdf` (0,64; los cinco resultados) |
+| «restrict administrator access to trusted hosts trusthost on FortiGate admin accounts» | `disa/DISA-STIG-FortiGate-Firewall-NDM-V1R6.md` (0,85), `fortinet/FortiOS-8.0.0-Best_Practices.pdf` (0,63) |
+| «configuracion de servidores NTP y sincronizacion horaria en FortiGate» | `propio/catalogo-endpoints-fortigate.md` (0,84), `disa/DISA-STIG-FortiGate-Firewall-NDM-V1R6.md` (0,69), `fortinet/FortiOS-7.6.8-CLI_Reference-extracto.pdf` (0,58) |
+| «Decision Administrativa 641/2021 requisitos minimos control de accesos autenticacion de usuarios» | `argentina/DA-641-2021.html` (0,85), `argentina/BCRA-TO-Requisitos-minimos-riesgos-TI-SI.pdf` (0,67), `argentina/DA-641-2021-Anexo-I.pdf` (0,55) |
+| «STIG FortiGate device must enforce account lockout after three consecutive invalid logon attempts» | `disa/DISA-STIG-FortiGate-Firewall-NDM-V1R6.md` (0,92) |
+| «B.2.3 Verificar la identificacion y autorizacion: establecer una politica de contrasenas seguras, evitar el uso de usuarios genericos» | `argentina/Res-AAIP-47-2018-Anexos-I-II.pdf` (0,91) |
+
+Además se obtuvo al menos un resultado de cada uno de los demás documentos
+nuevos con una consulta propia de su tema (SP 800-52r2, SP 800-63B-4,
+SP 800-77r1, SP 800-92, SP 800-113, las dos planillas de NIST, la STIG de
+firewall, la Ley 25.326, la Resolución 44/2023, el Real Decreto 311/2022 y
+la Disposición 1/2022). Los puntajes de la tabla son los obtenidos con el
+trabajo ya terminado; el servicio devolvió a veces menos resultados que los
+cinco pedidos.
+
+Otros resultados:
+
+- **Normativas de ejemplo retiradas.** Una consulta sobre política interna de
+  contraseñas y acceso administrativo, que antes devolvía
+  `propio/politica-*.md`, devuelve ahora el texto ordenado del BCRA y el Real
+  Decreto 311/2022; ninguna de las consultas de esta sesión devolvió esas
+  claves.
+- **Anexos publicados como imágenes.** Los anexos de la Resolución AAIP
+  47/2018, que Infoleg publica como imágenes, se recuperan por su contenido:
+  la extracción de imágenes de la base leyó el texto de las tablas.
+- **Filtro por `fortios_version`, probado por primera vez.** La consulta
+  sobre *trusted hosts* con el filtro `equals` y el valor `7.6` devolvió solo
+  `fortinet/FortiOS-7.6.0-Best_Practices.pdf` (0,85) y el extracto de la
+  referencia de CLI (0,60). El filtro funciona dentro de
+  `managedSearchConfiguration` y deja fuera todo documento sin el atributo.
+- **Guía de 8.0.0.** Sin filtro, en la consulta sobre *trusted hosts*
+  apareció la guía de FortiOS 8.0.0 y no la de 7.6.0. Su retiro es una decisión abierta
+  (manifiesto, sección 7).
+
+**No verificado en esta sesión:** la evaluación de recuperación en vivo
+(`--suite retrieval --mode live`), cuyas fuentes esperadas siguen siendo
+provisorias; el efecto del corpus nuevo sobre los scripts generados; y la
+calidad de las respuestas sobre las planillas de NIST más allá de comprobar
+que se recuperan. No se disparó el pipeline del generador ni se contactó
+ningún FortiGate.
 
 ## Estado al 2026-11-18: desplegado y probado en AWS
 
@@ -49,6 +136,8 @@ repositorio):
 
 La guía de Fortinet es de FortiOS 8.0.0 porque la versión del equipo
 institucional no fue informada; debe reemplazarse por la que corresponda.
+(El 2026-11-21 se agregaron los documentos de la rama 7.6; la guía de 8.0.0
+sigue en el bucket a la espera de una decisión sobre su retiro.)
 
 **Ingesta, con un problema abierto.** La primera ingesta indexó 4 de 6
 documentos y quedó detenida. Durante su ejecución se retiraron del bucket
@@ -314,8 +403,10 @@ conexión del RAG al prompt quedó fuera de este incremento.
 
 ## 7. Base de conocimientos: fuentes previstas
 
-El conjunto de documentos todavía no está decidido ni cargado. Fuentes
-evaluadas:
+El conjunto de documentos se definió y se cargó el 2026-11-21; la lista
+vigente, con sus fuentes y conversiones, está en el
+[manifiesto del corpus](corpus.md). La tabla siguiente es la evaluación
+inicial del 2026-11-17 y se conserva como antecedente:
 
 | Fuente | Aporte | Acceso |
 |---|---|---|
@@ -331,7 +422,7 @@ Condiciones:
 - Los documentos de terceros se guardan solo en el bucket privado; no se
   versionan en este repositorio. En el informe se citan como fuentes.
 - La documentación debe corresponder a la versión de FortiOS del equipo
-  auditado. Esa versión todavía no fue informada.
+  auditado: FortiOS 7.6.8, informada el 2026-11-21.
 
 ## 8. Próximos pasos
 
@@ -340,17 +431,20 @@ prompt de generación, registro de fuentes en el manifiesto y en el reporte,
 evaluación de recuperación con preguntas y documento esperado, y filtro
 opcional por versión de FortiOS en la consulta.
 
-Pendiente:
+Pendiente (actualizado el 2026-11-21):
 
-1. Revisión del incremento por el desarrollador, commits y decisión de merge.
-2. Definir el conjunto de documentos, desplegar el módulo e ingerir.
-3. Con la base real: probar una consulta con filtro, ajustar los
-   documentos esperados de las preguntas y grabar la evaluación de
-   recuperación en vivo (`--suite retrieval --mode live --record`).
+1. Revisión del incremento por el desarrollador y decisión de merge.
+2. Hecho el 2026-11-21: conjunto de documentos definido, cargado e ingerido
+   ([manifiesto](corpus.md)).
+3. Ajustar los documentos esperados de las preguntas a las claves reales del
+   corpus y grabar la evaluación de recuperación en vivo
+   (`--suite retrieval --mode live --record`). La consulta con filtro se
+   probó el 2026-11-21 (ver la sección de estado).
 4. Regrabar las evaluaciones de generación en vivo, con y sin la base, y
    comparar. La cuota ya no lo impide.
-5. Etiquetar los documentos con `fortios_version` (y tipo, si se decide) al
-   cargarlos; sin eso el filtro no devuelve resultados.
+5. Hecho el 2026-11-21 para los tres documentos de Fortinet, que llevan
+   `fortios_version`. Falta decidir si el filtro debe habilitarse en el
+   pipeline: es una igualdad y deja fuera los documentos sin el atributo.
 6. Disparar la ingesta automáticamente al subir un documento.
 7. Mostrar las referencias en la aplicación de escritorio y en la API local,
    que hoy las reciben pero no las presentan.

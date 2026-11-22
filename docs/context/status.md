@@ -2,7 +2,8 @@
 
 Síntesis: 2026-11-05; actualizado el 2026-11-21. Fuente principal:
 [estado base al 2026-11-04](../base/07-estado-y-pendientes.md), incluida su
-actualización WU 5. No se consultó AWS para producir este documento.
+actualización WU 5. No se consultó AWS para producir este documento, salvo
+las filas de «Hechos registrados» que lo indican.
 
 ## Antecedentes consolidados
 
@@ -69,9 +70,15 @@ La rama y el árbol de trabajo actuales se obtienen de Git, no de ese relato.
 - Knowledge Base de Bedrock (2026-11-17 y 2026-11-18): deshabilitada por
   defecto. El generador ya incorpora los fragmentos recuperados a la fase
   reduce y registra las fuentes en el manifest y en el reporte (incremento del
-  2026-11-18, sin commit al cierre de esa sesión). Falta definir el corpus,
-  comprobar la base real, regrabar las evals en vivo y decidir el merge.
-  Detalle en [el handoff](handoffs/2026-11-17-bedrock-knowledge-base.md).
+  2026-11-18). Desplegada el 2026-11-18. El 2026-11-21 se cargó el corpus
+  definitivo (25 documentos: Fortinet 7.6, NIST, STIG de DISA y normativa de
+  Argentina y España) y una ingesta nueva dejó el índice sincronizado con el
+  bucket, sin fallos y sin las normativas de ejemplo retiradas. Falta ajustar
+  y grabar la evaluación de recuperación en vivo, regrabar las evals de
+  generación, decidir el retiro de la guía de FortiOS 8.0.0 y decidir el
+  merge. Detalle en [el resumen del RAG](rag/README.md), el
+  [manifiesto del corpus](rag/corpus.md) y
+  [el handoff](handoffs/2026-11-17-bedrock-knowledge-base.md).
 
 ## Hechos registrados
 
@@ -86,6 +93,7 @@ por el agente que lo registró.
 | 2026-11-18 | Pedidos de cuota de Bedrock cerrados. Cuota aplicada de Claude Sonnet 4.6, inferencia entre regiones: 6.000.000 tokens por minuto y 10 pedidos por minuto (se habían pedido 10.000) | Informado en el encargo; no se consultó AWS |
 | 2026-11-18 | Una llamada mínima a Converse respondió correctamente | Informado en el encargo; no se consultó AWS |
 | 2026-11-21 | Existe un camino de ejecución local del executor (`scripts/run_executor_local.py`), fuera del paquete de la Lambda. Suite del motor en Windows: 501 aprobados y 1 omitido | Commit `8edc38d` y [handoff](handoffs/2026-11-21-local-executor-runner.md); corrida local, sin AWS ni FortiGate |
+| 2026-11-21 | Corpus de la Knowledge Base cargado: 25 documentos, 24,45 MB. Ingesta `R4MQ9D7QQZ` en `COMPLETE`: 25 examinados, 23 nuevos indexados, 3 quitados del índice, 0 fallidos. Consultas `Retrieve` devuelven los documentos nuevos y ya no las normativas de ejemplo retiradas. Suite del motor en Windows: 522 aprobados y 1 omitido | Observado en AWS en esa sesión (`get-ingestion-job`, `list-knowledge-base-documents`, `retrieve`), con autorización del dueño para escribir en el bucket de conocimiento e iniciar la ingesta; [resumen del RAG](rag/README.md) y [manifiesto](rag/corpus.md) |
 
 Con 10 pedidos por minuto, una corrida live hace pocas llamadas por normativa
 (una por grupo de map y hasta tres de reduce), pero varias corridas seguidas o
