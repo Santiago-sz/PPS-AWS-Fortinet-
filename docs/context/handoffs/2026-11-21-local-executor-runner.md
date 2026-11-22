@@ -9,6 +9,9 @@
   `scripts/` en CI) y un commit documental posterior con esta guía y el resto
   de la documentación.
 - Revisión del desarrollador y merge: pendientes. Push: no realizado.
+- Actualización posterior (2026-11-21): la rama se subió a `origin` y la prueba
+  real se realizó ese mismo día con este script. Resultado y pendientes de
+  calidad de los hallazgos en [status.md](../status.md).
 
 ## Objetivo y aceptación
 

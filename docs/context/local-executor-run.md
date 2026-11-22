@@ -298,6 +298,7 @@ Consideraciones:
 - En Windows no existe `signal.setitimer`: el respaldo de tiempo por señal del
   sandbox está inactivo. Siguen vigentes el límite de tiempo y el de cantidad
   de llamadas que se comprueban en cada llamada a `fgt` y `report`.
-- El script no fue ejecutado contra un FortiGate real ni contra AWS al escribir
-  esta guía; su comportamiento está cubierto por tests con S3 simulado y un
-  cliente FortiGate simulado.
+- El script se ejecutó por primera vez contra un FortiGate real y contra el
+  bucket de AWS el 2026-11-21, después de escrita esta guía; el resultado y los
+  problemas detectados en los hallazgos están en [status.md](status.md). Los
+  tests siguen usando S3 simulado y un cliente FortiGate simulado.
