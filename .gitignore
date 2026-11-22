@@ -49,3 +49,7 @@ tfplan
 
 # Local executor runs (scripts/run_executor_local.py): reports with real findings, never tracked
 audit-engine/local-runs/
+
+# Exports saved from the desktop app (default name pps-reporte.json): they hold
+# report data and must not be tracked
+/pps-reporte*.json
