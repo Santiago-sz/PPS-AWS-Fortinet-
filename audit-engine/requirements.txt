@@ -1,6 +1,9 @@
 # Dependencias de la Lambda PPS
 #
 # IMPORTANTE: boto3 y botocore NO se incluyen aquí a propósito.
+# (Excepción desde el 2026-11-18: el Lambda Layer de policy_generator sí
+# fija una versión de boto3 en scripts/layer-requirements.txt, porque el
+# SDK del runtime no conocía la API de Knowledge Bases administradas.)
 # El runtime de AWS Lambda Python 3.x ya los trae pre-instalados.
 # Incluirlos aumentaría el tamaño del ZIP innecesariamente (~40MB extra)
 # y podría causar conflictos de versión con el runtime.

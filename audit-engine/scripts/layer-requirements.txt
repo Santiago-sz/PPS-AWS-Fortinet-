@@ -16,3 +16,11 @@
 pypdf==6.18.0
 python-docx==1.2.0
 lxml==6.1.3
+
+# boto3 (arrastra botocore y s3transfer). Agregado el 2026-11-18: el SDK
+# preinstalado en el runtime python3.12 de Lambda no conocía
+# `managedSearchConfiguration`, requerido por las Knowledge Bases
+# administradas de Bedrock (knowledge_retriever.py). Las APIs de bases
+# administradas requieren boto3/botocore >= 1.43.64. Se fija la misma versión
+# que usa el entorno de desarrollo y los tests.
+boto3==1.43.123

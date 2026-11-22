@@ -28,9 +28,10 @@ completo para que un operador lo invoque manualmente tras revisarlo.
 
 Nota de alcance IAM (desviación deliberada de la redacción literal de
 design.md "Retry feedback" — "Exhaustion -> ... report to S3+SNS"): el rol
-de policy_generator (terraform/iam.tf, tasks.md 2.2) NO tiene `sns:Publish`
-ni recibe `SNS_TOPIC_ARN` como variable de entorno (terraform/lambda.tf,
-`aws_lambda_function.policy_generator`) — por diseño de mínimo privilegio.
+de policy_generator (infrastructure/pipeline/iam.tf, tasks.md 2.2) NO tiene
+`sns:Publish` ni recibe `SNS_TOPIC_ARN` como variable de entorno
+(infrastructure/pipeline/lambda.tf, `aws_lambda_function.policy_generator`)
+— por diseño de mínimo privilegio.
 Los reportes de fallo de ESTE handler se escriben a S3 únicamente, vía
 `s3_io.put_report` + `reporter.build_policy_report_*` (nunca vía
 `reporter.deliver_policy_report`, que intentaría `publish_to_sns` y
@@ -41,6 +42,13 @@ ejecución (ver handler_executor.py).
 
 El modelo se alcanza vía Amazon Bedrock con la identidad IAM del rol; no
 existe ninguna API key que leer de Secrets Manager en este handler.
+
+Documentación de referencia (opcional, apagada por defecto): si
+`KNOWLEDGE_BASE_ID` tiene valor, entre map y reduce se consulta la Knowledge
+Base una vez por control (`reference_context.collect`) y el resultado se
+registra en el bloque `knowledge_base` del manifest. Con la variable vacía o
+ausente no se lee ninguna otra variable de la Knowledge Base y la llamada a
+`llm_client`, los prompts y el manifest son idénticos a los anteriores.
 """
 
 import hashlib
@@ -56,8 +64,10 @@ import boto3
 import chunker
 import extractor
 import fortigate_client
+import knowledge_retriever
 import llm_client
 import observability
+import reference_context
 import reporter
 import s3_io
 
@@ -86,6 +96,20 @@ def _auto_execute_enabled() -> bool:
     """`AUTO_EXECUTE` (default true): true/1/yes habilitan la invocación
     automática del executor; cualquier otro valor la desactiva."""
     return os.environ.get("AUTO_EXECUTE", "true").strip().lower() in _TRUTHY
+
+
+def _retrieval_config() -> knowledge_retriever.RetrievalConfig | None:
+    """Configuración de la Knowledge Base, o None si está deshabilitada.
+
+    Con `KNOWLEDGE_BASE_ID` vacío o ausente no se interpreta ninguna otra
+    variable de la Knowledge Base: el camino deshabilitado no puede fallar ni
+    cambiar por ellas. Con el id presente, un valor inválido de
+    `KNOWLEDGE_BASE_MAX_RESULTS` levanta `ValueError` (configuración
+    explícitamente incorrecta, igual que una variable requerida ausente).
+    """
+    if not os.environ.get(knowledge_retriever.KNOWLEDGE_BASE_ID_ENV, "").strip():
+        return None
+    return knowledge_retriever.load_config()
 
 
 def _content_type_for_key(key: str) -> str:
@@ -194,6 +218,7 @@ def lambda_handler(event: dict, context) -> dict:
         os.environ.get("MAX_GENERATION_ATTEMPTS", llm_client.MAX_GENERATION_ATTEMPTS)
     )
     auto_execute = _auto_execute_enabled()
+    retrieval_config = _retrieval_config()
 
     policies_bucket, policy_key = _extract_event_object(event)
     logger.info("Política subida: s3://%s/%s", policies_bucket, policy_key)
@@ -226,10 +251,17 @@ def lambda_handler(event: dict, context) -> dict:
     map_calls = len(llm_client.group_chunks_for_map(chunks))
 
     # ── 3. Map/reduce + retry (llm_client sobre Bedrock) ────────────────────
+    generation_options: dict = {"max_attempts": max_attempts}
+    if retrieval_config is not None:
+        # Knowledge Base habilitada: una consulta por control, después de map
+        # y antes de reduce. Un fallo de recuperación no interrumpe la
+        # generación (ver reference_context).
+        def reference_provider(checks: list[dict]) -> reference_context.ReferenceContext:
+            return reference_context.collect(checks, retrieval_config)
+
+        generation_options["reference_provider"] = reference_provider
     try:
-        result = llm_client.generate_audit_script(
-            chunks, endpoint_catalog, max_attempts=max_attempts
-        )
+        result = llm_client.generate_audit_script(chunks, endpoint_catalog, **generation_options)
     except (
         llm_client.MapCallBudgetExceededError,
         llm_client.ClaudeCallError,
@@ -303,6 +335,8 @@ def lambda_handler(event: dict, context) -> dict:
         attempts=attempts,
         model=llm_client.current_model_id(),
         generated_at=run_ts,
+        # None con la Knowledge Base deshabilitada: el manifest no cambia.
+        knowledge_base=result.get("knowledge_base"),
     )
     s3_io.put_manifest(reports_bucket, manifest_key, manifest)
 

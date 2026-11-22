@@ -13,7 +13,9 @@ Síntesis documental: 2026-11-05; verificar la implementación antes de cambiarl
 3. La notificación de S3 invoca `handler_generator.lambda_handler`.
 4. El generador extrae texto, crea chunks por cláusula y llama a Bedrock:
    map produce controles y reduce produce un script. Los errores estáticos
-   alimentan un ciclo acotado de corrección.
+   alimentan un ciclo acotado de corrección. Si hay una Knowledge Base
+   configurada, entre map y reduce se consulta una vez por control y los
+   fragmentos entran al prompt de reduce como referencia delimitada.
 5. El generador guarda script y manifest en S3 con SHA-256. Con
    `AUTO_EXECUTE=false` queda pendiente de aprobación; con `true` invoca
    asincrónicamente al executor.
@@ -28,10 +30,10 @@ Síntesis documental: 2026-11-05; verificar la implementación antes de cambiarl
 
 | Componente | Conoce o puede usar | Restricción de diseño |
 |---|---|---|
-| Generador | Normativa, Bedrock, artefactos S3, invocación del executor | Sin acceso al secret FortiGate; sus fallos se reportan a S3 sin SNS |
+| Generador | Normativa, Bedrock, artefactos S3, invocación del executor; consulta opcional a una Knowledge Base (`knowledge_retriever` y `reference_context`, deshabilitada por defecto; habilitada, aporta referencia al prompt de reduce) | Sin acceso al secret FortiGate; sus fallos se reportan a S3 sin SNS |
 | Executor | Artefactos, secret FortiGate, GET catalogados, S3/SNS | Sin acceso a Bedrock; revalidación independiente |
 | Script generado | Capacidades `fgt` y `report` y nombres seguros | Sin cliente HTTP general, imports, reflexión ni escritura en el firewall |
-| Toolkit | Manifest y cliente FortiGate | Resuelve cita y remediación desde el manifest |
+| Toolkit | Manifest y cliente FortiGate | Resuelve cita, remediación y documentos de referencia desde el manifest |
 | Desktop | API local | Sin credenciales AWS |
 
 El hash aporta una comprobación de integridad; no debe describirse como una
@@ -58,6 +60,15 @@ El manifest relaciona `run_id`, `policy_key`, `policy_sha256`, `script_key`,
 lleva `check_id`, `clause_ref`, endpoints e intención. Los hallazgos incluyen
 estado, evidencia, trazabilidad y remediación propuesta.
 
+Solo cuando la recuperación desde la Knowledge Base estuvo habilitada, el
+manifest suma el bloque `knowledge_base`: si estuvo habilitada, cuántos
+controles obtuvieron referencia, cuántas consultas fallaron y, por
+`check_id`, fuente y puntaje de cada fragmento usado (sin su texto). Cada
+hallazgo lleva entonces `references`, resueltas por el executor desde ese
+bloque. Un manifest sin el bloque significa recuperación deshabilitada y
+sigue siendo válido. Ver
+[la decisión 11](decisions/11-referencias-en-generacion.md).
+
 | Estado | Significado documentado |
 |---|---|
 | `awaiting_approval` | Artefactos generados, sin invocar al executor |
@@ -73,6 +84,12 @@ retorno de Lambda, estado de reporte y presentación de la API.
 ## Infraestructura y conectividad
 
 El diseño usa S3, Lambdas, Bedrock, Secrets Manager, SNS, DLQ SQS y CloudWatch.
+Desde el 2026-11-17 existe además, sin desplegar, el módulo opcional
+`infrastructure/knowledge-base/` (Knowledge Base administrada de Bedrock); la
+recuperación es aditiva y no sustituye el map/reduce sobre la normativa. Ver
+[la decisión 10](decisions/10-bedrock-knowledge-base.md). El despliegue de ese
+módulo estaba en curso el 2026-11-18 por fuera de esta documentación; su
+estado no fue comprobado aquí.
 El logging de invocaciones de Bedrock tiene alcance de cuenta/región y puede
 contener texto sensible de las normativas. La región y el modelo documentados
 son configuración histórica, no disponibilidad garantizada.

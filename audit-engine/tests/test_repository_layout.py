@@ -44,3 +44,48 @@ def test_executor_does_not_import_generator():
         for node in imports:
             names = [a.name for a in node.names] if isinstance(node, ast.Import) else [node.module]
             assert not {"llm_client", "bedrock_client"}.intersection(names)
+
+
+def test_knowledge_retriever_is_packaged_with_the_generator():
+    engine = ROOT / "audit-engine"
+    assert (engine / "generator/knowledge_retriever.py").is_file()
+    owners = [
+        area
+        for area in ("generator", "executor", "contracts", "legacy")
+        if (engine / area / "knowledge_retriever.py").exists()
+    ]
+    assert owners == ["generator"]
+    terraform = (ROOT / "infrastructure/pipeline/lambda.tf").read_text(encoding="utf-8")
+    assert 'for area in ["generator", "executor", "contracts", "legacy"]' in terraform
+    assert 'fileset("${path.module}/../../audit-engine/${area}", "*.py")' in terraform
+
+
+def test_executor_does_not_import_knowledge_retriever_or_bedrock_clients():
+    for module in (ROOT / "audit-engine/executor").glob("*.py"):
+        source = module.read_text(encoding="utf-8")
+        for node in ast.walk(ast.parse(source)):
+            if isinstance(node, ast.Import):
+                names = [a.name for a in node.names]
+            elif isinstance(node, ast.ImportFrom):
+                names = [node.module or ""]
+            else:
+                continue
+            assert "knowledge_retriever" not in names, module.name
+        assert "bedrock" not in source.lower(), module.name
+
+
+def test_executor_and_contracts_do_not_import_the_reference_context():
+    engine = ROOT / "audit-engine"
+    assert (engine / "generator/reference_context.py").is_file()
+    for area in ("executor", "contracts", "legacy"):
+        for module in (engine / area).glob("*.py"):
+            for node in ast.walk(ast.parse(module.read_text(encoding="utf-8"))):
+                if isinstance(node, ast.Import):
+                    names = [a.name for a in node.names]
+                elif isinstance(node, ast.ImportFrom):
+                    names = [node.module or ""]
+                else:
+                    continue
+                assert not {"reference_context", "knowledge_retriever"}.intersection(names), (
+                    module.name
+                )

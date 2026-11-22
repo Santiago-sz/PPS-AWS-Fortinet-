@@ -11,7 +11,7 @@ el árbol de trabajo **sin commitear**.
 | 1 — Pipeline sobre Bedrock + remediaciones + observabilidad | `bedrock_client.py` (Converse, `cachePoint`, errores → `BedrockCallError`), `llm_client.py` sobre Bedrock con `remediation` normalizada, `toolkit`/`reporter` con remediación server-side y `remediation_count`, `observability.py` (eventos JSON + EMF), eventos en handlers, `analyzer.py` legacy migrado a Bedrock, `secret_values.py` sin API key | `audit-pipeline/lambda/*.py`, tests nuevos `test_bedrock_client.py`, `test_observability.py`; `SECRETS.md`, `TESTING.md` |
 | 2 — Evals + API/desktop | Harness `evals/` (runner offline/live, 3 normativas, fixtures, umbrales, `test_evals_offline.py`), `pps-api aws list-pending|approve`, `summary` en resultados, remediaciones en GUI/Markdown, estado `awaiting_approval` en la app | `audit-pipeline/evals/`, `audit-pipeline/api/`, `desktop/`, `API_CONTRACT.md` |
 | 3 — Hardening IaC y repo | `monitoring.tf` (DLQ + alarmas), `bedrock_logging.tf`, lifecycle S3, retención 365 d, VPC opcional del executor, `auto_execute`/`bedrock_model_id`/`enable_bedrock_invocation_logging`, IAM Bedrock por inference-profile, `outputs.tf` único + `next_steps`, `terraform.tfvars.example`, `build_layer.py`, CI `.github/workflows/ci.yml`, `AGENTS.md`/`CLAUDE.md`/`README.md`, `README-LEGACY.md`, `checkov-report.md` | `audit-pipeline/terraform/`, `audit-pipeline/scripts/`, raíz |
-| 4 — Documentación y diagramas | `docs/README.md`, `docs/01…07`, `docs/diagrams/*.drawio|png`, informe para la tesis en `G:\Mi unidad\TESIS\FASE1-INFORME-PARA-TESIS.md` | `docs/` |
+| 4 — Documentación y diagramas | `docs/README.md`, `docs/01…07`, `docs/diagrams/*.drawio|png`, informe para la tesis en `<LOCAL_PATH>\FASE1-INFORME-PARA-TESIS.md` | `docs/` |
 
 ## 2. Números de verificación
 
@@ -27,14 +27,14 @@ el árbol de trabajo **sin commitear**.
 
 ## 3. Hechos de la cuenta AWS
 
-- Cuenta `656051538542`, usuario IAM `SantiUsuarioDePrueba1`
-  (AdministratorAccess), perfil local `pps-tesis`, región `us-east-1`.
+- Cuenta `<ACCOUNT_ID>`, usuario IAM `<IAM_USER>`
+  (AdministratorAccess), perfil local `<AWS_PROFILE>`, región `us-east-1`.
 - Bedrock: formulario de caso de uso enviado y aceptado;
   `us.anthropic.claude-sonnet-4-6` ACTIVE; `claude-sonnet-5-5` no disponible
   para la cuenta; **cuota aplicada 0** → `ThrottlingException: Too many
   tokens per day`.
 - Sin FortiGate ni VPN. VPC default `172.31.0.0/16` y
-  `vpc-0542264dd516d931e` `10.42.0.0/16`.
+  `<VPC_ID>` `10.42.0.0/16`.
 - Model Invocation Logging no existía antes; Terraform lo crea con
   `enable_bedrock_invocation_logging=true` (no pisa nada).
 - Infra del pipeline: **no desplegada** en esta sesión (solo `validate`).
@@ -71,10 +71,10 @@ el árbol de trabajo **sin commitear**.
 
 ## 6. Actualización (WU 5)
 
-- **Infra desplegada** (`terraform apply`) en la cuenta `656051538542`,
+- **Infra desplegada** (`terraform apply`) en la cuenta `<ACCOUNT_ID>`,
   región `us-east-1`: 42 recursos. Lambdas `pps-prod-policy-generator`,
   `pps-prod-audit-executor` y `pps-prod-assessor`; buckets
-  `pps-prod-policies-656051538542` y `pps-prod-reports-656051538542`. La
+  `pps-prod-policies-<ACCOUNT_ID>` y `pps-prod-reports-<ACCOUNT_ID>`. La
   suscripción SNS sigue **pendiente de confirmación**. P2 queda cerrado.
 - **Prueba E2E** ejecutada dos veces por el camino completo (app de
   escritorio → `pps-api aws dispatch` → S3 → `policy_generator`). Ambas
@@ -99,3 +99,23 @@ el árbol de trabajo **sin commitear**.
   fuera de Latin-1; un guion largo (U+2014) en `description` hacía fallar el
   `apply` con `ValidationError`. Corregido en los `.tf` (solo ASCII/Latin-1
   en descripciones IAM).
+
+## 7. Actualización (2026-11-21)
+
+- **Ejecución local del executor** para la primera prueba contra un FortiGate
+  real, alcanzable solo por una VPN de usuario desde una estación Windows:
+  `audit-engine/scripts/run_executor_local.py`. Lee el script y el manifest de
+  S3, repite la verificación de hash y la validación, comprueba la conectividad
+  y ejecuta el mismo sandbox. Escribe el reporte solo en disco local; no
+  escribe en S3, no publica en SNS ni usa Secrets Manager. Guía:
+  `docs/context/local-executor-run.md`; opción (d) en `06-conexion-fortigate.md`.
+- **P3, primera prueba real realizada (2026-11-21)**: la ejecución local
+  contra un FortiGate real terminó en `completed` con 12 hallazgos (8 `pass`,
+  4 `fail`) para la normativa DA 641/2021. La lectura funciona de punta a
+  punta. Queda abierta la calidad de los hallazgos (datos vacíos tratados como
+  `pass` o `fail` en lugar de `indeterminate`, criterios no uniformes y una
+  remediación que no considera la configuración leída); el detalle está en
+  `docs/context/status.md`. El reporte no se versiona porque contiene
+  configuración real del equipo.
+- La arquitectura objetivo no cambia: VPN Site-to-Site IPsec con el executor en
+  una VPC (opción (a), P9).

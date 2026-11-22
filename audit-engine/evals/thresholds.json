@@ -1,5 +1,5 @@
 {
-  "_comment": "Umbrales minimos. per_policy aplica a cada normativa (numerico: valor >= umbral; booleano: igualdad). overall aplica al agregado de la corrida.",
+  "_comment": "Umbrales minimos. per_policy aplica a cada normativa (numerico: valor >= umbral; booleano: igualdad). overall aplica al agregado de la corrida. retrieval aplica al agregado de la suite de recuperacion (--suite retrieval).",
   "per_policy": {
     "check_recall": 0.6,
     "endpoint_precision": 0.8,
@@ -10,5 +10,9 @@
   "overall": {
     "first_attempt_pass_rate": 0.5,
     "generation_success_rate": 1.0
+  },
+  "retrieval": {
+    "hit_rate_at_k": 0.8,
+    "mrr": 0.6
   }
 }

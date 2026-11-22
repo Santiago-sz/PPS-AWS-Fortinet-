@@ -18,6 +18,7 @@ contexto necesario; al retomar una tarea, leer su handoff y contrastarlo con Git
 
 | Necesidad | Contexto inicial | Fuente de detalle |
 |---|---|---|
+| **Empezar desde cero** (clon nuevo, otra PC, sin contexto) | [puesta-en-marcha-desde-cero.md](puesta-en-marcha-desde-cero.md) | Instalación, acceso a AWS, tests, guion de demostración, estado y próximos pasos |
 | Continuar el informe académico | [Informe PPS/PIF](../../informe/README.md) | Requisitos, investigación, evidencia y propuestas; cambios en Google Docs con aprobación previa |
 | Seleccionar skills | [skills.md](skills.md) | `.agents/skills/<nombre>/SKILL.md` |
 | Entender hooks y su estado | [hooks.md](hooks.md) | Política y contratos; todavía sin implementación/activación |
@@ -26,7 +27,11 @@ contexto necesario; al retomar una tarea, leer su handoff y contrastarlo con Git
 | Preparar entorno o verificar cambios | [development.md](development.md) | [TESTING.md](../../audit-engine/TESTING.md), [runbook base](../base/02-paso-a-paso-despliegue-y-prueba.md) |
 | Entender una elección técnica | [decisions/README.md](decisions/README.md) | [Registro base](../base/05-decisiones.md) |
 | Consultar despliegue, bloqueos y deuda | [status.md](status.md) | [Estado histórico](../base/07-estado-y-pendientes.md), [conectividad](../base/06-conexion-fortigate.md) |
+| Ejecutar la primera prueba contra un FortiGate real | [local-executor-run.md](local-executor-run.md) | [Conectividad](../base/06-conexion-fortigate.md), `audit-engine/scripts/run_executor_local.py` |
+| Saber qué devuelve el FortiGate a cada consulta, sin exponer valores | [local-executor-run.md, sección 10](local-executor-run.md#10-diagnóstico-de-la-forma-de-las-respuestas) | `audit-engine/scripts/diagnose_fortigate_local.py` |
 | Continuar una tarea | [handoffs/README.md](handoffs/README.md) | Handoff correspondiente al identificador y rama de la tarea |
+| Entender o continuar el RAG con Bedrock | [rag/README.md](rag/README.md) | [Módulo knowledge-base](../../infrastructure/knowledge-base/README.md), [decisión 10](decisions/10-bedrock-knowledge-base.md) |
+| Consultar o ampliar los documentos de la Knowledge Base | [rag/corpus.md](rag/corpus.md) | Manifiesto del corpus: claves, fuentes, condiciones de uso, conversiones y procedimiento de carga |
 
 ## Uso y mantenimiento
 

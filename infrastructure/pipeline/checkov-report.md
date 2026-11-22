@@ -1,5 +1,15 @@
 # Reporte Checkov — Análisis estático de Terraform
 
+Corrida del 2026-11-17 (Checkov 3.2.379, base de Knowledge Base):
+pipeline **118 passed / 29 failed / 0 skipped** (antes del cambio, misma
+fecha y versión: 109 / 29 / 0). Los 9 aprobados nuevos corresponden a
+`aws_iam_role_policy.generator_knowledge_base` (política condicional con
+`bedrock:Retrieve` sobre el ARN exacto de la Knowledge Base); los 29
+fallidos son los mismos ya documentados abajo, sin hallazgos nuevos. El
+módulo nuevo `infrastructure/knowledge-base/` da **19 passed / 4 failed /
+0 skipped**; su detalle está en
+[su README](../knowledge-base/README.md#resultado-de-checkov-2026-11-17-checkov-32379).
+
 Reverificación de la reorganización, 2026-11-05, con Checkov 3.2.379:
 pipeline **109 passed / 29 failed / 0 skipped** y laboratorio **18 passed /
 9 failed / 0 skipped**, sin errores de parseo. Esta migración no corrige los

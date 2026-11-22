@@ -21,6 +21,21 @@ Los detalles de contexto, alternativas y consecuencias están en el registro
 base. Este índice sintetiza decisiones; no garantiza que sus argumentos de
 seguridad sean propiedades demostradas del código.
 
+## Decisiones posteriores a la base
+
+| Referencia | Decisión registrada | Implicación para una tarea |
+|---|---|---|
+| [10](10-bedrock-knowledge-base.md) | Knowledge Base administrada de Bedrock en un módulo Terraform aislado; recuperación aditiva y deshabilitada por defecto | No subir el provider del pipeline para esto; no reemplazar el map/reduce completo por fragmentos recuperados |
+| [11](11-referencias-en-generacion.md) | Fragmentos recuperados como sección de referencia en reduce: una consulta por control, topes explícitos, fallo blando, trazabilidad en manifest y reporte; idéntico al comportamiento previo con la base deshabilitada | No recuperar con texto de la normativa ni desde el executor; no usar la referencia para ampliar el validador o el catálogo; regrabar evals en vivo antes de evaluar su efecto |
+
+## Propuestas pendientes
+
+No son decisiones vigentes. Requieren la aceptación de los autores.
+
+| Referencia | Propuesta | Estado |
+|---|---|---|
+| [12](12-datos-ausentes-indeterminate.md) | El toolkit registra los datos que el script pidió y no obtuvo, y degrada a `indeterminate` el resultado del control afectado, sin cambiar el validador | Propuesta el 2026-11-22; no implementada. Depende de ejecutar el diagnóstico contra un equipo |
+
 ## Nuevas decisiones
 
 Cuando se acepte una decisión duradera que no exista en la base, crear

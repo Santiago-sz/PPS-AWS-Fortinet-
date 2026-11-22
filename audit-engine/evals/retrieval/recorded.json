@@ -1,0 +1,65 @@
+{
+  "synthetic": true,
+  "recorded_at": "hand-written",
+  "knowledge_base_id": null,
+  "questions_version": 1,
+  "k": 5,
+  "_comment": "FIXTURE SINTETICA escrita a mano. No proviene de ninguna Knowledge Base: los origenes (claves de objeto) y los puntajes son inventados para ejercitar el calculo de hit rate y MRR, con aciertos en distintas posiciones y una pregunta sin acierto. No acredita la calidad de recuperacion de un corpus real. Se reemplaza con `run_evals.py --suite retrieval --mode live --record` cuando exista la base.",
+  "results": {
+    "admin-trusted-hosts": [
+      {"source": "fortinet/fortios-hardening-guide.pdf", "score": 0.82},
+      {"source": "fortinet/fortios-administration-guide.pdf", "score": 0.74},
+      {"source": "fortinet/fortios-cli-reference.pdf", "score": 0.51}
+    ],
+    "admin-https-ssh-only": [
+      {"source": "fortinet/fortios-hardening-guide.pdf", "score": 0.79},
+      {"source": "fortinet/cis-fortigate-benchmark.pdf", "score": 0.77}
+    ],
+    "admin-idle-timeout-lockout": [
+      {"source": "fortinet/fortios-cli-reference.pdf", "score": 0.71},
+      {"source": "fortinet/cis-fortigate-benchmark.pdf", "score": 0.69},
+      {"source": "fortinet/fortios-hardening-guide.pdf", "score": 0.6}
+    ],
+    "password-policy-minimum-length": [
+      {"source": "fortinet/fortios-cli-reference.pdf", "score": 0.88},
+      {"source": "fortinet/cis-fortigate-benchmark.pdf", "score": 0.7}
+    ],
+    "password-policy-complexity-reuse": [
+      {"source": "fortinet/fortios-cli-reference.pdf", "score": 0.76},
+      {"source": "fortinet/fortios-administration-guide.pdf", "score": 0.72},
+      {"source": "fortinet/cis-fortigate-benchmark.pdf", "score": 0.68}
+    ],
+    "logging-remote-syslog": [
+      {"source": "fortinet/fortios-administration-guide.pdf", "score": 0.85},
+      {"source": "fortinet/fortios-cli-reference.pdf", "score": 0.8}
+    ],
+    "logging-encrypted-transport": [
+      {"source": "fortinet/fortios-cli-reference.pdf", "score": 0.66},
+      {"source": "fortinet/fortios-hardening-guide.pdf", "score": 0.64}
+    ],
+    "ntp-synchronization": [
+      {"source": "fortinet/fortios-administration-guide.pdf", "score": 0.9}
+    ],
+    "ntp-authentication": [
+      {"source": "fortinet/fortios-administration-guide.pdf", "score": 0.62},
+      {"source": "fortinet/fortios-cli-reference.pdf", "score": 0.58}
+    ],
+    "firewall-policy-implicit-deny-logging": [
+      {"source": "fortinet/fortios-administration-guide.pdf", "score": 0.83},
+      {"source": "fortinet/fortios-hardening-guide.pdf", "score": 0.6}
+    ],
+    "firewall-policy-any-any": [
+      {"source": "fortinet/fortios-administration-guide.pdf", "score": 0.7},
+      {"source": "fortinet/fortios-hardening-guide.pdf", "score": 0.67}
+    ],
+    "ssl-inspection-deep": [
+      {"source": "fortinet/fortios-administration-guide.pdf", "score": 0.87},
+      {"source": "fortinet/fortios-cli-reference.pdf", "score": 0.55}
+    ],
+    "ssl-inspection-invalid-certificates": [
+      {"source": "fortinet/fortios-cli-reference.pdf", "score": 0.63},
+      {"source": "fortinet/nist-sp-800-53.pdf", "score": 0.41},
+      {"source": "fortinet/fortios-administration-guide.pdf", "score": 0.4}
+    ]
+  }
+}

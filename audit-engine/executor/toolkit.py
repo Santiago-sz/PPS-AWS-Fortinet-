@@ -11,7 +11,10 @@ objetos, con una superficie deliberadamente mínima:
 
 `report.finding` resuelve `clause_ref` (y la `remediation` propuesta) del
 lado del servidor, a partir del manifest — el script jamás puede pasar ni
-forjar su propio clause_ref (design.md Decision #4).
+forjar su propio clause_ref (design.md Decision #4). Lo mismo vale para
+`references` (documentos de referencia por control), que se leen del bloque
+`knowledge_base` del manifest cuando existe; este modulo no consulta ningun
+servicio para obtenerlos.
 
 `FgtCapability.get()` delega en el método público `FortiGateClient.get(
 endpoint_key)` (task 6.3) — la resolución de path y la memoización de bajo
@@ -35,6 +38,52 @@ class UnknownEndpointError(Exception):
 
 def _noop() -> None:
     return None
+
+
+# Largo maximo del identificador de origen que se copia al hallazgo.
+_MAX_REFERENCE_SOURCE_CHARS = 300
+
+
+def _clean_reference(entry: Any) -> dict | None:
+    """Reduce una entrada de referencia del manifest a `{source, score}`.
+
+    Solo esos dos campos viajan al reporte, con tipos controlados: cualquier
+    otro dato (incluido texto de documentos) se descarta.
+    """
+    if not isinstance(entry, dict):
+        return None
+    source = entry.get("source")
+    if isinstance(source, str) and source.strip():
+        source = " ".join(source.split())[:_MAX_REFERENCE_SOURCE_CHARS]
+    else:
+        source = None
+    score = entry.get("score")
+    if isinstance(score, bool) or not isinstance(score, int | float):
+        score = None
+    return {"source": source, "score": score}
+
+
+def _references_by_check(manifest: dict | None) -> dict[str, list[dict]] | None:
+    """Documentos de referencia por `check_id`, leidos del bloque
+    `knowledge_base` del manifest.
+
+    Devuelve None si el manifest no trae el bloque o no lo declara habilitado
+    (manifests anteriores a la recuperacion, o recuperacion deshabilitada):
+    en ese caso los hallazgos conservan su forma previa, sin `references`.
+    """
+    block = (manifest or {}).get("knowledge_base")
+    if not isinstance(block, dict) or block.get("enabled") is not True:
+        return None
+    raw = block.get("references")
+    if not isinstance(raw, dict):
+        return {}
+    resolved: dict[str, list[dict]] = {}
+    for check_id, entries in raw.items():
+        if not isinstance(check_id, str) or not isinstance(entries, list):
+            continue
+        cleaned = [c for c in (_clean_reference(entry) for entry in entries) if c is not None]
+        resolved[check_id] = cleaned
+    return resolved
 
 
 class FgtCapability:
@@ -85,6 +134,7 @@ class ReportCapability:
         self._checks_by_id = {
             c["check_id"]: c for c in checks if isinstance(c, dict) and c.get("check_id")
         }
+        self._references_by_id = _references_by_check(manifest)
         self._findings = findings
         self._notes = notes
         self._on_finding = on_finding or _noop
@@ -108,17 +158,24 @@ class ReportCapability:
         # al reporte como propuesta para un operador humano.
         remediation = check.get("remediation") if traceable else None
 
-        self._findings.append(
-            {
-                "check_id": check_id,
-                "clause_ref": clause_ref,
-                "status": status,
-                "evidence": evidence,
-                "endpoints_used": list(endpoints_used) if endpoints_used else [],
-                "traceable": traceable,
-                "remediation": remediation,
-            }
-        )
+        finding = {
+            "check_id": check_id,
+            "clause_ref": clause_ref,
+            "status": status,
+            "evidence": evidence,
+            "endpoints_used": list(endpoints_used) if endpoints_used else [],
+            "traceable": traceable,
+            "remediation": remediation,
+        }
+        # Documentos de referencia que respaldaron la generacion del control:
+        # tambien se resuelven ACA, desde el manifest, y `finding()` no acepta
+        # ningun argumento para pasarlos. La clave solo existe si el manifest
+        # declara la recuperacion habilitada.
+        if self._references_by_id is not None:
+            finding["references"] = [
+                dict(reference) for reference in self._references_by_id.get(check_id, [])
+            ]
+        self._findings.append(finding)
 
     def note(self, check_id: str, message: str) -> None:
         self._on_note()

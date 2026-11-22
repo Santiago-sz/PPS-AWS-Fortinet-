@@ -8,6 +8,7 @@ Tests para reporter.py.
   solo método con parámetros a verificar).
 """
 
+import hashlib
 import json
 
 import boto3
@@ -800,3 +801,118 @@ class TestDeliverPolicyReport:
         publish_kwargs = publish_spy.call_args.kwargs
         assert "TRUNCAT" in publish_kwargs["subject"].upper()
         assert "completed" not in publish_kwargs["subject"]
+
+
+# ---------------------------------------------------------------------------
+# Documentos de referencia por hallazgo (reporte policy-agnostic)
+# ---------------------------------------------------------------------------
+
+GOLDEN_FINDING = {
+    "check_id": "chk-0001",
+    "clause_ref": {
+        "chunk_id": "chunk-0001",
+        "heading_path": ["Articulo 1"],
+        "page": 1,
+        "quote": "Los administradores deben tener bloqueo de cuenta.",
+    },
+    "status": "fail",
+    "evidence": "e",
+    "endpoints_used": ["admins"],
+    "traceable": True,
+    "remediation": None,
+}
+GOLDEN_ARGS = ("completed", "run-1", "policies/norma.pdf", "2026-09-10T12:00:00Z")
+
+
+def _with_references(finding: dict, references: list[dict]) -> dict:
+    return {**finding, "references": references}
+
+
+class TestPolicyReportWithoutReferencesIsByteIdentical:
+    """Hashes calculados sobre el commit e86bbc1: un hallazgo sin la clave
+    `references` (manifest sin el bloque) produce el reporte de siempre."""
+
+    def test_markdown_is_unchanged(self):
+        markdown = build_policy_report_markdown([GOLDEN_FINDING], [], *GOLDEN_ARGS)
+
+        assert hashlib.sha256(markdown.encode("utf-8")).hexdigest() == (
+            "e2d002d798beffaf0f89ae4d3170a939456ecf5e24e3a10e30fcc01ffc64a8f3"
+        )
+        assert "Documentación de referencia" not in markdown
+
+    def test_json_is_unchanged(self):
+        payload = build_policy_report_json([GOLDEN_FINDING], [], *GOLDEN_ARGS)
+        encoded = json.dumps(payload, ensure_ascii=False)
+
+        assert hashlib.sha256(encoded.encode("utf-8")).hexdigest() == (
+            "27b1242249b28e9e077e4416b14c2ec57dbf2ac497eefe329eda8306ca2bf983"
+        )
+        assert "references" not in payload["findings"][0]
+
+
+class TestReferencesInPolicyReport:
+    REFERENCES = [
+        {"source": "fortinet/hardening.pdf", "score": 0.91},
+        {"source": "fortinet/hardening.pdf", "score": 0.4},
+        {"source": "fortinet/cli-reference.pdf", "score": None},
+        {"source": None, "score": 0.2},
+    ]
+
+    def test_json_keeps_the_references_of_each_finding(self):
+        findings = [
+            _with_references(GOLDEN_FINDING, self.REFERENCES),
+            _with_references({**GOLDEN_FINDING, "check_id": "chk-0002"}, []),
+        ]
+
+        payload = build_policy_report_json(findings, [], *GOLDEN_ARGS)
+
+        assert payload["findings"][0]["references"] == self.REFERENCES
+        assert payload["findings"][1]["references"] == []
+
+    def test_markdown_lists_reference_documents_per_finding(self):
+        findings = [
+            _with_references(GOLDEN_FINDING, self.REFERENCES),
+            _with_references({**GOLDEN_FINDING, "check_id": "chk-0002"}, []),
+        ]
+
+        markdown = build_policy_report_markdown(findings, [], *GOLDEN_ARGS)
+
+        assert "## Documentación de referencia" in markdown
+        section = markdown.split("## Documentación de referencia")[1]
+        line_1 = next(ln for ln in section.splitlines() if ln.startswith("- `chk-0001`"))
+        # Un documento repetido se lista una vez, con su mejor puntaje.
+        assert line_1.count("fortinet/hardening.pdf") == 1
+        assert "`fortinet/hardening.pdf` (puntaje 0.91)" in line_1
+        assert "`fortinet/cli-reference.pdf`" in line_1
+        assert "origen no informado" in line_1
+        line_2 = next(ln for ln in section.splitlines() if ln.startswith("- `chk-0002`"))
+        assert "sin documentos de referencia" in line_2
+
+    def test_markdown_states_references_do_not_change_the_result(self):
+        markdown = build_policy_report_markdown(
+            [_with_references(GOLDEN_FINDING, self.REFERENCES)], [], *GOLDEN_ARGS
+        )
+
+        assert "material de consulta" in markdown
+
+    def test_markdown_neutralizes_backticks_in_a_source(self):
+        references = [{"source": "fortinet/a`b.pdf", "score": 0.5}]
+
+        markdown = build_policy_report_markdown(
+            [_with_references(GOLDEN_FINDING, references)], [], *GOLDEN_ARGS
+        )
+
+        assert "`fortinet/a'b.pdf`" in markdown
+
+    def test_truncated_report_also_shows_references(self):
+        markdown = build_policy_report_markdown(
+            [_with_references(GOLDEN_FINDING, self.REFERENCES)],
+            [],
+            "truncated",
+            "run-1",
+            "policies/norma.pdf",
+            "2026-09-10T12:00:00Z",
+            "wall_clock",
+        )
+
+        assert "## Documentación de referencia" in markdown

@@ -2,8 +2,8 @@
 
 Diagrama: `diagrams/04-conectividad-fortigate.png`.
 
-Estado actual: en la cuenta `656051538542` **no existe** ningún FortiGate ni
-VPN. Hay dos VPC: la default (`172.31.0.0/16`) y `vpc-0542264dd516d931e`
+Estado actual: en la cuenta `<ACCOUNT_ID>` **no existe** ningún FortiGate ni
+VPN. Hay dos VPC: la default (`172.31.0.0/16`) y `<VPC_ID>`
 (`10.42.0.0/16`). La carpeta `fortigate-sandbox-2026-06-07/` despliega una
 FortiGate-VM en **`sa-east-1`** (otra región y otra VPC, `10.0.0.0/16`), por lo
 que no es alcanzable por IP privada desde `us-east-1` sin peering inter-región.
@@ -61,7 +61,8 @@ end
 ```
 
 `<RED_DE_ORIGEN>` depende de la opción de conectividad (§2): la subred privada
-del executor (opción a/b) o la IP de NAT fija (opción c). Sin trusted hosts
+del executor (opción a/b), la IP de NAT fija (opción c) o la dirección que la
+VPN de usuario asigna a la estación (opción d). Sin trusted hosts
 el token sirve desde cualquier origen que alcance el puerto 443: no hacerlo.
 
 ### 1.3 Generar el token
@@ -75,7 +76,7 @@ El token se muestra **una sola vez**. Cargarlo en Secrets Manager
 
 ```powershell
 aws secretsmanager put-secret-value --secret-id <fortigate_secret_arn> `
-  --secret-string '{"token":"<TOKEN>","host":"<IP_O_HOSTNAME>"}' --region us-east-1 --profile pps-tesis
+  --secret-string '{"token":"<TOKEN>","host":"<IP_O_HOSTNAME>"}' --region us-east-1 --profile <AWS_PROFILE>
 ```
 
 Regenerar la clave invalida la anterior: repetir `put-secret-value`.
@@ -103,6 +104,25 @@ Regenerar la clave invalida la anterior: repetir `put-secret-value`.
 | **Ventajas** | Es el escenario real de la institución; tráfico cifrado extremo a extremo; sin exposición pública | Más simple para la tesis; todo en AWS; IaC reproducible; costo acotado al tiempo de laboratorio | Mínimo esfuerzo de red |
 | **Desventajas** | Requiere equipo real, IP pública estática del lado on-prem, coordinación con el área de redes; costo horario de VGW/TGW | La VM FortiGate tiene costo por hora (c5.large + licencia on-demand); el sandbox existente está en `sa-east-1` | **No recomendada**: superficie de gestión expuesta; trusted hosts sin IP fija no protegen; aun con NAT, el 443 público queda visible a Internet |
 | **Cuándo** | Despliegue en la institución (PPS II / producción) | Demostración y evaluación de la tesis | Solo pruebas puntuales y temporales |
+
+### Opción (d): ejecución local a través de una VPN de usuario (primera prueba)
+
+Agregada el 2026-11-21. El primer equipo real disponible solo es alcanzable
+desde una estación Windows conectada con una VPN de usuario (FortiClient); la
+Lambda `audit_executor` no tiene ruta hacia él.
+
+| | (d) Ejecución local a través de una VPN de usuario |
+|---|---|
+| **Cómo** | La generación sigue en AWS. La etapa de ejecución corre en la estación con `audit-engine/scripts/run_executor_local.py`, que lee el script y el manifest de S3, repite la verificación de hash y la validación, y ejecuta el mismo sandbox |
+| **Terraform del pipeline** | Sin cambios. No usa la Lambda `audit_executor` ni el secreto de Secrets Manager |
+| **Trusted hosts** | Dirección IP que la VPN asigna a la estación (`/32`) |
+| **Ventajas** | No requiere cambios de red ni de infraestructura; permite obtener hallazgos reales sin esperar la VPN Site-to-Site |
+| **Desventajas** | Depende de una estación y de una sesión de VPN de una persona; el reporte queda solo en disco local (sin S3 ni SNS); en Windows no está activo el respaldo de tiempo por señal del sandbox; no es automatizable |
+| **Cuándo** | Únicamente la primera prueba contra el equipo real |
+
+La arquitectura objetivo sigue siendo la opción (a): VPN Site-to-Site IPsec con
+el executor dentro de una VPC. Procedimiento completo de la opción (d) en
+[la guía de ejecución local](../context/local-executor-run.md).
 
 Para la opción (b) con la VPC `10.42.0.0/16` existente: subred privada para el
 executor + SG de egreso `443` hacia el SG de la VM; SG de la VM con ingreso
@@ -133,7 +153,7 @@ Desde AWS, una vez desplegado, la prueba real es la sección 9 de
 
 ## 4. Endpoints que el catálogo lee hoy
 
-`audit-pipeline/lambda/fortigate_client.py::ENDPOINTS` (todos bajo
+`audit-engine/executor/fortigate_client.py::ENDPOINTS` (todos bajo
 `https://<host>/api/v2/cmdb/`):
 
 | Path REST | Label usado por `fgt.get()` | Qué permite auditar |

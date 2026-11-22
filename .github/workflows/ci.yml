@@ -39,13 +39,21 @@ jobs:
             audit-engine/requirements.txt
       - name: Install dev + runtime deps
         run: python -m pip install -r requirements-dev.txt -r requirements.txt boto3
+      - name: Pin boto3 to the layer version
+        # requirements-dev.txt trae checkov, que fija boto3 1.35.x. Ese SDK no
+        # conoce la API de Knowledge Bases administradas (managedSearchConfiguration)
+        # y los tests del recuperador validan contra el modelo de servicio
+        # instalado. Se instala la misma versión que fija el layer del generador
+        # (scripts/layer-requirements.txt). Este job no ejecuta checkov.
+        run: python -m pip install "boto3==1.43.123"
       - name: ruff check
-        run: python -m ruff check generator/ executor/ contracts/ legacy/ tests/ evals/ scripts/build_layer.py
+        run: python -m ruff check generator/ executor/ contracts/ legacy/ tests/ evals/ scripts/
       - name: ruff format --check
-        run: python -m ruff format --check generator/ executor/ contracts/ legacy/ tests/ evals/ scripts/build_layer.py
+        run: python -m ruff format --check generator/ executor/ contracts/ legacy/ tests/ evals/ scripts/
       - name: pytest
         # En Linux el test del backstop SIGALRM del sandbox corre de verdad
-        # (en Windows se salta): se espera 276 passed, 0 skipped.
+        # (en Windows se salta). Conteo esperado, inferido de la corrida en
+        # Windows (572 passed, 1 skipped) y no observado: 573 passed, 0 skipped.
         run: python -m pytest -q -p no:cacheprovider
 
   api:
@@ -99,7 +107,7 @@ jobs:
       - name: Build Lambda layer zip
         # aws_lambda_layer_version.doc_parsers usa filebase64sha256() sobre el
         # zip: tiene que existir antes de validate. Verifica además el layout
-        # python/ y que no viaje boto3.
+        # python/ y que estén los paquetes esperados (incluido boto3).
         run: python audit-engine/scripts/build_layer.py
       - uses: hashicorp/setup-terraform@v3
         with:
@@ -124,6 +132,31 @@ jobs:
         uses: bridgecrewio/checkov-action@v12
         with:
           directory: infrastructure/pipeline
+          framework: terraform
+          quiet: true
+          soft_fail: true
+          output_format: cli
+      # Módulo aislado de la Knowledge Base administrada de Bedrock: provider
+      # aws 6.x propio, por eso usa otro TF_DATA_DIR. No necesita el layer.
+      - name: terraform fmt -check (knowledge-base)
+        working-directory: infrastructure/knowledge-base
+        run: terraform fmt -check -recursive -diff
+      - name: terraform init (knowledge-base, no backend)
+        working-directory: infrastructure/knowledge-base
+        run: terraform init -backend=false -input=false
+        env:
+          TF_DATA_DIR: ${{ runner.temp }}/pps-knowledge-base-data
+      - name: terraform validate (knowledge-base)
+        working-directory: infrastructure/knowledge-base
+        run: terraform validate
+        env:
+          TF_DATA_DIR: ${{ runner.temp }}/pps-knowledge-base-data
+      - name: checkov knowledge-base (soft fail)
+        # Informativo: resultado y justificación en
+        # infrastructure/knowledge-base/README.md.
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: infrastructure/knowledge-base
           framework: terraform
           quiet: true
           soft_fail: true

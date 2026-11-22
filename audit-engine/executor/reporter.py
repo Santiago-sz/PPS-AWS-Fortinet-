@@ -448,6 +448,58 @@ def _render_remediation_section(findings: list[dict]) -> list[str]:
     return lines
 
 
+def _reference_sources(references) -> list[tuple[str, float | None]]:
+    """Documentos distintos de una lista de referencias, en orden de
+    aparicion, cada uno con su mejor puntaje. Un origen ausente se informa
+    como tal en lugar de omitirse."""
+    best: dict[str, float | None] = {}
+    for reference in references if isinstance(references, list) else []:
+        if not isinstance(reference, dict):
+            continue
+        source = reference.get("source")
+        label = str(source).replace("`", "'") if source else "origen no informado"
+        score = reference.get("score")
+        if isinstance(score, bool) or not isinstance(score, int | float):
+            score = None
+        if label not in best:
+            best[label] = score
+        elif score is not None and (best[label] is None or score > best[label]):
+            best[label] = score
+    return list(best.items())
+
+
+def _render_reference_section(findings: list[dict]) -> list[str]:
+    """Seccion de documentos de referencia por hallazgo.
+
+    Solo se emite si algun hallazgo trae la clave `references`, que el toolkit
+    agrega unicamente cuando el manifest declara habilitada la recuperacion de
+    documentacion. Sin esa clave el reporte no cambia.
+    """
+    selected = [f for f in findings if "references" in f]
+    if not selected:
+        return []
+
+    lines = [
+        "## Documentación de referencia\n",
+        "> Documentos de la base de conocimientos consultados al generar cada "
+        "control. Son material de consulta: no modifican el resultado de la "
+        "auditoría ni reemplazan la cláusula fuente.\n",
+    ]
+    for finding in selected:
+        check_id = finding.get("check_id", "desconocido")
+        sources = _reference_sources(finding.get("references"))
+        if not sources:
+            lines.append(f"- `{check_id}`: sin documentos de referencia")
+            continue
+        rendered = []
+        for label, score in sources:
+            name = label if label == "origen no informado" else f"`{label}`"
+            rendered.append(f"{name} (puntaje {score:.2f})" if score is not None else name)
+        lines.append(f"- `{check_id}`: " + "; ".join(rendered))
+    lines.append("")
+    return lines
+
+
 def _finding_is_traceable(finding: dict) -> bool:
     """A finding is only truly traceable if BOTH the toolkit marked it as
     such AND its `clause_ref` is a well-formed citation with a real quote.
@@ -577,6 +629,7 @@ def build_policy_report_markdown(
         lines.append("")
 
     lines.extend(_render_remediation_section(findings))
+    lines.extend(_render_reference_section(findings))
 
     untraceable_count = sum(1 for f in findings if not _finding_is_traceable(f))
     if untraceable_count:

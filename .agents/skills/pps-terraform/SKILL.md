@@ -9,7 +9,8 @@ Consultar [AGENTS.md](../../../AGENTS.md),
 [TESTING.md](../../../audit-engine/TESTING.md),
 [SECRETS.md](../../../audit-engine/SECRETS.md) y el módulo afectado.
 
-1. Distinguir `infrastructure/pipeline/` de `infrastructure/fortigate-lab/`.
+1. Distinguir `infrastructure/pipeline/`, `infrastructure/knowledge-base/`
+   (provider aws 6.x y estado propios) e `infrastructure/fortigate-lab/`.
    No trabajar sobre `terraform/` legacy de raíz ni mezclar estados de módulos.
 2. Definir primero cómo verificar el cambio: test de contrato IaC/código para
    variables/handlers, o formato y validación para cambios puramente declarativos.

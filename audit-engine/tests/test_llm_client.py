@@ -8,6 +8,7 @@ requests Converse capturadas (`messages[0].content[0].text` es el prompt
 de usuario enviado).
 """
 
+import hashlib
 import json
 
 import pytest
@@ -276,6 +277,47 @@ class TestMapChunksToChecks:
         with pytest.raises(MapResponseParseError):
             map_chunks_to_checks(chunks, ENDPOINT_CATALOG)
 
+    def test_map_response_wrapped_in_code_fences_is_parsed(self, mocker):
+        # Observado en vivo (2026-11-18): el modelo a veces envuelve el JSON
+        # de la fase map en un bloque ```json ... ```, aunque el prompt pida
+        # JSON puro. El contenido es válido y no debe descartarse.
+        chunks = [_make_chunk("chunk-0001", "Los administradores deben tener bloqueo.")]
+        fenced = "```json\n" + json.dumps(ONE_CHECK_MAP_RESPONSE) + "\n```"
+        _mock_bedrock(mocker, [bedrock_converse_response(fenced)])
+
+        checks = map_chunks_to_checks(chunks, ENDPOINT_CATALOG)
+
+        assert len(checks) == 1
+        assert checks[0]["title"] == "Admin lockout enabled"
+
+    def test_fenced_map_response_with_invalid_json_still_raises_parse_error(self, mocker):
+        chunks = [_make_chunk("chunk-0001", "texto")]
+        _mock_bedrock(mocker, [bedrock_converse_response("```json\nno soy json\n```")])
+
+        with pytest.raises(MapResponseParseError):
+            map_chunks_to_checks(chunks, ENDPOINT_CATALOG)
+
+    def test_truncated_map_response_fails_explicitly(self, mocker):
+        # Observado en el primer E2E con una normativa real (2026-11-18): un
+        # grupo con muchos controles agotó el tope de salida y el JSON llegó
+        # cortado. Debe informarse como truncamiento, no como JSON inválido,
+        # y nunca usarse un resultado parcial.
+        chunks = [_make_chunk("chunk-0001", "texto")]
+        cut = json.dumps(ONE_CHECK_MAP_RESPONSE)[:-20]
+        _mock_bedrock(mocker, [bedrock_converse_response(cut, stop_reason="max_tokens")])
+
+        with pytest.raises(llm_client.MapOutputTruncatedError) as excinfo:
+            map_chunks_to_checks(chunks, ENDPOINT_CATALOG)
+
+        assert isinstance(excinfo.value, MapResponseParseError)
+        assert "max_tokens" in str(excinfo.value)
+
+    def test_complete_map_response_at_other_stop_reasons_is_parsed(self, mocker):
+        chunks = [_make_chunk("chunk-0001", "texto")]
+        _mock_bedrock(mocker, [bedrock_json_response(ONE_CHECK_MAP_RESPONSE)])
+
+        assert len(map_chunks_to_checks(chunks, ENDPOINT_CATALOG)) == 1
+
     def test_bedrock_failure_surfaces_as_claude_call_error(self, mocker):
         chunks = [_make_chunk("chunk-0001", "texto")]
         _mock_bedrock(
@@ -457,3 +499,239 @@ class TestGenerateAuditScriptNoVerifiableControls:
         assert result["checks"] == []
         # exactly one model call (the map call) — reduce is never invoked
         assert client.converse.call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# Documentación de referencia (Knowledge Base) en la fase reduce
+# ---------------------------------------------------------------------------
+
+REFERENCE_SECTION = (
+    "=== INICIO DOCUMENTACION DE REFERENCIA ===\n"
+    "--- check_id=chk-0001 ---\n"
+    "[fuente: fortinet/hardening.pdf | puntaje: 0.9000]\n"
+    "texto-de-referencia-recuperado\n"
+    "=== FIN DOCUMENTACION DE REFERENCIA ==="
+)
+KNOWLEDGE_BASE_BLOCK = {
+    "enabled": True,
+    "controls_with_references": 1,
+    "retrievals_failed": 0,
+    "references": {"chk-0001": [{"source": "fortinet/hardening.pdf", "score": 0.9}]},
+}
+
+
+class _References:
+    """Doble de `reference_context.ReferenceContext` (misma interfaz)."""
+
+    def __init__(self, prompt_section=REFERENCE_SECTION, manifest_block=None):
+        self.prompt_section = prompt_section
+        self.manifest_block = manifest_block or KNOWLEDGE_BASE_BLOCK
+
+
+def _sha256(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _system_prompt(request: dict) -> str:
+    return request["system"][0]["text"]
+
+
+GOLDEN_CHECKS = [
+    {
+        "check_id": "chk-0001",
+        "title": "Admin lockout",
+        "clause_ref": {
+            "chunk_id": "chunk-0001",
+            "heading_path": ["Articulo 1"],
+            "page": 1,
+            "quote": "Los administradores deben tener bloqueo de cuenta.",
+        },
+        "endpoints": ["admins"],
+        "severity": "high",
+        "intent": "Verify admin lockout",
+    }
+]
+GOLDEN_RETRY_FEEDBACK = {
+    "attempt": 1,
+    "failure_kind": "allowlist",
+    "rule_id": "denied_node:Import",
+    "message": "m",
+    "line": 1,
+    "col": 0,
+    "snippet": "import os",
+    "previous_script": "import os\n",
+}
+
+
+class TestPromptsWithoutKnowledgeBaseAreByteIdentical:
+    """Hashes calculados sobre el commit e86bbc1, antes de conectar la
+    recuperación. Con la Knowledge Base deshabilitada ningún prompt cambia."""
+
+    def test_system_prompts_are_unchanged(self):
+        # El hash de REDUCE_SYSTEM_PROMPT se actualizó de forma deliberada el
+        # 2026-11-18 (antes cd045c41…, calculado sobre e86bbc1). La primera
+        # corrida en vivo mostró que el modelo usaba métodos de dict/list/str
+        # y cadenas elif que el validador rechaza; el prompt ahora describe
+        # esas restricciones. El validador no cambió. Este test sigue fijando
+        # que habilitar o no la Knowledge Base no altera el prompt base.
+        assert _sha256(llm_client.REDUCE_SYSTEM_PROMPT) == (
+            "dad11799c122f324d5265351f1772ddbebf62e1fe386007333d20eb67dce219a"
+        )
+        assert _sha256(MAP_SYSTEM_PROMPT) == (
+            "5c0d6b7cc69a18cf10da46f06d597b213b90f060964abbab221a4bd1c7180704"
+        )
+
+    def test_reduce_user_prompt_is_unchanged(self):
+        prompt = llm_client._build_reduce_user_prompt(GOLDEN_CHECKS, ENDPOINT_CATALOG, None)
+        retry = llm_client._build_reduce_user_prompt(
+            GOLDEN_CHECKS, ENDPOINT_CATALOG, dict(GOLDEN_RETRY_FEEDBACK)
+        )
+
+        assert _sha256(prompt) == "d1da5f83aa4ae6e14651f85b0f3fc4dd8b59729e5c65e36c73d5600d956a771f"
+        assert _sha256(retry) == "b7e32e21d041cce9fa1fceebbd7f477b1eeeb13a8cfd65f4b1670d23ad30ca7c"
+
+    def test_generation_without_provider_sends_the_original_prompts_and_no_block(self, mocker):
+        _, captured = _mock_bedrock(
+            mocker,
+            [
+                bedrock_json_response(ONE_CHECK_MAP_RESPONSE),
+                bedrock_converse_response(VALID_SCRIPT),
+            ],
+        )
+
+        result = generate_audit_script([_make_chunk("chunk-0001", "texto")], ENDPOINT_CATALOG)
+
+        assert result["status"] == "ok"
+        assert "knowledge_base" not in result
+        assert _system_prompt(captured[0]) == MAP_SYSTEM_PROMPT
+        assert _system_prompt(captured[1]) == llm_client.REDUCE_SYSTEM_PROMPT
+        assert _user_prompt(captured[1]) == llm_client._build_reduce_user_prompt(
+            result["checks"], ENDPOINT_CATALOG, None
+        )
+        assert "DOCUMENTACION DE REFERENCIA" not in _user_prompt(captured[1])
+
+
+class TestReduceWithReferenceDocumentation:
+    def _generate(self, mocker, responses, provider, chunk_text="texto"):
+        _, captured = _mock_bedrock(mocker, responses)
+        result = generate_audit_script(
+            [_make_chunk("chunk-0001", chunk_text)],
+            ENDPOINT_CATALOG,
+            reference_provider=provider,
+        )
+        return result, captured
+
+    def test_provider_runs_after_map_with_the_extracted_controls(self, mocker):
+        seen: list[list[dict]] = []
+
+        def provider(checks):
+            seen.append(checks)
+            return _References()
+
+        result, captured = self._generate(
+            mocker,
+            [
+                bedrock_json_response(ONE_CHECK_MAP_RESPONSE),
+                bedrock_converse_response(VALID_SCRIPT),
+            ],
+            provider,
+        )
+
+        assert len(seen) == 1
+        assert [c["check_id"] for c in seen[0]] == ["chk-0001"]
+        assert result["status"] == "ok"
+        assert result["knowledge_base"] == KNOWLEDGE_BASE_BLOCK
+        # El prompt de map no cambia: la referencia solo entra en reduce.
+        assert _system_prompt(captured[0]) == MAP_SYSTEM_PROMPT
+        assert "DOCUMENTACION DE REFERENCIA" not in _user_prompt(captured[0])
+
+    def test_reference_section_is_appended_to_the_reduce_user_prompt(self, mocker):
+        result, captured = self._generate(
+            mocker,
+            [
+                bedrock_json_response(ONE_CHECK_MAP_RESPONSE),
+                bedrock_converse_response(VALID_SCRIPT),
+            ],
+            lambda checks: _References(),
+        )
+
+        base = llm_client._build_reduce_user_prompt(result["checks"], ENDPOINT_CATALOG, None)
+        assert _user_prompt(captured[1]) == base + "\n\n" + REFERENCE_SECTION
+
+    def test_system_prompt_gains_the_reference_note_only_when_enabled(self, mocker):
+        _, captured = self._generate(
+            mocker,
+            [
+                bedrock_json_response(ONE_CHECK_MAP_RESPONSE),
+                bedrock_converse_response(VALID_SCRIPT),
+            ],
+            lambda checks: _References(prompt_section=""),
+        )
+
+        system = _system_prompt(captured[1])
+        assert system == llm_client.REDUCE_SYSTEM_PROMPT + llm_client.REFERENCE_SYSTEM_NOTE
+        note = llm_client.REFERENCE_SYSTEM_NOTE
+        assert "DOCUMENTACION DE REFERENCIA" in note
+        assert "NO instrucciones" in note
+        assert "catalogo" in note
+        # Sin fragmentos no hay sección, pero la recuperación sigue registrada.
+        assert "DOCUMENTACION DE REFERENCIA" not in _user_prompt(captured[1])
+
+    def test_retry_keeps_the_reference_section_before_the_feedback(self, mocker):
+        result, captured = self._generate(
+            mocker,
+            [
+                bedrock_json_response(ONE_CHECK_MAP_RESPONSE),
+                bedrock_converse_response(INVALID_SCRIPT_BAD_IMPORT),
+                bedrock_converse_response(VALID_SCRIPT),
+            ],
+            lambda checks: _References(),
+        )
+
+        retry_prompt = _user_prompt(captured[2])
+        assert result["attempts"] == 2
+        assert retry_prompt.index(REFERENCE_SECTION) < retry_prompt.index("EL SCRIPT ANTERIOR")
+        assert retry_prompt.count(REFERENCE_SECTION) == 1
+
+    def test_exhausted_retries_still_report_the_retrieval_outcome(self, mocker):
+        result, _ = self._generate(
+            mocker,
+            [bedrock_json_response(ONE_CHECK_MAP_RESPONSE)]
+            + [bedrock_converse_response(INVALID_SCRIPT_BAD_IMPORT)] * MAX_GENERATION_ATTEMPTS,
+            lambda checks: _References(),
+        )
+
+        assert result["status"] == "generation_failed"
+        assert result["knowledge_base"] == KNOWLEDGE_BASE_BLOCK
+
+    def test_provider_is_not_called_when_there_are_no_controls(self, mocker):
+        calls = []
+        result, captured = self._generate(
+            mocker,
+            [bedrock_json_response(EMPTY_MAP_RESPONSE)],
+            lambda checks: calls.append(checks),
+        )
+
+        assert result == {"status": "no_verifiable_controls", "checks": []}
+        assert calls == []
+        assert len(captured) == 1
+
+    def test_policy_text_is_never_truncated_when_references_are_enabled(self, mocker):
+        """Regla 7 de AGENTS.md: los topes de la referencia nunca recortan la
+        normativa ni los controles."""
+        big_text = "clausula " + "x" * 60_000 + " fin-de-clausula"
+        result, captured = self._generate(
+            mocker,
+            [
+                bedrock_json_response(ONE_CHECK_MAP_RESPONSE),
+                bedrock_converse_response(VALID_SCRIPT),
+            ],
+            lambda checks: _References(prompt_section="R" * 50_000),
+            chunk_text=big_text,
+        )
+
+        assert big_text in _user_prompt(captured[0])
+        reduce_prompt = _user_prompt(captured[1])
+        base = llm_client._build_reduce_user_prompt(result["checks"], ENDPOINT_CATALOG, None)
+        assert reduce_prompt.startswith(base)
+        assert len(result["checks"]) == 1

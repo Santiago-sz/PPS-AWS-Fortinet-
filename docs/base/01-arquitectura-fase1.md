@@ -38,7 +38,7 @@ Fallos del generador (extracción, modelo, `no_verifiable_controls`,
 ## 2. Componentes AWS
 
 Prefijo real: `${project_name}-${environment}` → con los defaults
-`pps-prod`. Cuenta de prueba: `656051538542`, región `us-east-1`.
+`pps-prod`. Cuenta de prueba: `<ACCOUNT_ID>`, región `us-east-1`.
 
 | Servicio | Nombre (patrón) | Propósito | IAM / notas |
 |---|---|---|---|

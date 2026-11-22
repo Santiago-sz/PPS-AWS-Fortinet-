@@ -13,9 +13,10 @@ audit-engine/
   legacy/                    Handlers NIST conservados sin modificación
   tests/                     Suite del motor y contratos IaC/código
   evals/                     Evaluación de generación offline/live
-  scripts/                   Construcción del layer
+  scripts/                   Construcción del layer y ejecución local del executor
 infrastructure/
   pipeline/                  Terraform canónico del pipeline
+  knowledge-base/            Knowledge Base administrada de Bedrock (módulo aislado)
   fortigate-lab/             Laboratorio independiente
 docs/base/                   Documentación original conservada como antecedente
 docs/context/                Conocimiento actualizado y handoffs
@@ -39,7 +40,10 @@ compatible. Ver [manual API](../../local-api/README.md).
 Los módulos del motor conservan los imports planos. Pytest y evals añaden las
 cuatro áreas al path; Terraform empaqueta sus archivos Python en la raíz del ZIP
 mediante bloques `source`. Los nombres de los handlers y recursos Terraform no
-cambian. No se incluyen tests ni bytecode en ese archivo.
+cambian. No se incluyen tests ni bytecode en ese archivo. Tampoco `scripts/`:
+`run_executor_local.py` (2026-11-21), `diagnose_fortigate_local.py` y su módulo
+compartido `local_run_common.py` (2026-11-22) se usan solo en una estación de
+trabajo.
 
 La separación de carpetas no constituye aislamiento de permisos. Los roles IAM
 siguen definiendo las capacidades del generador y executor. Este cambio conserva
@@ -49,6 +53,11 @@ El layer se construye en `audit-engine/layers/`. Ejecutar Terraform desde
 `infrastructure/pipeline/`; `init -backend=false` y `validate` utilizan
 `TF_DATA_DIR` fuera del repositorio. No mover estados de Terraform entre entornos
 ni ejecutar plan/apply por interpretar esta migración como un despliegue.
+
+`infrastructure/knowledge-base/` (2026-11-17) es un módulo independiente con su
+propio provider (aws 6.x), lock y estado; el pipeline sigue en aws 5.x. Solo se
+relacionan por el id de la Knowledge Base, que el operador pasa como variable.
+Ver [la decisión](decisions/10-bedrock-knowledge-base.md).
 
 ## Rutas anteriores
 

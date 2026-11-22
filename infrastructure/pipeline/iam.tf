@@ -286,6 +286,37 @@ resource "aws_iam_role_policy" "generator_permissions" {
 }
 
 
+# -----------------------------------------------------------------------------
+# KNOWLEDGE BASE  - permiso opcional de consulta para policy_generator
+# Política inline SEPARADA y condicional: existe solo si
+# var.knowledge_base_id no está vacío. Con el default (vacío) el recurso no
+# se crea, el rol no recibe ningún permiso sobre Knowledge Bases y la
+# política principal de arriba no cambia. El recurso es el ARN exacto de esa
+# base, sin comodines (variables.tf valida que el id sea alfanumérico), y la
+# única acción es bedrock:Retrieve: no permite generar con la base ni
+# administrarla. La base se crea en infrastructure/knowledge-base/.
+# -----------------------------------------------------------------------------
+
+resource "aws_iam_role_policy" "generator_knowledge_base" {
+  count = var.knowledge_base_id != "" ? 1 : 0
+
+  name = "${local.prefix}-generator-knowledge-base-policy"
+  role = aws_iam_role.generator.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "RetrieveFromKnowledgeBase"
+        Effect   = "Allow"
+        Action   = "bedrock:Retrieve"
+        Resource = "arn:aws:bedrock:${var.aws_region}:${data.aws_caller_identity.current.account_id}:knowledge-base/${var.knowledge_base_id}"
+      }
+    ]
+  })
+}
+
+
 # =============================================================================
 # ROL  - AUDIT_EXECUTOR
 # =============================================================================

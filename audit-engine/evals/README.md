@@ -8,7 +8,12 @@ conjunto esperado escrito a mano. Es el tercer pilar del harness junto con
 los tests unitarios (`lambda/tests/`) y el análisis estático de IaC (checkov).
 
 No ejecuta ningún script generado ni toca un FortiGate: solo mide la fase
-de generación (map/reduce + validación).
+de generación (map/reduce + validación). Las fixtures grabadas recorren el
+camino sin Knowledge Base; con la recuperación habilitada el prompt de
+reduce cambia y ese camino no tiene todavía una grabación.
+
+Una segunda suite mide la calidad de recuperación de la Knowledge Base; ver
+«Evals de recuperación» más abajo.
 
 ## Cómo correr
 
@@ -143,6 +148,70 @@ respuestas reales (texto crudo, tokens, latencia, `model_id`,
 el catálogo de endpoints, y revisar el diff antes de commitear: la fixture
 es lo que CI considera "comportamiento de referencia". Si la nueva grabación
 baja alguna métrica por debajo del umbral, el run live ya sale con código 1.
+
+## Evals de recuperación (Knowledge Base)
+
+Suite aparte del mismo runner, `--suite retrieval`. Mide solo la operación
+`Retrieve` de la Knowledge Base: no invoca al modelo ni genera scripts. La
+suite por defecto sigue siendo `generation`; los comandos de arriba no
+cambian.
+
+```bash
+cd audit-engine
+
+# Offline: puntúa retrieval/recorded.json. Sin red ni credenciales.
+../.venv/Scripts/python.exe evals/run_evals.py --suite retrieval --mode offline
+
+# Live: consulta la base real a través de knowledge_retriever. Requiere
+# credenciales AWS con bedrock:Retrieve sobre esa base.
+KNOWLEDGE_BASE_ID=<id> AWS_REGION=us-east-1 ../.venv/Scripts/python.exe evals/run_evals.py --suite retrieval --mode live
+
+# Live + regrabar la fixture (sobrescribe retrieval/recorded.json)
+KNOWLEDGE_BASE_ID=<id> AWS_REGION=us-east-1 ../.venv/Scripts/python.exe evals/run_evals.py --suite retrieval --mode live --record
+```
+
+`KNOWLEDGE_BASE_FORTIOS_VERSION` (opcional) aplica en modo live el mismo
+filtro por metadato que usa el generador. `--results-dir`, `--thresholds` y
+`--verbose` funcionan igual que en la suite de generación; `--policy`,
+`--max-attempts` y `--dump-chunks` no aplican.
+
+| Ruta | Contenido |
+|---|---|
+| `retrieval/questions.json` | Conjunto de preguntas versionado (`version`, `k`). Cada pregunta tiene `id`, `topic`, `question` y `expected_sources`: subcadenas del identificador del documento esperado (sin distinguir mayúsculas; basta con que una coincida). |
+| `retrieval/recorded.json` | Resultados grabados por pregunta: lista ordenada de `{source, score}`, donde `source` es la clave del objeto (sin bucket: su nombre incluye el id de cuenta). Nunca texto de fragmentos. |
+| `thresholds.json`, clave `retrieval` | Umbrales del agregado. |
+| `retrieval_eval.py` | Métricas y ejecución; `run_evals.py` lo invoca. |
+
+Métricas:
+
+| Métrica | Definición |
+|---|---|
+| `hit_rate_at_k` | Fracción de preguntas con algún documento esperado entre los primeros `k` resultados (`k` = 5). |
+| `mrr` | Media del recíproco de la posición del primer documento esperado; 0 para una pregunta sin acierto entre los primeros `k`. |
+
+Por pregunta se informan `hit`, `rank`, `reciprocal_rank`, los resultados y,
+en modo live, `error` si la consulta falló (cuenta como pregunta sin
+acierto). Umbrales actuales: `hit_rate_at_k ≥ 0.8` y `mrr ≥ 0.6`. Salida:
+tabla Markdown y `results/<timestamp>-retrieval-<modo>.json`; código de
+salida `1` si no se cumple un umbral.
+
+**La fixture actual es sintética.** `retrieval/recorded.json` lleva
+`"synthetic": true`: fue escrita a mano, con orígenes y puntajes inventados,
+porque el conjunto de documentos de la Knowledge Base todavía no está
+cargado. Sirve para ejercitar el cálculo de métricas y umbrales (incluye
+aciertos en distintas posiciones y una pregunta sin acierto); **no dice nada
+sobre la calidad de recuperación de una base real**. El runner lo advierte
+en la salida y lo registra como `synthetic_fixture` en el archivo de
+resultados. Los `expected_sources` de las preguntas también son provisorios:
+hay que ajustarlos a los nombres reales de los documentos, subir `version` y
+regrabar en modo live. Los umbrales tampoco están calibrados contra datos
+reales.
+
+Las 13 preguntas cubren temas de hardening que el catálogo de endpoints
+puede verificar: acceso administrativo, política de contraseñas, registro,
+NTP, políticas de firewall e inspección SSL. El modo live no se ejecutó
+todavía; `tests/test_retrieval_evals.py` lo prueba con el recuperador
+simulado.
 
 ## Qué citar en la tesis
 
