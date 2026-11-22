@@ -67,11 +67,22 @@ La rama y el árbol de trabajo actuales se obtienen de Git, no de ese relato.
   `AUTO_EXECUTE` está activo, el executor de AWS también corrió y dejó en S3 un
   reporte sin datos, porque no alcanza el equipo; el resultado válido es el
   local. Comparación con la primera corrida:
-  - Mejoró: antivirus, IPS y filtrado web fallan con el mismo criterio para la
-    misma cobertura; el control de registro de actividad de administradores
-    lee valores reales en lugar de campos vacíos; hay dos controles nuevos
-    (gestión de cuentas y filtrado web); el control de contraseñas ya no
-    propone una longitud mínima menor que la configurada.
+  - Mejoró: antivirus, monitoreo continuo (IPS) y filtrado web fallan con el
+    mismo criterio para la misma cobertura (3 de 11 políticas); hay dos
+    controles nuevos (gestión de cuentas y filtrado web); las referencias
+    citan 13 documentos distintos contra 6 en la primera corrida.
+  - Mejora solo aparente, verificada leyendo los scripts generados: el control
+    de registro de actividad de administradores muestra `disable` en lugar de
+    campos vacíos, pero el script asigna ese valor cuando el campo no viene en
+    la respuesta, así que no es un valor leído; el control de gestión de
+    vulnerabilidades falla por campos de FortiGuard que también toman un valor
+    por defecto; la remediación que propone una longitud mínima de contraseña
+    menor que la configurada sigue en el manifest y solo queda oculta porque
+    el control ahora aprueba.
+  - Causa común que surge de esa lectura: los scripts tratan un campo ausente
+    como un valor (`disable`, cero, lista vacía) en lugar de marcar el control
+    como `indeterminate`. Es el mismo defecto que hace aprobar los controles
+    de administradores con cero administradores leídos.
   - Sigue igual: los dos controles de administradores leen cero
     administradores y aprueban (el perfil del usuario de API es
     `super_admin_readonly`, por lo que la causa está en el script o en el
