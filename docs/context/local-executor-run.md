@@ -204,10 +204,97 @@ el error de red.
 | Conexión rechazada en el puerto 443 | Puerto de administración distinto | `FORTIGATE_HOST` con `host:puerto` |
 | `CERTIFICATE_VERIFY_FAILED` | Certificado autofirmado | `FORTIGATE_VERIFY_SSL=false`, solo en laboratorio |
 
+## 9. Ver el reporte local en la aplicación de escritorio
+
+Comprobado el 2026-11-21 con la corrida `9c1fa81e1a154d1fa510274997381280`: el
+reporte local se adjuntó a una auditoría de la API local con `import-result` y
+la aplicación mostró sus 12 hallazgos (8 `pass`, 4 `fail`) y las propuestas de
+remediación. No hizo falta modificar código: el bloque `execution` del reporte
+local se conserva y no afecta la importación ni la vista.
+
+Ningún paso de esta sección escribe en AWS ni contacta el FortiGate. La única
+llamada a AWS es la lectura del manifest. No se necesita un archivo `.env`.
+Los comandos se ejecutan desde la raíz del repositorio; en este checkout el
+entorno virtual es `.venv` (otros documentos lo nombran `.venv-gui`).
+
+`import-result` exige que el manifest y el reporte tengan el mismo `run_id` y
+el mismo `policy_key`, y que el `policy_sha256` del manifest sea el SHA-256 del
+documento cargado en la auditoría local. Por eso la auditoría local debe
+crearse con **exactamente el mismo archivo** de normativa que usó el generador.
+
+1. Iniciar la API local y dejarla abierta:
+
+   ```powershell
+   .\.venv\Scripts\python.exe local-api\launch.py serve
+   ```
+
+2. En otra consola, abrir la aplicación:
+
+   ```powershell
+   .\.venv\Scripts\python.exe gui\launch.py
+   ```
+
+   En **Configuración → API local de desarrollo**, dejar
+   `http://127.0.0.1:8765` y pulsar **Conectar API local**.
+
+3. Si todavía no existe una auditoría local para esa normativa, cargar el
+   documento desde **Políticas**. La carga queda en la base local y no llama a
+   AWS. **No ejecutar `aws dispatch` antes de importar**: enviaría el documento
+   al bucket de políticas, dispararía el generador y registraría un
+   `policy_key` distinto del que figura en el manifest, con lo que la
+   importación sería rechazada.
+
+4. Obtener el identificador de la auditoría (`aud_...`):
+
+   ```powershell
+   curl.exe -s http://127.0.0.1:8765/api/audits
+   ```
+
+5. Descargar el manifest a un directorio fuera del repositorio (solo lectura):
+
+   ```powershell
+   New-Item -ItemType Directory -Force "$env:TEMP\pps-manifest" | Out-Null
+   aws s3 cp "s3://<BUCKET_DE_REPORTES>/artifacts/<run_id>/manifest.json" "$env:TEMP\pps-manifest\manifest.json" --profile <AWS_PROFILE> --region us-east-1
+   ```
+
+6. Adjuntar el manifest y el reporte local:
+
+   ```powershell
+   .\.venv\Scripts\python.exe local-api\launch.py import-result <aud_ID> "$env:TEMP\pps-manifest\manifest.json" audit-engine\local-runs\<run_id>\<fecha-hora-UTC>\report.json
+   ```
+
+   La salida esperada es `Reporte asociado.`. La auditoría queda en
+   `completed` y deja de estar en la cola de envío, por lo que un
+   `aws dispatch` posterior no la envía.
+
+7. En la aplicación, pulsar **Actualizar**. **Resumen** muestra los totales y
+   los controles fallidos; **Resultados** lista todos los hallazgos, y al abrir
+   uno se ve la evidencia, la cláusula citada y la remediación propuesta. Desde
+   **Análisis**, seleccionar la ejecución y pulsar **Abrir resultados**.
+
+Consideraciones:
+
+- La base `.pps-api/development.sqlite3` está ignorada por Git y, después de la
+  importación, contiene el reporte con evidencia de la configuración real del
+  equipo, sin cifrar. Tratarla con el mismo cuidado que `local-runs/` y no
+  copiarla ni compartirla.
+- Un resultado adjunto es inmutable: no se puede reemplazar por el de otra
+  ejecución local. Para adjuntar otra corrida, crear una auditoría nueva con
+  **Volver a analizar** e importar sobre ese identificador antes de cualquier
+  `aws dispatch`.
+- El resumen de la aplicación cuenta las propuestas de los controles fallidos
+  o indeterminados (4 en esta corrida); el campo `with_remediation` de la API
+  cuenta todos los hallazgos que traen propuesta (12).
+- Alcance de la comprobación: la auditoría local de la corrida se creó con las
+  mismas operaciones del servicio que usa la carga HTTP (crear, subir,
+  confirmar), no desde el formulario de **Políticas**. La vista se verificó
+  consultando la API con el cliente de la aplicación y con la ventana real en
+  modo sin pantalla (`QT_QPA_PLATFORM=offscreen`), no en una pantalla física.
+
 ## Límites conocidos
 
-- El reporte local no aparece en la aplicación de escritorio ni en
-  `pps-api aws sync`. No se probó importarlo con `import-result`.
+- El reporte local no aparece en `pps-api aws sync`. En la aplicación de
+  escritorio solo aparece después de adjuntarlo a mano (sección 9).
 - En Windows no existe `signal.setitimer`: el respaldo de tiempo por señal del
   sandbox está inactivo. Siguen vigentes el límite de tiempo y el de cantidad
   de llamadas que se comprueban en cada llamada a `fgt` y `report`.

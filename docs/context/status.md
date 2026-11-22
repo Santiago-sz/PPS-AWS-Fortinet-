@@ -36,7 +36,10 @@ La rama y el árbol de trabajo actuales se obtienen de Git, no de ese relato.
   `9c1fa81e1a154d1fa510274997381280` (normativa DA 641/2021) terminó en
   `completed` con 12 hallazgos: 8 `pass` y 4 `fail`. El reporte quedó solo en
   disco local (`audit-engine/local-runs/`, ignorado por git) porque contiene
-  configuración real del equipo.
+  configuración real del equipo. El mismo día se adjuntó con `import-result` a
+  una auditoría de la API local y se comprobó que la aplicación de escritorio
+  lo muestra, sin cambios de código ni escrituras en AWS
+  ([pasos](local-executor-run.md#9-ver-el-reporte-local-en-la-aplicación-de-escritorio)).
 - **Calidad de los hallazgos de esa corrida: pendiente de corrección.** La
   lectura del reporte muestra controles cuyo resultado no está respaldado por
   la evidencia:
