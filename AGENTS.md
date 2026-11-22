@@ -26,7 +26,7 @@ permiten revisar los resultados sin credenciales AWS.
 | `infrastructure/knowledge-base/` | Módulo Terraform aislado (provider aws 6.x, estado propio) de la Knowledge Base administrada de Bedrock: bucket de documentos, rol de servicio, base `MANAGED` y data source S3. No desplegado; ver su `README.md`. | Canónico, opcional |
 | `local-api/` | Servidor HTTP/HTTPS local (`pps_api/server`), servicios y SQLite; puente separado en `pps_api/aws` (`pps-api aws dispatch|sync|list-pending|approve`). | Canónico |
 | `audit-engine/evals/` | Harness de evaluación del generador (normativas sintéticas, fixtures grabadas, métricas, umbrales) y de la recuperación de la Knowledge Base (`--suite retrieval`, fixture sintética). | Canónico |
-| `audit-engine/scripts/` | `build_layer.py` / `build_layer.sh` (Lambda Layer pypdf+python-docx+lxml y, desde el 2026-11-18, boto3 con versión fija). `run_executor_local.py` (2026-11-21): ejecución local de la etapa del executor para la primera prueba por VPN de usuario; no se empaqueta en la Lambda. `stig_to_markdown.py` (2026-11-21): convierte un benchmark XCCDF de DISA a Markdown para el corpus de la Knowledge Base ([manifiesto](docs/context/rag/corpus.md)); tampoco se empaqueta. | Canónico |
+| `audit-engine/scripts/` | `build_layer.py` / `build_layer.sh` (Lambda Layer pypdf+python-docx+lxml y, desde el 2026-11-18, boto3 con versión fija). `run_executor_local.py` (2026-11-21): ejecución local de la etapa del executor para la primera prueba por VPN de usuario; no se empaqueta en la Lambda. `stig_to_markdown.py` (2026-11-21): convierte un benchmark XCCDF de DISA a Markdown para el corpus de la Knowledge Base ([manifiesto](docs/context/rag/corpus.md)); tampoco se empaqueta. `diagnose_fortigate_local.py` (2026-11-22): diagnóstico de solo lectura de la forma de las respuestas del FortiGate, sin valores del equipo y sin acceso a AWS; comparte `local_run_common.py` con la ejecución local. Ninguno se empaqueta. | Canónico |
 | `gui/` | App de escritorio PySide6 (consola de auditorías; sin credenciales AWS). | Canónico |
 | `infrastructure/fortigate-lab/` | Terraform de un FortiGate VM de laboratorio en AWS (entorno de pruebas). | Independiente |
 | `lambda/`, `terraform/` (raíz) | **Copias legacy obsoletas** del pipeline original. Ver `README-LEGACY.md` en cada una. | **No editar, no borrar** |
@@ -102,6 +102,15 @@ nunca se acepta por argumento ni se imprime. Las reglas 1, 2, 3 y 5 de la
 sección 3 se aplican igual. Guía:
 [ejecución local](docs/context/local-executor-run.md).
 
+Diagnóstico (`scripts/diagnose_fortigate_local.py`): repite el `GET` del
+pipeline para cada endpoint de `ENDPOINTS`, reutilizando URL, encabezados y
+contexto TLS de `FortiGateClient` sin modificarlo, e informa solo la estructura
+de la respuesta. Env requeridas `FORTIGATE_HOST` y `FORTIGATE_TOKEN`; opcional
+`FORTIGATE_VERIFY_SSL`. No usa AWS. Regla propia: nunca imprimir ni guardar
+valores leídos del equipo, el host ni el token; un cambio que agregue un dato a
+la salida debe llegar con un test que pruebe que no expone valores. Salida en
+`audit-engine/local-runs/diagnostics/` (ignorado por Git).
+
 Knowledge Base (opcional): solo el generador consulta, una vez por control,
 entre map y reduce (`reference_context`, topes `MAX_RETRIEVE_CALLS`,
 `MAX_REFERENCE_CHARS_PER_CONTROL` y `MAX_REFERENCE_CHARS`; un fragmento de
@@ -121,7 +130,7 @@ Todo desde `audit-engine/` con el venv de la raíz (`../.venv`), detalle en
 `audit-engine/TESTING.md`:
 
 ```bash
-../.venv/Scripts/python.exe -m pytest -q -p no:cacheprovider        # 522 passed, 1 skipped (Windows)
+../.venv/Scripts/python.exe -m pytest -q -p no:cacheprovider        # 572 passed, 1 skipped (Windows)
 ../.venv/Scripts/python.exe -m ruff check generator/ executor/ contracts/ legacy/ tests/ evals/ scripts/
 ../.venv/Scripts/python.exe -m ruff format --check generator/ executor/ contracts/ legacy/ tests/ evals/ scripts/
 ../.venv/Scripts/python.exe scripts/build_layer.py                    # layers/pps-doc-parsers.zip
@@ -133,6 +142,7 @@ PYTHONUTF8=1 ../.venv/Scripts/python.exe -m checkov.main -d ../infrastructure/pi
 ../.venv/Scripts/python.exe evals/run_evals.py --mode offline
 ../.venv/Scripts/python.exe evals/run_evals.py --suite retrieval --mode offline   # fixture sintética
 ../.venv/Scripts/python.exe scripts/run_executor_local.py <run_id>   # ejecución local; contacta AWS y el FortiGate: solo por pedido explícito
+../.venv/Scripts/python.exe scripts/diagnose_fortigate_local.py      # forma de las respuestas; contacta el FortiGate (solo GET): solo por pedido explícito
 ```
 
 API y desktop: `pip install -e "local-api[dev]"` + `pytest` en

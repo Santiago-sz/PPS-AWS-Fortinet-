@@ -291,6 +291,76 @@ Consideraciones:
   consultando la API con el cliente de la aplicación y con la ventana real en
   modo sin pantalla (`QT_QPA_PLATFORM=offscreen`), no en una pantalla física.
 
+## 10. Diagnóstico de la forma de las respuestas
+
+Agregado el 2026-11-22. Las dos corridas reales mostraron controles que
+aprueban o fallan con datos que el equipo no devolvió (ver
+[status.md](status.md)). Antes de corregir el toolkit hace falta saber qué
+devuelve cada endpoint al token de API. Para eso existe
+[`audit-engine/scripts/diagnose_fortigate_local.py`](../../audit-engine/scripts/diagnose_fortigate_local.py).
+
+Qué hace:
+
+- Para cada endpoint del catálogo (`fortigate_client.ENDPOINTS`) envía el mismo
+  `GET` que el pipeline. Solo lecturas; no escribe en el equipo.
+- Informa la **estructura** de cada respuesta: si respondió, el código HTTP,
+  las claves del sobre JSON, el tipo de `results` (lista, objeto, ausente), la
+  cantidad de elementos y los nombres de los campos, con los tipos JSON vistos
+  y los campos de las tablas hijas.
+- **Nunca muestra ni guarda valores leídos del equipo**: ni nombres, ni
+  direcciones, ni comentarios, ni hashes, ni número de serie, ni nombre del
+  equipo. Los nombres de campo provienen del esquema de FortiOS y no son
+  configuración. Tampoco escribe el host ni el token.
+- Informa la versión y el build de FortiOS solo si vienen en el sobre con el
+  formato esperado.
+- No necesita credenciales ni acceso a AWS.
+
+Dos reglas evitan que un nombre definido por el usuario se imprima como si
+fuera un campo: una clave solo se imprime si tiene forma de nombre de campo
+(minúsculas, dígitos, `-` y `_`), y un objeto cuyos valores son todos objetos
+se trata como un mapa indexado por nombres, del que solo se cuentan las
+entradas. Con `--counts-only` no se imprime ni se guarda ningún nombre de
+campo. Revisar el archivo antes de compartirlo sigue siendo recomendable.
+
+Con las variables de las secciones 2 y 3 ya cargadas (`FORTIGATE_HOST`,
+`FORTIGATE_TOKEN` y, si corresponde, `FORTIGATE_VERIFY_SSL`) y la VPN
+conectada:
+
+```powershell
+cd <RAIZ_DEL_REPOSITORIO>\audit-engine
+..\.venv\Scripts\python.exe scripts\diagnose_fortigate_local.py --probe-global-scope
+```
+
+| Opción | Efecto |
+|---|---|
+| `--probe-global-scope` | Repite con `?scope=global` cada endpoint que respondió una lista vacía. Sirve para distinguir una tabla vacía de una tabla que el token no ve en su alcance |
+| `--only admins,api_users` | Consulta solo esas claves del catálogo |
+| `--counts-only` | Omite los nombres de campo; deja solo cantidades |
+| `--output-dir <ruta>` | Cambia el directorio de salida |
+
+Salida:
+
+- En la consola, una tabla con una fila por endpoint (clave, ruta, código HTTP,
+  tipo de `results`, cantidad de elementos, cantidad de campos y una nota), los
+  nombres de campo de los endpoints en revisión (administradores, usuarios de
+  API, perfiles, registro, NTP y FortiGuard) y un resumen: cuántos
+  respondieron, cuántos devolvieron una lista vacía y cuántos fallaron.
+- El archivo
+  `audit-engine\local-runs\diagnostics\<fecha-hora-UTC>\shapes.json`, con los
+  mismos datos de estructura para todos los endpoints. El directorio está
+  ignorado por Git.
+
+| Código de salida | Significado |
+|---|---|
+| 0 | Todos los endpoints respondieron |
+| 1 | Archivo escrito, pero al menos un endpoint falló o no llegó a consultarse |
+| 2 | Error de configuración o de entrada. No se envió ninguna consulta |
+| 3 | Falló la primera consulta. No se envió ninguna otra ni se escribió el archivo; aplicar la sección 8 |
+
+Cada consulta tiene el mismo tiempo de espera que el cliente (15 segundos). Si
+tres consultas seguidas fallan por red, el script se detiene y marca el resto
+como no consultado.
+
 ## Límites conocidos
 
 - El reporte local no aparece en `pps-api aws sync`. En la aplicación de
@@ -302,3 +372,7 @@ Consideraciones:
   bucket de AWS el 2026-11-21, después de escrita esta guía; el resultado y los
   problemas detectados en los hallazgos están en [status.md](status.md). Los
   tests siguen usando S3 simulado y un cliente FortiGate simulado.
+- El diagnóstico de la sección 10 no fue ejecutado contra un equipo real al
+  escribirla; está cubierto por tests con respuestas HTTP simuladas. Que una
+  clave sea un nombre de campo y no un nombre definido por el usuario se decide
+  con las dos reglas descritas allí, no con el esquema de FortiOS.

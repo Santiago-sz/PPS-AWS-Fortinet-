@@ -40,8 +40,11 @@ cd audit-engine
 ```
 
 Verificación local del 2026-11-21 (Windows, Python 3.12, `.venv`, pytest
-8.3.5): **522 tests passed, 1 skipped**; los 21 nuevos son los del conversor
-de STIG a Markdown (`test_stig_to_markdown.py`). La anterior del mismo día daba
+8.3.5): 522 passed, 1 skipped; los 21 nuevos son los del conversor
+de STIG a Markdown (`test_stig_to_markdown.py`). Verificación del 2026-11-22,
+mismo entorno: **572 tests passed, 1 skipped**; los 50 nuevos son los del
+diagnóstico de la forma de las respuestas (`test_diagnose_fortigate_local.py`).
+La anterior del 2026-11-21 daba
 501 passed, 1 skipped, con los 37 de la ejecución local del executor
 (`test_run_executor_local.py`). La del 2026-11-18 daba 464
 passed, 1 skipped. La del 2026-11-17 daba 350 passed,
@@ -52,7 +55,7 @@ generación, su trazabilidad y las evals de recuperación (ver abajo). La del
 `test_sandbox.py::TestWallClockBudgetViaSignalBackstop`; en Linux/CI ese
 test corre de verdad. CI en Linux aprobó el 2026-11-15, con 284 tests y ese
 test incluido, y de nuevo para el commit `e86bbc1` según lo informado el
-2026-11-18; para el estado actual se espera 523 passed sin omitidos, valor
+2026-11-18; para el estado actual se espera 573 passed sin omitidos, valor
 inferido y no observado.) Todos mockean AWS
 (S3/Secrets Manager/SNS/`lambda:InvokeFunction`/Bedrock)/FortiGate — nunca se
 hace red real, se puede correr sin credenciales ni conectividad.
@@ -116,6 +119,7 @@ La versión de boto3 del runtime de Lambda no fue comprobada.
 | `test_handler_executor.py` | Entrypoint async `audit_executor` — re-validación independiente; integridad `script_sha256` ANTES del AST; tolerancia a fallo parcial de endpoint; presupuesto agotado reporta `status="truncated"`; los hallazgos llevan las `references` del manifest y un manifest anterior sin el bloque sigue funcionando |
 | `test_integration_generator_executor.py` | Contrato generator→executor de punta a punta con S3 real (`moto`): manifest+script llegan sin cambios; script alterado se rechaza; `report.json`/`report.md` quedan donde el bridge local los busca; `AUTO_EXECUTE=false` deja artifacts firmados sin invocar |
 | `test_run_executor_local.py` | Ejecución local del executor (`scripts/run_executor_local.py`) con S3 de `moto` y un cliente FortiGate simulado: escribe JSON y Markdown solo en disco, sin `put` a S3, SNS ni Secrets Manager; hash distinto y rechazo del validador abortan antes de ejecutar; la comprobación de conectividad fallida termina con código 3 sin ejecutar el sandbox; variables faltantes, `run_id` inválido y token con espacios dan un mensaje claro; el token no aparece en stdout, stderr, registros ni reporte; presupuesto del sandbox por entorno; el script queda fuera del paquete de la Lambda |
+| `test_diagnose_fortigate_local.py` | Diagnóstico de la forma de las respuestas (`scripts/diagnose_fortigate_local.py`) con HTTP simulado en `urlopen`: extracción de forma para lista, objeto, mapa indexado por nombres, lista vacía, `results` ausente o nulo y error; la consulta reutiliza URL, encabezados y contexto TLS del cliente y solo usa `GET`; ningún valor de las respuestas de prueba, ni el host ni el token, aparece en stdout, stderr, registros o `shapes.json`; códigos de salida (primera consulta fallida, fallos posteriores, corte por fallos de red consecutivos, configuración); `--only`, `--counts-only` y `--probe-global-scope`; los scripts de estación quedan fuera del paquete de la Lambda y el diagnóstico no importa el SDK de AWS |
 | `test_stig_to_markdown.py` | Conversor de un benchmark XCCDF de DISA a Markdown para el corpus de la Knowledge Base (`scripts/stig_to_markdown.py`), con un benchmark sintético: una sección delimitada por regla con identificadores, severidad y categoría, descripción, texto de verificación y de corrección sin cambios; las líneas de CLI que empiezan con `#` no se convierten en títulos; rechazo de XML con DTD o entidades, de documentos que no son un benchmark y de benchmarks sin reglas; salida en UTF-8 sin sobrescribir archivos |
 | `test_evals_offline.py` | Smoke test del harness de evals (`evals/run_evals.py --mode offline`) en el mismo proceso: exit 0, archivo de resultados, métricas presentes, el ciclo de reintento ejercitado por una fixture, `bedrock_client.converse` restaurado |
 

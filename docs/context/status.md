@@ -1,6 +1,6 @@
 # Estado documental y pendientes
 
-Síntesis: 2026-11-05; actualizado el 2026-11-21. Fuente principal:
+Síntesis: 2026-11-05; actualizado el 2026-11-22. Fuente principal:
 [estado base al 2026-11-04](../base/07-estado-y-pendientes.md), incluida su
 actualización WU 5. No se consultó AWS para producir este documento, salvo
 las filas de «Hechos registrados» que lo indican.
@@ -99,6 +99,19 @@ La rama y el árbol de trabajo actuales se obtienen de Git, no de ese relato.
     medición; para medir hacen falta varias corridas por lado.
   - Ambas corridas quedaron asociadas a auditorías locales de la aplicación
     para verlas lado a lado; los reportes no se versionan.
+- **Diagnóstico de la forma de las respuestas (2026-11-22): implementado,
+  pendiente de ejecutar contra el equipo.**
+  `audit-engine/scripts/diagnose_fortigate_local.py` repite el `GET` del
+  pipeline para cada endpoint del catálogo e informa solo la estructura de la
+  respuesta (código HTTP, tipo de `results`, cantidad de elementos y nombres de
+  campo), sin valores del equipo, sin host y sin token. Debe ejecutarse antes
+  de cambiar el toolkit, para saber qué devuelven `system/admin`,
+  `system/api-user`, `system/accprofile`, los endpoints de registro,
+  `system/ntp` y `system/fortiguard`. Pasos en
+  [la guía](local-executor-run.md#10-diagnóstico-de-la-forma-de-las-respuestas).
+  La corrección del defecto (dato ausente o ilegible debe terminar en
+  `indeterminate`, garantizado por el toolkit) sigue pendiente de diseño
+  aprobado e implementación.
 - La arquitectura objetivo sigue siendo VPN Site-to-Site IPsec con el executor
   en una VPC.
 - Confirmación SNS.
@@ -137,6 +150,7 @@ por el agente que lo registró.
 | 2026-11-18 | Una llamada mínima a Converse respondió correctamente | Informado en el encargo; no se consultó AWS |
 | 2026-11-21 | Existe un camino de ejecución local del executor (`scripts/run_executor_local.py`), fuera del paquete de la Lambda. Suite del motor en Windows: 501 aprobados y 1 omitido | Commit `8edc38d` y [handoff](handoffs/2026-11-21-local-executor-runner.md); corrida local, sin AWS ni FortiGate |
 | 2026-11-21 | Corpus de la Knowledge Base cargado: 25 documentos, 24,45 MB. Ingesta `R4MQ9D7QQZ` en `COMPLETE`: 25 examinados, 23 nuevos indexados, 3 quitados del índice, 0 fallidos. Consultas `Retrieve` devuelven los documentos nuevos y ya no las normativas de ejemplo retiradas. Suite del motor en Windows: 522 aprobados y 1 omitido | Observado en AWS en esa sesión (`get-ingestion-job`, `list-knowledge-base-documents`, `retrieve`), con autorización del dueño para escribir en el bucket de conocimiento e iniciar la ingesta; [resumen del RAG](rag/README.md) y [manifiesto](rag/corpus.md) |
+| 2026-11-22 | Existe un diagnóstico de solo lectura de la forma de las respuestas del FortiGate (`scripts/diagnose_fortigate_local.py`), fuera del paquete de la Lambda y sin acceso a AWS. Suite del motor en Windows: 572 aprobados y 1 omitido | Commit `7673cfa` y [handoff](handoffs/2026-11-22-fortigate-shape-diagnostic.md); corrida local con HTTP simulado, sin AWS ni FortiGate |
 
 Con 10 pedidos por minuto, una corrida live hace pocas llamadas por normativa
 (una por grupo de map y hasta tres de reduce), pero varias corridas seguidas o

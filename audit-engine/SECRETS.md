@@ -41,6 +41,11 @@ caracteres de control. No guardar ese token en archivos `.env`, en el
 repositorio ni en el historial de la consola. Procedimiento en
 [la guía de ejecución local](../docs/context/local-executor-run.md).
 
+`scripts/diagnose_fortigate_local.py` trata el token de la misma forma (las
+comprobaciones y la depuración están en `scripts/local_run_common.py`) y,
+además, no muestra ni guarda ningún valor leído del equipo ni el host: solo la
+estructura de las respuestas.
+
 ## Acceso al modelo en Bedrock
 
 Antes del primer run hay que habilitar el acceso al modelo una única vez por

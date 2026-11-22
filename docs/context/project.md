@@ -26,7 +26,7 @@ credenciales AWS; el operador del puente sí necesita la configuración pertinen
 | `infrastructure/pipeline/` | Infraestructura canónica del pipeline |
 | `audit-engine/evals/` | Evaluación offline/live de la generación; normativas sintéticas, expectativas y fixtures |
 | `local-api/` | API HTTP local, SQLite y CLI del puente AWS |
-| `audit-engine/scripts/` | Construcción del layer de parsers y ejecución local del executor (`run_executor_local.py`) |
+| `audit-engine/scripts/` | Construcción del layer de parsers y scripts de estación de trabajo: ejecución local del executor (`run_executor_local.py`) y diagnóstico de la forma de las respuestas del FortiGate (`diagnose_fortigate_local.py`) |
 | `gui/` | App PySide6, contrato de API y pruebas |
 | `infrastructure/fortigate-lab/` | Laboratorio Terraform independiente del despliegue del pipeline |
 | `lambda/`, `terraform/` de la raíz | Copias legacy: no editar ni borrar |

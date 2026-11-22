@@ -41,7 +41,9 @@ Los módulos del motor conservan los imports planos. Pytest y evals añaden las
 cuatro áreas al path; Terraform empaqueta sus archivos Python en la raíz del ZIP
 mediante bloques `source`. Los nombres de los handlers y recursos Terraform no
 cambian. No se incluyen tests ni bytecode en ese archivo. Tampoco `scripts/`:
-`run_executor_local.py` (2026-11-21) se usa solo en una estación de trabajo.
+`run_executor_local.py` (2026-11-21), `diagnose_fortigate_local.py` y su módulo
+compartido `local_run_common.py` (2026-11-22) se usan solo en una estación de
+trabajo.
 
 La separación de carpetas no constituye aislamiento de permisos. Los roles IAM
 siguen definiendo las capacidades del generador y executor. Este cambio conserva

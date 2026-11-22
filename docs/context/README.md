@@ -26,6 +26,7 @@ contexto necesario; al retomar una tarea, leer su handoff y contrastarlo con Git
 | Entender una elección técnica | [decisions/README.md](decisions/README.md) | [Registro base](../base/05-decisiones.md) |
 | Consultar despliegue, bloqueos y deuda | [status.md](status.md) | [Estado histórico](../base/07-estado-y-pendientes.md), [conectividad](../base/06-conexion-fortigate.md) |
 | Ejecutar la primera prueba contra un FortiGate real | [local-executor-run.md](local-executor-run.md) | [Conectividad](../base/06-conexion-fortigate.md), `audit-engine/scripts/run_executor_local.py` |
+| Saber qué devuelve el FortiGate a cada consulta, sin exponer valores | [local-executor-run.md, sección 10](local-executor-run.md#10-diagnóstico-de-la-forma-de-las-respuestas) | `audit-engine/scripts/diagnose_fortigate_local.py` |
 | Continuar una tarea | [handoffs/README.md](handoffs/README.md) | Handoff correspondiente al identificador y rama de la tarea |
 | Entender o continuar el RAG con Bedrock | [rag/README.md](rag/README.md) | [Módulo knowledge-base](../../infrastructure/knowledge-base/README.md), [decisión 10](decisions/10-bedrock-knowledge-base.md) |
 | Consultar o ampliar los documentos de la Knowledge Base | [rag/corpus.md](rag/corpus.md) | Manifiesto del corpus: claves, fuentes, condiciones de uso, conversiones y procedimiento de carga |
