@@ -18,6 +18,7 @@ contexto necesario; al retomar una tarea, leer su handoff y contrastarlo con Git
 
 | Necesidad | Contexto inicial | Fuente de detalle |
 |---|---|---|
+| **Empezar desde cero** (clon nuevo, otra PC, sin contexto) | [puesta-en-marcha-desde-cero.md](puesta-en-marcha-desde-cero.md) | Instalación, acceso a AWS, tests, guion de demostración, estado y próximos pasos |
 | Continuar el informe académico | [Informe PPS/PIF](../../informe/README.md) | Requisitos, investigación, evidencia y propuestas; cambios en Google Docs con aprobación previa |
 | Seleccionar skills | [skills.md](skills.md) | `.agents/skills/<nombre>/SKILL.md` |
 | Entender hooks y su estado | [hooks.md](hooks.md) | Política y contratos; todavía sin implementación/activación |

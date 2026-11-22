@@ -4,6 +4,12 @@ Este archivo es el contrato de trabajo para cualquier agente (Claude Code,
 Codex, Copilot, etc.) que edite este repositorio. Leerlo completo antes de
 tocar código. `CLAUDE.md` en la raíz solo redirige acá.
 
+**Empezar aquí si no hay contexto previo** (sesión nueva, otra PC):
+[puesta en marcha desde cero](docs/context/puesta-en-marcha-desde-cero.md).
+Explica qué no viaja con git, cómo instalar y verificar, cómo hacer la
+demostración, el estado actual y los próximos pasos. No reemplaza este
+contrato.
+
 ## 1. Qué es este repositorio
 
 Sistema de auditoría de postura de seguridad para firewalls FortiGate,

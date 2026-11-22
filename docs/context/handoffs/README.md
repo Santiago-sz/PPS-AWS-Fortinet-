@@ -7,6 +7,7 @@ con la rama, el commit y los cambios pendientes de Git.
 
 | Tarea | Estado |
 |---|---|
+| [2026-11-22-puesta-en-marcha-desde-cero](2026-11-22-puesta-en-marcha-desde-cero.md) | Guía de entrada para empezar desde cero en otra PC y propuesta de diseño de datos ausentes (decisión 12): escritas y comprobadas. Revisión de los autores pendiente |
 | [2026-11-22-fortigate-shape-diagnostic](2026-11-22-fortigate-shape-diagnostic.md) | Diagnóstico de solo lectura de la forma de las respuestas del FortiGate: implementado con tests y documentado. Ejecución contra el equipo, revisión y merge pendientes |
 | [2026-11-21-local-executor-runner](2026-11-21-local-executor-runner.md) | Ejecución local del executor para la primera prueba por VPN de usuario: implementada con tests y documentada. Prueba real, revisión y merge pendientes |
 | [2026-11-21-informe-academico](2026-11-21-informe-academico.md) | Estructura y contexto inicial en `/informe`; revisión del autor pendiente |

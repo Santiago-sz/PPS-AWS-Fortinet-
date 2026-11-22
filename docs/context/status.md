@@ -110,8 +110,18 @@ La rama y el árbol de trabajo actuales se obtienen de Git, no de ese relato.
   `system/ntp` y `system/fortiguard`. Pasos en
   [la guía](local-executor-run.md#10-diagnóstico-de-la-forma-de-las-respuestas).
   La corrección del defecto (dato ausente o ilegible debe terminar en
-  `indeterminate`, garantizado por el toolkit) sigue pendiente de diseño
-  aprobado e implementación.
+  `indeterminate`, garantizado por el toolkit) está diseñada como
+  [decisión 12](decisions/12-datos-ausentes-indeterminate.md), en estado de
+  propuesta: falta la aceptación de los autores y la implementación.
+- **Demostración de la tesis (decisión de los dos autores, 2026-11-22):** se
+  hará con un FortiGate de laboratorio dentro de AWS, no con el equipo
+  institucional, para que la Lambda ejecutora alcance el equipo y todo el flujo
+  corra en AWS. El laboratorio no está construido; `infrastructure/fortigate-lab`
+  apunta a `sa-east-1` y el pipeline está en `us-east-1`. Qué hay que decidir y
+  hacer está en
+  [la guía de puesta en marcha](puesta-en-marcha-desde-cero.md#9-estado-actual-defectos-conocidos-y-próximos-pasos).
+  La ejecución local por VPN sigue documentada, pero ya no es el camino de la
+  demostración.
 - La arquitectura objetivo sigue siendo VPN Site-to-Site IPsec con el executor
   en una VPC.
 - Confirmación SNS.
@@ -151,6 +161,7 @@ por el agente que lo registró.
 | 2026-11-21 | Existe un camino de ejecución local del executor (`scripts/run_executor_local.py`), fuera del paquete de la Lambda. Suite del motor en Windows: 501 aprobados y 1 omitido | Commit `8edc38d` y [handoff](handoffs/2026-11-21-local-executor-runner.md); corrida local, sin AWS ni FortiGate |
 | 2026-11-21 | Corpus de la Knowledge Base cargado: 25 documentos, 24,45 MB. Ingesta `R4MQ9D7QQZ` en `COMPLETE`: 25 examinados, 23 nuevos indexados, 3 quitados del índice, 0 fallidos. Consultas `Retrieve` devuelven los documentos nuevos y ya no las normativas de ejemplo retiradas. Suite del motor en Windows: 522 aprobados y 1 omitido | Observado en AWS en esa sesión (`get-ingestion-job`, `list-knowledge-base-documents`, `retrieve`), con autorización del dueño para escribir en el bucket de conocimiento e iniciar la ingesta; [resumen del RAG](rag/README.md) y [manifiesto](rag/corpus.md) |
 | 2026-11-22 | Existe un diagnóstico de solo lectura de la forma de las respuestas del FortiGate (`scripts/diagnose_fortigate_local.py`), fuera del paquete de la Lambda y sin acceso a AWS. Suite del motor en Windows: 572 aprobados y 1 omitido | Commit `7673cfa` y [handoff](handoffs/2026-11-22-fortigate-shape-diagnostic.md); corrida local con HTTP simulado, sin AWS ni FortiGate |
+| 2026-11-22 | Recursos desplegados comprobados con lecturas: tres Lambdas `pps-prod-*`, tres buckets, base de conocimientos `ACTIVE` con dos ingestas en `COMPLETE` y una en `STOPPED`, 26 objetos en el bucket de conocimiento (24 documentos y 2 archivos de metadatos), generador con `AUTO_EXECUTE=true`, executor fuera de VPC. El reporte que la Lambda dejó para la segunda corrida está en `could_not_audit` con `preparation_error:ValueError` | Observado en AWS con comandos de solo lectura al escribir [la guía de puesta en marcha](puesta-en-marcha-desde-cero.md); [handoff](handoffs/2026-11-22-puesta-en-marcha-desde-cero.md) |
 
 Con 10 pedidos por minuto, una corrida live hace pocas llamadas por normativa
 (una por grupo de map y hasta tres de reduce), pero varias corridas seguidas o

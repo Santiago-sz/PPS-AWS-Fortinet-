@@ -24,6 +24,12 @@ AWS. El sistema **nunca modifica el FortiGate**.
 
 ## Empezar
 
+> **Primera vez en este repositorio, o en una PC nueva:** seguir
+> [`docs/context/puesta-en-marcha-desde-cero.md`](docs/context/puesta-en-marcha-desde-cero.md).
+> Lleva de un clon nuevo a una demostración funcionando: qué no viaja con git,
+> instalación, acceso a AWS, tests, guion de demostración, estado actual y
+> próximos pasos.
+
 - Organización del código: [`docs/context/repository-layout.md`](docs/context/repository-layout.md).
   Componentes independientes en `gui/`, `local-api/`, `audit-engine/` e
   `infrastructure/`. El servidor local y el puente AWS tienen módulos separados;
