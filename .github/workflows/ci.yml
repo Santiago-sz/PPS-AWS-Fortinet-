@@ -53,7 +53,7 @@ jobs:
       - name: pytest
         # En Linux el test del backstop SIGALRM del sandbox corre de verdad
         # (en Windows se salta). Conteo esperado, inferido de la corrida en
-        # Windows (522 passed, 1 skipped) y no observado: 523 passed, 0 skipped.
+        # Windows (572 passed, 1 skipped) y no observado: 573 passed, 0 skipped.
         run: python -m pytest -q -p no:cacheprovider
 
   api:

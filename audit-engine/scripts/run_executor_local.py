@@ -69,11 +69,20 @@ from pathlib import Path
 
 SCRIPTS_DIR = Path(__file__).resolve().parent
 ENGINE_DIR = SCRIPTS_DIR.parent
-for _area in ("executor", "contracts"):
-    if str(ENGINE_DIR / _area) not in sys.path:
-        sys.path.insert(0, str(ENGINE_DIR / _area))
+for _path in (ENGINE_DIR / "executor", ENGINE_DIR / "contracts", SCRIPTS_DIR):
+    if str(_path) not in sys.path:
+        sys.path.insert(0, str(_path))
 
 from botocore.exceptions import BotoCoreError, ClientError  # noqa: E402
+from local_run_common import (  # noqa: E402
+    ConfigError,
+    check_fortigate_env,
+    read_fortigate_env,
+    redacted_logging,
+    require_env,
+    unreachable_message,
+)
+from local_run_common import redact as _redact  # noqa: E402
 
 import reporter  # noqa: E402
 import s3_io  # noqa: E402
@@ -88,53 +97,10 @@ EXIT_PREFLIGHT = 3
 
 DEFAULT_OUTPUT_DIR = ENGINE_DIR / "local-runs"
 PREFLIGHT_ENDPOINT = "system_global"
-REDACTED = "[REDACTED]"
 
 _RUN_ID_PATTERN = re.compile(r"[A-Za-z0-9]{1,64}")
-_LOG_FORMAT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 
 logger = logging.getLogger("run_executor_local")
-
-
-class ConfigError(Exception):
-    """Invalid configuration or input. The message is safe to print."""
-
-
-class _RedactingFilter(logging.Filter):
-    """Removes the token from every log record before a handler emits it.
-
-    Defence in depth: this script never logs the token, but a dependency may
-    embed it in an error text (http.client includes the header value in the
-    error it raises for a malformed header, and the client logs that text).
-    """
-
-    def __init__(self, secret: str):
-        super().__init__()
-        self._secret = secret
-
-    def filter(self, record: logging.LogRecord) -> bool:
-        message = record.getMessage()
-        if self._secret in message:
-            record.msg = message.replace(self._secret, REDACTED)
-            record.args = ()
-        if record.exc_info:
-            formatted = logging.Formatter().formatException(record.exc_info)
-            record.exc_text = formatted.replace(self._secret, REDACTED)
-            record.exc_info = None
-        elif record.exc_text and self._secret in record.exc_text:
-            record.exc_text = record.exc_text.replace(self._secret, REDACTED)
-        return True
-
-
-def _redact(value, secret: str):
-    """Returns `value` with every occurrence of `secret` replaced, recursively."""
-    if isinstance(value, str):
-        return value.replace(secret, REDACTED)
-    if isinstance(value, dict):
-        return {_redact(k, secret): _redact(v, secret) for k, v in value.items()}
-    if isinstance(value, list | tuple):
-        return [_redact(item, secret) for item in value]
-    return value
 
 
 def _run_stamp() -> str:
@@ -172,31 +138,10 @@ def _load_settings(args: argparse.Namespace) -> dict:
         raise ConfigError("Invalid run_id: expected 1 to 64 letters or digits.")
 
     bucket = args.bucket or os.environ.get("S3_BUCKET", "")
-    host = os.environ.get("FORTIGATE_HOST", "").strip()
-    token = os.environ.get("FORTIGATE_TOKEN", "").strip()
-
-    missing = [
-        name
-        for name, value in (
-            ("S3_BUCKET", bucket),
-            ("FORTIGATE_HOST", host),
-            ("FORTIGATE_TOKEN", token),
-        )
-        if not value
-    ]
-    if missing:
-        raise ConfigError(
-            "Required environment variable(s) not set: "
-            + ", ".join(missing)
-            + ". See docs/context/local-executor-run.md."
-        )
-    if any(ch.isspace() or not ch.isprintable() for ch in token):
-        raise ConfigError(
-            "FORTIGATE_TOKEN contains whitespace or control characters. "
-            "Set it again with the exact token value (it is not shown here)."
-        )
-    if "://" in host or "/" in host:
-        raise ConfigError("FORTIGATE_HOST must be a host or host:port, without scheme or path.")
+    fortigate = read_fortigate_env()
+    host, token = fortigate["host"], fortigate["token"]
+    require_env([("S3_BUCKET", bucket), ("FORTIGATE_HOST", host), ("FORTIGATE_TOKEN", token)])
+    check_fortigate_env(host, token)
 
     try:
         budget = sandbox.SandboxBudget(
@@ -219,7 +164,7 @@ def _load_settings(args: argparse.Namespace) -> dict:
         "bucket": bucket,
         "host": host,
         "token": token,
-        "verify_ssl": os.environ.get("FORTIGATE_VERIFY_SSL", "true").lower() == "true",
+        "verify_ssl": fortigate["verify_ssl"],
         "budget": budget,
         "output_dir": args.output_dir,
     }
@@ -273,22 +218,10 @@ def _preflight(client) -> bool:
 
 
 def _preflight_failure_message(host: str, verify_ssl: bool) -> str:
-    return "\n".join(
-        [
-            f"ERROR: preflight failed. The FortiGate at {host} did not answer a read-only "
-            f"GET on '{PREFLIGHT_ENDPOINT}'. Nothing was executed and no report was written.",
-            "The client log lines above show the HTTP status or the network error.",
-            "Likely causes:",
-            "  - The VPN (FortiClient) is not connected, or it does not route to that address.",
-            "  - The trusted host of the REST API admin does not include the IP address",
-            "    that the VPN assigned to this machine (HTTP 401 or 403, or a timeout).",
-            "  - Wrong port: FORTIGATE_HOST accepts host:port when the admin HTTPS port",
-            "    is not 443.",
-            "  - Self-signed certificate: the log shows CERTIFICATE_VERIFY_FAILED. For a",
-            f"    lab only, set FORTIGATE_VERIFY_SSL=false (current value: {verify_ssl}).",
-            "  - Invalid or regenerated token, or a profile without read access (401/403).",
-            "Check it by hand with the curl command in docs/context/local-executor-run.md.",
-        ]
+    return unreachable_message(
+        f"ERROR: preflight failed. The FortiGate at {host} did not answer a read-only "
+        f"GET on '{PREFLIGHT_ENDPOINT}'. Nothing was executed and no report was written.",
+        verify_ssl,
     )
 
 
@@ -429,29 +362,12 @@ def main(argv: list[str] | None = None) -> int:
         _err(f"ERROR: {e}")
         return EXIT_CONFIG
 
-    root = logging.getLogger()
-    previous_level = root.level
-    redacting_filter = _RedactingFilter(settings["token"])
-    own_handler = logging.StreamHandler(sys.stderr)
-    own_handler.setFormatter(logging.Formatter(_LOG_FORMAT))
-    filtered_handlers = [*root.handlers, own_handler]
-    for handler in filtered_handlers:
-        handler.addFilter(redacting_filter)
-    root.addHandler(own_handler)
-    level = getattr(logging, os.environ.get("LOG_LEVEL", "INFO").upper(), logging.INFO)
-    if previous_level == logging.NOTSET or previous_level > level:
-        root.setLevel(level)
-
-    try:
-        return _run(settings)
-    except ConfigError as e:
-        _err(f"ERROR: {e}")
-        return EXIT_CONFIG
-    finally:
-        root.removeHandler(own_handler)
-        for handler in filtered_handlers:
-            handler.removeFilter(redacting_filter)
-        root.setLevel(previous_level)
+    with redacted_logging(settings["token"]):
+        try:
+            return _run(settings)
+        except ConfigError as e:
+            _err(f"ERROR: {e}")
+            return EXIT_CONFIG
 
 
 if __name__ == "__main__":
