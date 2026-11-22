@@ -109,8 +109,13 @@ el árbol de trabajo **sin commitear**.
   y ejecuta el mismo sandbox. Escribe el reporte solo en disco local; no
   escribe en S3, no publica en SNS ni usa Secrets Manager. Guía:
   `docs/context/local-executor-run.md`; opción (d) en `06-conexion-fortigate.md`.
-- **P3 sigue abierto**: la prueba contra el FortiGate real todavía no se
-  realizó. El script solo fue verificado con tests (S3 simulado y cliente
-  FortiGate simulado).
+- **P3, primera prueba real realizada (2026-11-21)**: la ejecución local
+  contra un FortiGate real terminó en `completed` con 12 hallazgos (8 `pass`,
+  4 `fail`) para la normativa DA 641/2021. La lectura funciona de punta a
+  punta. Queda abierta la calidad de los hallazgos (datos vacíos tratados como
+  `pass` o `fail` en lugar de `indeterminate`, criterios no uniformes y una
+  remediación que no considera la configuración leída); el detalle está en
+  `docs/context/status.md`. El reporte no se versiona porque contiene
+  configuración real del equipo.
 - La arquitectura objetivo no cambia: VPN Site-to-Site IPsec con el executor en
   una VPC (opción (a), P9).

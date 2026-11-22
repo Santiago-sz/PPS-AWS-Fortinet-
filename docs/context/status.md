@@ -28,14 +28,33 @@ La rama y el árbol de trabajo actuales se obtienen de Git, no de ese relato.
   Bedrock dejó de ser un bloqueo el 2026-11-18 (ver más abajo).
 - Conectividad FortiGate, perfil GET, token y validación TLS, siguiendo
   [la base de conectividad](../base/06-conexion-fortigate.md).
-- **Primera prueba contra un FortiGate real: pendiente.** El equipo disponible
-  solo es alcanzable por una VPN de usuario desde una estación Windows, por lo
-  que la etapa de ejecución se corre en esa estación con
-  `audit-engine/scripts/run_executor_local.py` (2026-11-21), siguiendo
-  [la guía de ejecución local](local-executor-run.md). El script está cubierto
-  por tests con S3 y FortiGate simulados; no se ejecutó contra AWS ni contra un
-  equipo real. La arquitectura objetivo sigue siendo VPN Site-to-Site IPsec con
-  el executor en una VPC.
+- **Primera prueba contra un FortiGate real: realizada el 2026-11-21, con
+  resultados a revisar.** El equipo solo es alcanzable por una VPN de usuario
+  desde una estación Windows, por lo que la etapa de ejecución se corrió en esa
+  estación con `audit-engine/scripts/run_executor_local.py`, siguiendo
+  [la guía de ejecución local](local-executor-run.md). La corrida
+  `9c1fa81e1a154d1fa510274997381280` (normativa DA 641/2021) terminó en
+  `completed` con 12 hallazgos: 8 `pass` y 4 `fail`. El reporte quedó solo en
+  disco local (`audit-engine/local-runs/`, ignorado por git) porque contiene
+  configuración real del equipo.
+- **Calidad de los hallazgos de esa corrida: pendiente de corrección.** La
+  lectura del reporte muestra controles cuyo resultado no está respaldado por
+  la evidencia:
+  - Dos controles sobre administradores aprobaron con cero administradores y
+    cero usuarios de API leídos, cuando el equipo tiene al menos el usuario de
+    API usado en la prueba. Un dato vacío debería dar `indeterminate`, no
+    `pass`. Falta determinar si el perfil de solo lectura no alcanza ese
+    endpoint o si el script interpreta mal la respuesta.
+  - Un control de registro falló con los campos de evidencia vacíos (nombres de
+    campo que el equipo no devolvió); debería dar `indeterminate`.
+  - El control de NTP falló por no tener servidores propios aunque el equipo
+    sincroniza con FortiGuard.
+  - Antivirus e IPS tienen la misma cobertura (3 de 11 políticas activas) y uno
+    aprobó y el otro falló: el criterio no es uniforme.
+  - Una remediación propone una longitud mínima de contraseña menor que la ya
+    configurada, porque se genera sin conocer la configuración leída.
+- La arquitectura objetivo sigue siendo VPN Site-to-Site IPsec con el executor
+  en una VPC.
 - Confirmación SNS.
 - Restricción de egreso del executor, deduplicación e índice de reportes.
 - Corpus de evals más amplio: documentos largos, múltiples grupos map y casos
