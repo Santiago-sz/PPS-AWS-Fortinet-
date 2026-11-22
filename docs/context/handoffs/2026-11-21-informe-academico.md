@@ -96,3 +96,25 @@ Desde la base limpia `b262cff` de la rama del informe se consultó el capítulo 
 El autor resolvió la consulta de alcance. Continuar con P-001 v2 en informe/propuestas y consultar las atribuciones institucionales pendientes antes de cerrar el capítulo.
 
 Al retomar, usar P-001 v6, pendiente de aprobación editorial. Incluye la función opcional del RAG, el ejemplo de verificación manual, el Golden Circle y la tabla de diferenciales contextualizada. Emplear «reporte» para los resultados exportables de PostureGuard. Para nuevas propuestas, partir de la [plantilla acordada](../../../informe/propuestas/plantilla.md).
+
+Por pedido del autor, I.I de P-001 incorpora el apartado «Contexto real del proyecto (institucional, social y empresarial)» antes de I.II. El texto recoge el papel de ZConsulting y de la institución pública en las pruebas. La carga del capítulo completo en Google Docs sigue en pausa. Se usó la guía pps-handoff.
+
+El autor autorizó la carga completa de P-001 v6. Se verificaron en la pestaña t.0 los 34 párrafos de I.I a I.V, las 15 celdas de la tabla 1 y ambas entradas bibliográficas. La paginación queda pendiente de revisión visual.
+
+Se presentó [P-002 v1](../../../informe/propuestas/P-002-capitulo-ii.md) tras revisar II.I a II.VI en Google Docs. La encuesta corresponde al planteo cloud inicial. Quedan pendientes el respaldo de las diez respuestas, las fechas de aplicación, el cotejo de las figuras y la revisión editorial antes de la carga.
+
+P-002 v2 incorpora la convocatoria interuniversitaria y las consultas a operadores FortiGate confirmadas por el autor. Se cotejaron las diez respuestas con Google Forms y se corrigió en la propuesta la frecuencia de reducción del tiempo de corrección (3 de 10). Pendientes la revisión visual de las figuras y la aprobación editorial.
+
+P-002 v3 recupera las fuentes secundarias identificadas en II.I del informe y su uso en II.V. La revisión editorial y la carga siguen pendientes.
+
+P-002 v4 incorpora en II.V la comparación de ocho alternativas cloud, su relación con la revisión de FortiGate y seis segmentos de organizaciones potencialmente beneficiarias. Pendiente de revisión y carga.
+
+P-002 v5 precisa la participación del personal FortiGate, documenta las fuentes de la comparación, incluye seis leyendas y amplía la conclusión. Se guardó la preferencia de atribución en la guía del informe. Pendientes la revisión visual de las figuras y la carga aprobada.
+
+P-002 v6 precisa las citas institucionales, el alcance de la muestra y el reporte por auditoría. La nota metodológica documenta las selecciones adicionales en las preguntas 5 y 9. La matriz distingue el diagnóstico inicial del estado actual. Sigue pendiente el cotejo visual de las seis figuras y la aprobación de la carga.
+
+Se cotejaron visualmente las seis figuras originales con las leyendas de P-002 v6. R-02-04 queda cubierto. La figura 5 ya muestra el 30 % para reducir el tiempo de corrección. La carga sigue pendiente de aprobación.
+
+Se cargó P-002 v6 con la aprobación del autor. El texto y las cuatro tablas coinciden con la propuesta. Las seis imágenes originales se conservaron junto a sus leyendas y se verificó la referencia de Fortinet en la bibliografía.
+
+Se verificaron los títulos inmediatamente encima de las cuatro tablas del capítulo II en Google Docs (2.1 a 2.4) y se actualizaron las menciones en el texto, P-002 y la guía del informe.

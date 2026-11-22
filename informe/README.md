@@ -32,6 +32,10 @@ una propuesta local no equivale a un cambio cargado en Google Docs.
 6. Verificar la carga y actualizar el registro, la evidencia y el contexto al
    cerrar cada incremento. Conservar propuestas anteriores y sus estados.
 
+En las propuestas, atribuir los antecedentes directamente al instrumento, al registro o al contexto institucional que los respalda. Evitar la fórmula «según los autores».
+
+Cada tabla debe llevar su número y un título descriptivo inmediatamente arriba. Comprobar el orden de numeración y las menciones en el texto al incorporar o mover tablas.
+
 La investigación, los borradores y su contexto se guardan aquí. Los manuales
 técnicos siguen en sus ubicaciones canónicas; se enlazan sin copiarlos.
 Los handoffs del repositorio mantienen una entrada breve que remite a esta
