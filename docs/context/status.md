@@ -57,6 +57,37 @@ La rama y el árbol de trabajo actuales se obtienen de Git, no de ese relato.
     aprobó y el otro falló: el criterio no es uniforme.
   - Una remediación propone una longitud mínima de contraseña menor que la ya
     configurada, porque se genera sin conocer la configuración leída.
+- **Segunda corrida real, con la base de conocimientos actualizada
+  (2026-11-21/22).** Misma normativa y mismo equipo; cambia solo el corpus
+  (24 documentos, ver [manifiesto](rag/corpus.md)). Generación
+  `dd1b2879454a4ddfb426c395481312c0`: 14 controles, los 14 con referencias de
+  la base, script válido al segundo intento (el primero fue rechazado por la
+  lista de permitidos). Ejecución local: `completed`, 14 hallazgos, 7 `pass` y
+  7 `fail` (la primera corrida dio 12 hallazgos, 8 `pass` y 4 `fail`). Como
+  `AUTO_EXECUTE` está activo, el executor de AWS también corrió y dejó en S3 un
+  reporte sin datos, porque no alcanza el equipo; el resultado válido es el
+  local. Comparación con la primera corrida:
+  - Mejoró: antivirus, IPS y filtrado web fallan con el mismo criterio para la
+    misma cobertura; el control de registro de actividad de administradores
+    lee valores reales en lugar de campos vacíos; hay dos controles nuevos
+    (gestión de cuentas y filtrado web); el control de contraseñas ya no
+    propone una longitud mínima menor que la configurada.
+  - Sigue igual: los dos controles de administradores leen cero
+    administradores y aprueban (el perfil del usuario de API es
+    `super_admin_readonly`, por lo que la causa está en el script o en el
+    manejo de la respuesta, no en los permisos); el control de NTP falla aunque
+    el equipo sincroniza con FortiGuard.
+  - Criterios discutibles nuevos: el control de gestión de cuentas falla por
+    la existencia de una cuenta local deshabilitada; el de protección de las
+    comunicaciones aprueba con la misma cobertura baja de inspección SSL que
+    hace fallar al antivirus; el control de contraseñas cambió de criterio
+    entre corridas.
+  - Límite de la comparación: la generación con un modelo de lenguaje no es
+    determinista y hay una sola corrida por lado, por lo que las diferencias
+    no pueden atribuirse por completo al corpus. Es evidencia de mejora, no una
+    medición; para medir hacen falta varias corridas por lado.
+  - Ambas corridas quedaron asociadas a auditorías locales de la aplicación
+    para verlas lado a lado; los reportes no se versionan.
 - La arquitectura objetivo sigue siendo VPN Site-to-Site IPsec con el executor
   en una VPC.
 - Confirmación SNS.

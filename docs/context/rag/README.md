@@ -108,6 +108,13 @@ calidad de las respuestas sobre las planillas de NIST más allá de comprobar
 que se recuperan. No se disparó el pipeline del generador ni se contactó
 ningún FortiGate.
 
+**Actualización posterior (2026-11-22):** se generó y ejecutó una corrida con
+el corpus nuevo (`dd1b2879454a4ddfb426c395481312c0`, misma normativa y mismo
+equipo que la primera). Las 14 consultas a la base respondieron y los 14
+controles llevan referencias. La comparación con la corrida anterior y sus
+límites (una sola corrida por lado, generación no determinista) están en
+[status.md](../status.md).
+
 ## Estado al 2026-11-18: desplegado y probado en AWS
 
 Esta sección registra el despliegue y las pruebas reales. Donde las secciones
