@@ -9,8 +9,11 @@ con la rama, el commit y los cambios pendientes de Git.
 |---|---|
 | [2026-11-22-fortigate-shape-diagnostic](2026-11-22-fortigate-shape-diagnostic.md) | Diagnóstico de solo lectura de la forma de las respuestas del FortiGate: implementado con tests y documentado. Ejecución contra el equipo, revisión y merge pendientes |
 | [2026-11-21-local-executor-runner](2026-11-21-local-executor-runner.md) | Ejecución local del executor para la primera prueba por VPN de usuario: implementada con tests y documentada. Prueba real, revisión y merge pendientes |
+| [2026-11-21-informe-academico](2026-11-21-informe-academico.md) | Estructura y contexto inicial en `/informe`; revisión del autor pendiente |
 | [2026-11-17-bedrock-knowledge-base](2026-11-17-bedrock-knowledge-base.md) | Base de RAG en commits `16b45d3` y `e86bbc1` (CI de `e86bbc1` aprobado). Incremento del 2026-11-18 sin commit: fragmentos recuperados en la fase reduce, trazabilidad en manifest y reporte, filtro por versión y evals de recuperación. Deshabilitada por defecto; revisión y merge pendientes. Actualización del 2026-11-21: corpus definitivo de 25 documentos cargado e ingerido sin fallos, con su manifiesto y un conversor de STIG a Markdown |
+| [2026-11-15-local-functional-validation](2026-11-15-local-functional-validation.md) | Smoke GUI/API real local aprobado; revisión manual y E2E pendientes |
 | [2026-11-15-functional-test-readiness](2026-11-15-functional-test-readiness.md) | Tres correcciones verificadas, CI en Linux aprobado el 2026-11-15 e integradas en `master` |
+| [2026-11-15-branch-cleanup-policy](2026-11-15-branch-cleanup-policy.md) | Regla de limpieza de ramas; merge pendiente |
 | [2026-11-05-skills-hooks](2026-11-05-skills-hooks.md) | Seis skills validadas y hooks definidos; implementación/activación pendiente |
 | [2026-11-05-reorganizacion-repositorio](2026-11-05-reorganizacion-repositorio.md) | Arquitectura implementada, integrada en `master` y con CI remoto aprobado (2026-11-15) |
 | [2026-11-05-contexto-inicial](2026-11-05-contexto-inicial.md) | Primera iteración documental; definición de AGENTS, skills y hooks pendiente |

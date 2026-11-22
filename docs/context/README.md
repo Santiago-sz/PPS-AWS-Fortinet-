@@ -18,6 +18,7 @@ contexto necesario; al retomar una tarea, leer su handoff y contrastarlo con Git
 
 | Necesidad | Contexto inicial | Fuente de detalle |
 |---|---|---|
+| Continuar el informe académico | [Informe PPS/PIF](../../informe/README.md) | Requisitos, investigación, evidencia y propuestas; cambios en Google Docs con aprobación previa |
 | Seleccionar skills | [skills.md](skills.md) | `.agents/skills/<nombre>/SKILL.md` |
 | Entender hooks y su estado | [hooks.md](hooks.md) | Política y contratos; todavía sin implementación/activación |
 | Entender objetivo, alcance y componentes | [project.md](project.md) | [Arquitectura base](../base/01-arquitectura-fase1.md), [mapa base](../base/04-estructura-del-repositorio.md) |

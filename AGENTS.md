@@ -297,8 +297,9 @@ registro de decisiones.
   tests para ocultar fallos ni presentar trabajo parcial como completo.
 - El pedido de implementar una feature autoriza crear su rama y los commits
   locales de sus incrementos bajo estas reglas, salvo restricción expresa del
-  desarrollador. No autoriza push, reescritura del historial, force push, borrado
-  de ramas o despliegues. No modificar la identidad Git para poder commitear.
+  desarrollador. No autoriza push, reescritura del historial, force push ni
+  despliegues. El borrado de ramas se limita a la limpieza posterior al merge
+  definida abajo. No modificar la identidad Git para poder commitear.
 - **Merge solo con revisión y autorización.** Al terminar, entregar resumen,
   diff revisable, commits, pruebas y riesgos o pendientes. Solicitar la revisión
   del desarrollador y esperar su autorización explícita antes de ejecutar el
@@ -307,6 +308,15 @@ registro de decisiones.
   y destino. Si cambia el contenido después de revisarlo, presentar los cambios
   adicionales y obtener autorización actualizada antes del merge. Registrar la
   aprobación en el handoff; nunca inferirla del silencio o del paso del tiempo.
+- **Eliminar ramas terminadas después del merge.** Al completar una feature o
+  fix e integrarla mediante merge autorizado en `master`, eliminar su rama
+  local y remota si ya no se utilizará. Esta regla autoriza esa limpieza sin
+  otra consulta. Antes de borrar, comprobar que todos sus commits están
+  integrados en `master`; para borrar la rama remota, comprobar además que
+  la integración ya está publicada en `origin/master`. Salir de la rama y usar
+  borrado local seguro (`git branch -d`), nunca forzado. No eliminar ramas con
+  trabajo pendiente, compartidas o cuyo uso futuro sea incierto; consultar en
+  esos casos. No borrar `master`. Registrar las ramas eliminadas en el handoff.
 
 ## 12. Política de hooks
 
