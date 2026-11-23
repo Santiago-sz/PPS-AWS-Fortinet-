@@ -39,6 +39,7 @@ from dataclasses import dataclass
 
 import knowledge_retriever
 import observability
+import reference_kinds
 
 logger = logging.getLogger(__name__)
 
@@ -220,13 +221,22 @@ def _render_prompt_section(checks: list[dict], kept: list[_Kept]) -> str:
 
 
 def _references_by_check(checks: list[dict], kept: list[_Kept]) -> dict:
+    """Referencias del manifest por `check_id`: origen, puntaje y tipo.
+
+    `kind` es aditivo: `technical` para la documentacion propia y del
+    fabricante, `normative` para el resto (ver `reference_kinds`). Se deduce
+    de la clave del documento; no cambia que se recupera ni que llega al
+    prompt.
+    """
     references: dict[str, list[dict]] = {}
     for item in kept:
         score = item.fragment.score
+        source = knowledge_retriever.source_identifier(item.fragment.source_uri)
         references.setdefault(str(checks[item.check_index].get("check_id")), []).append(
             {
-                "source": knowledge_retriever.source_identifier(item.fragment.source_uri),
+                "source": source,
                 "score": round(score, 4) if score is not None else None,
+                "kind": reference_kinds.classify(source),
             }
         )
     return references

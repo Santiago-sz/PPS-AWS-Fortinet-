@@ -467,7 +467,9 @@ KNOWLEDGE_BASE_BLOCK = {
     "controls_skipped_by_call_cap": 0,
     "fragments_skipped_by_control_cap": 0,
     "fragments_dropped_by_size_cap": 0,
-    "references": {"chk-0001": [{"source": "fortinet/hardening.pdf", "score": 0.9}]},
+    "references": {
+        "chk-0001": [{"source": "fortinet/hardening.pdf", "score": 0.9, "kind": "technical"}]
+    },
 }
 
 
@@ -630,7 +632,7 @@ class TestKnowledgeBaseEnabled:
         assert prompts[1][1].endswith(llm_client.REFERENCE_SYSTEM_NOTE)
         manifest = put_manifest.call_args.args[2]
         assert manifest["knowledge_base"]["references"] == {
-            "chk-0001": [{"source": "fortinet/hardening.pdf", "score": 0.9}]
+            "chk-0001": [{"source": "fortinet/hardening.pdf", "score": 0.9, "kind": "technical"}]
         }
 
     def test_generation_failure_report_is_unchanged_when_enabled(self, knowledge_env, mocker):

@@ -154,8 +154,8 @@ class TestCollect:
             "fragments_dropped_by_size_cap": 0,
             "references": {
                 "chk-0001": [
-                    {"source": "hardening.pdf", "score": 0.9123},
-                    {"source": None, "score": None},
+                    {"source": "hardening.pdf", "score": 0.9123, "kind": "normative"},
+                    {"source": None, "score": None, "kind": "normative"},
                 ]
             },
         }
@@ -241,8 +241,8 @@ class TestCaps:
         assert "D" * 10 not in context.prompt_section
         assert context.manifest_block["fragments_dropped_by_size_cap"] == 2
         assert context.manifest_block["references"] == {
-            "chk-0001": [{"source": "alto.pdf", "score": 0.9}],
-            "chk-0002": [{"source": "medio.pdf", "score": 0.5}],
+            "chk-0001": [{"source": "alto.pdf", "score": 0.9, "kind": "normative"}],
+            "chk-0002": [{"source": "medio.pdf", "score": 0.5, "kind": "normative"}],
         }
 
     def test_fragments_are_dropped_whole_never_cut(self, monkeypatch):
@@ -349,7 +349,10 @@ class TestPerControlBudget:
         assert "C" * 1_082 not in context.prompt_section
         assert context.manifest_block["fragments_skipped_by_control_cap"] == 2
         assert context.manifest_block["references"] == {
-            "chk-0001": [{"source": "a.pdf", "score": 0.8}, {"source": "b.pdf", "score": 0.7}]
+            "chk-0001": [
+                {"source": "a.pdf", "score": 0.8, "kind": "normative"},
+                {"source": "b.pdf", "score": 0.7, "kind": "normative"},
+            ]
         }
 
     def test_a_later_smaller_fragment_can_still_fit_after_a_skipped_one(self, monkeypatch):
@@ -385,6 +388,45 @@ class TestPerControlBudget:
         assert len(block["references"]["chk-0001"]) == 2
 
 
+class TestReferenceKind:
+    """Cada referencia del manifest declara si es técnica o normativa, según
+    el prefijo de su clave. La recuperación y el prompt no cambian."""
+
+    def test_each_reference_states_its_kind_by_key_prefix(self):
+        retriever = FakeRetriever(
+            default=[
+                _fragment("a", "s3://kb/propio/campos-fortios-7.6.8.md", 0.9),
+                _fragment("b", "s3://kb/fortinet/Best_Practices.pdf", 0.8),
+                _fragment("c", "s3://kb/nist/SP800-53r5.pdf", 0.7),
+            ]
+        )
+
+        references = collect([_check(1)], CONFIG, retrieve=retriever).manifest_block["references"]
+
+        assert references["chk-0001"] == [
+            {"source": "propio/campos-fortios-7.6.8.md", "score": 0.9, "kind": "technical"},
+            {"source": "fortinet/Best_Practices.pdf", "score": 0.8, "kind": "technical"},
+            {"source": "nist/SP800-53r5.pdf", "score": 0.7, "kind": "normative"},
+        ]
+
+    def test_the_kind_does_not_change_what_reaches_the_prompt(self):
+        retriever = FakeRetriever(
+            default=[
+                _fragment("texto-tecnico", "s3://kb/propio/nota.md", 0.9),
+                _fragment("texto-normativo", "s3://kb/nist/norma.pdf", 0.7),
+            ]
+        )
+
+        section = collect([_check(1)], CONFIG, retrieve=retriever).prompt_section
+
+        assert "[fuente: propio/nota.md | puntaje: 0.9000]" in section
+        assert "[fuente: nist/norma.pdf | puntaje: 0.7000]" in section
+        assert "texto-tecnico" in section
+        assert "texto-normativo" in section
+        assert "technical" not in section
+        assert "normative" not in section
+
+
 class TestAccountIdNeverLeaves:
     URI = "https://pps-prod-knowledge-123456789012.s3.amazonaws.com/fortinet/Best_Practices.pdf"
 
@@ -394,7 +436,9 @@ class TestAccountIdNeverLeaves:
         context = collect([_check(1)], CONFIG, retrieve=retriever)
 
         assert context.manifest_block["references"] == {
-            "chk-0001": [{"source": "fortinet/Best_Practices.pdf", "score": 0.8}]
+            "chk-0001": [
+                {"source": "fortinet/Best_Practices.pdf", "score": 0.8, "kind": "technical"}
+            ]
         }
         assert "[fuente: fortinet/Best_Practices.pdf | puntaje: 0.8000]" in context.prompt_section
         for emitted in (

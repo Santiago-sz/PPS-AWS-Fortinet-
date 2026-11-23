@@ -878,15 +878,102 @@ class TestReferencesInPolicyReport:
         markdown = build_policy_report_markdown(findings, [], *GOLDEN_ARGS)
 
         assert "## Documentación de referencia" in markdown
-        section = markdown.split("## Documentación de referencia")[1]
-        line_1 = next(ln for ln in section.splitlines() if ln.startswith("- `chk-0001`"))
-        # Un documento repetido se lista una vez, con su mejor puntaje.
-        assert line_1.count("fortinet/hardening.pdf") == 1
-        assert "`fortinet/hardening.pdf` (puntaje 0.91)" in line_1
-        assert "`fortinet/cli-reference.pdf`" in line_1
+        normative = self._section(markdown, "## Documentación de referencia")
+        line_1 = next(ln for ln in normative.splitlines() if ln.startswith("- `chk-0001`"))
+        # Un origen ausente no se puede clasificar como técnico: queda acá.
         assert "origen no informado" in line_1
-        line_2 = next(ln for ln in section.splitlines() if ln.startswith("- `chk-0002`"))
+        line_2 = next(ln for ln in normative.splitlines() if ln.startswith("- `chk-0002`"))
         assert "sin documentos de referencia" in line_2
+
+        # Los documentos del fabricante son técnicos y van en su propia sección.
+        technical = self._section(markdown, "## Referencias técnicas (no normativas)")
+        tech_1 = next(ln for ln in technical.splitlines() if ln.startswith("- `chk-0001`"))
+        # Un documento repetido se lista una vez, con su mejor puntaje.
+        assert tech_1.count("fortinet/hardening.pdf") == 1
+        assert "`fortinet/hardening.pdf` (puntaje 0.91)" in tech_1
+        assert "`fortinet/cli-reference.pdf`" in tech_1
+        assert "fortinet/" not in normative
+
+    @staticmethod
+    def _section(markdown: str, heading: str) -> str:
+        """Texto de una sección, hasta el próximo encabezado de nivel 2."""
+        return markdown.split(heading + "\n", 1)[1].split("\n## ", 1)[0]
+
+    MIXED = [
+        {"source": "nist/SP800-53r5.pdf", "score": 0.82},
+        {"source": "propio/campos-fortios-7.6.8.md", "score": 0.95},
+        {"source": "fortinet/hardening.pdf", "score": 0.6},
+        {"source": "argentina/Disp-1-2022.pdf", "score": 0.5},
+    ]
+
+    def test_technical_sources_are_listed_apart_from_normative_ones(self):
+        markdown = build_policy_report_markdown(
+            [_with_references(GOLDEN_FINDING, self.MIXED)], [], *GOLDEN_ARGS
+        )
+
+        normative = self._section(markdown, "## Documentación de referencia")
+        technical = self._section(markdown, "## Referencias técnicas (no normativas)")
+
+        assert "`nist/SP800-53r5.pdf` (puntaje 0.82)" in normative
+        assert "`argentina/Disp-1-2022.pdf` (puntaje 0.50)" in normative
+        assert "propio/" not in normative
+        assert "fortinet/" not in normative
+        assert "`propio/campos-fortios-7.6.8.md` (puntaje 0.95)" in technical
+        assert "`fortinet/hardening.pdf` (puntaje 0.60)" in technical
+        assert "nist/" not in technical
+        assert "argentina/" not in technical
+        assert markdown.index("## Documentación de referencia") < markdown.index(
+            "## Referencias técnicas (no normativas)"
+        )
+
+    def test_the_technical_section_says_it_is_not_normative(self):
+        markdown = build_policy_report_markdown(
+            [_with_references(GOLDEN_FINDING, self.MIXED)], [], *GOLDEN_ARGS
+        )
+
+        technical = self._section(markdown, "## Referencias técnicas (no normativas)")
+
+        assert "no son normativa" in technical
+        assert "fabricante" in technical
+
+    def test_a_finding_with_only_technical_sources_says_so_in_the_normative_list(self):
+        references = [{"source": "propio/nota.md", "score": 0.9}]
+
+        markdown = build_policy_report_markdown(
+            [_with_references(GOLDEN_FINDING, references)], [], *GOLDEN_ARGS
+        )
+
+        normative = self._section(markdown, "## Documentación de referencia")
+        line = next(ln for ln in normative.splitlines() if ln.startswith("- `chk-0001`"))
+        assert "sin documentos normativos" in line
+        assert "propio/nota.md" not in normative
+
+    def test_there_is_no_technical_section_without_technical_sources(self):
+        references = [{"source": "nist/SP800-53r5.pdf", "score": 0.82}]
+
+        markdown = build_policy_report_markdown(
+            [_with_references(GOLDEN_FINDING, references)], [], *GOLDEN_ARGS
+        )
+
+        assert "## Documentación de referencia" in markdown
+        assert "Referencias técnicas" not in markdown
+
+    def test_a_kind_field_in_the_reference_is_tolerated_and_the_prefix_decides(self):
+        # El reporte clasifica por la clave del documento, así que funciona
+        # igual con referencias que traen `kind` y con las que no.
+        references = [
+            {"source": "propio/nota.md", "score": 0.9, "kind": "normative"},
+            {"source": "nist/norma.pdf", "score": 0.8, "kind": "technical"},
+        ]
+
+        markdown = build_policy_report_markdown(
+            [_with_references(GOLDEN_FINDING, references)], [], *GOLDEN_ARGS
+        )
+
+        assert "propio/nota.md" in self._section(
+            markdown, "## Referencias técnicas (no normativas)"
+        )
+        assert "nist/norma.pdf" in self._section(markdown, "## Documentación de referencia")
 
     def test_markdown_states_references_do_not_change_the_result(self):
         markdown = build_policy_report_markdown(
