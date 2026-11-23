@@ -431,6 +431,8 @@ class TestPackaging:
         for area in ("generator", "executor", "contracts", "legacy"):
             assert not (ENGINE_DIR / area / BUILDER_PATH.name).exists()
 
-    def test_the_executor_does_not_import_the_catalogue(self):
+    def test_the_executor_does_not_use_the_catalogue(self):
+        # Cubre `fortios_field_catalog` y `field_catalog`: el estado de un
+        # hallazgo lo decide el toolkit con los datos reales, no el catálogo.
         for module in (ENGINE_DIR / "executor").glob("*.py"):
-            assert "fortios_field_catalog" not in module.read_text(encoding="utf-8"), module.name
+            assert "field_catalog" not in module.read_text(encoding="utf-8"), module.name
