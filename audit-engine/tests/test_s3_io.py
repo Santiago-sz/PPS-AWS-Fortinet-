@@ -106,6 +106,35 @@ class TestBuildManifest:
         assert manifest["generated_at"] == "2026-09-10T12:00:00Z"
         assert manifest["script_sha256"] == "b" * 64
 
+    def _manifest(self, **extra) -> dict:
+        return build_manifest(
+            run_id="run-1",
+            policy_key="policies/norma.pdf",
+            policy_sha256="a" * 64,
+            script_key="artifacts/run-1/script.py",
+            script_sha256="b" * 64,
+            checks=[],
+            attempts=1,
+            model="claude-sonnet-4-6",
+            generated_at="2026-09-10T12:00:00Z",
+            **extra,
+        )
+
+    def test_the_field_catalog_block_is_additive_and_optional(self):
+        block = {
+            "fortios_version": "v7.6.8",
+            "unknown_field_references": 1,
+            "references": [{"field": "zone", "endpoints": ["interfaces"], "line": 12}],
+            "reduce_calls": 2,
+        }
+
+        without = self._manifest()
+        with_block = self._manifest(field_catalog=block)
+
+        assert "field_catalog" not in without
+        assert with_block["field_catalog"] == block
+        assert {k: v for k, v in with_block.items() if k != "field_catalog"} == without
+
 
 class TestManifestRoundTrip:
     def test_put_then_get_manifest_preserves_all_fields(self, bucket):

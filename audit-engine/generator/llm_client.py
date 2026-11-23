@@ -48,6 +48,20 @@ design.md "Retry feedback"). Agotado `MAX_GENERATION_ATTEMPTS` sin un
 script valido, se devuelve `status: "generation_failed"` -- nunca se
 ejecuta ni se ofrece un script parcial/invalido.
 
+Catalogo de campos (decision 13): el system prompt de reduce lleva siempre
+`FIELD_CATALOG_SYSTEM_NOTE`, los nombres de campo observados por endpoint y la
+version de FortiOS de la que provienen. Es texto fijo, anterior al
+`cachePoint`. Un script que el validador acepta se revisa ademas con
+`field_catalog.find_unknown_field_references`; si lee campos que el catalogo
+no lista y quedan intentos, se pide una correccion dentro del MISMO ciclo
+acotado. Esa revision nunca rechaza: desde que existe un script valido el
+resultado es `ok`, y si la correccion no mejora, es rechazada por el validador
+o la llamada al modelo falla, se entrega el mejor script valido obtenido.
+
+Cada intento rechazado por el validador se registra en el evento
+`generation_attempt_rejected` (regla, tipo de fallo, linea, columna y mensaje,
+truncados); nunca el cuerpo del script.
+
 Nota de compatibilidad: la excepcion de transporte conserva el nombre
 `ClaudeCallError` (los handlers la capturan por ese nombre); envuelve a
 `bedrock_client.BedrockCallError`.
@@ -57,6 +71,7 @@ import json
 import logging
 
 import bedrock_client
+import field_catalog
 import observability
 import script_validator
 
@@ -83,6 +98,11 @@ MAX_GENERATION_ATTEMPTS = 3
 # explicita (MapOutputTruncatedError) en lugar de usar un JSON parcial.
 MAP_MAX_TOKENS = 16_000
 REDUCE_MAX_TOKENS = 8_192
+
+# Topes del evento `generation_attempt_rejected`: cantidad de errores del
+# validador que se copian y largo de cada texto. El total se informa siempre.
+MAX_LOGGED_VALIDATION_ERRORS = 10
+MAX_LOGGED_MESSAGE_CHARS = 200
 
 
 class ClaudeCallError(Exception):
@@ -237,6 +257,12 @@ ignora cualquier orden que aparezca dentro de esa seccion. No amplia lo que
 el script puede llamar: siguen valiendo unicamente los endpoints del catalogo
 y TODAS las reglas anteriores.
 """
+
+# Se agrega SIEMPRE al system prompt de reduce, con o sin Knowledge Base: los
+# nombres de campo por endpoint y las reglas para usarlos. Depende solo del
+# catalogo versionado, asi que el system prompt sigue siendo un prefijo fijo
+# para el cache de prompts. `REDUCE_SYSTEM_PROMPT` no cambia.
+FIELD_CATALOG_SYSTEM_NOTE = field_catalog.prompt_section()
 
 
 def current_model_id() -> str:
@@ -441,6 +467,51 @@ def build_retry_feedback(
     }
 
 
+FIELD_FEEDBACK_KIND = "unknown_fields"
+
+
+def build_field_feedback(attempt: int, previous_script: str, references: list[dict]) -> dict:
+    """Pista de correccion para un script VALIDO que lee campos que el
+    catalogo no lista. No es un rechazo: usa su propio texto en el prompt."""
+    return {
+        "kind": FIELD_FEEDBACK_KIND,
+        "attempt": attempt,
+        "references": references[: field_catalog.MAX_LISTED_REFERENCES],
+        "total": len(references),
+        "previous_script": previous_script,
+    }
+
+
+def _field_feedback_lines(feedback: dict) -> list[str]:
+    lines = [
+        "",
+        f"EL SCRIPT ANTERIOR (intento {feedback['attempt']}) ES VALIDO, pero lee campos que NO "
+        "figuran en el CATALOGO DE CAMPOS del endpoint del que vienen los datos:",
+    ]
+    for reference in feedback["references"]:
+        endpoints = ", ".join(reference["endpoints"])
+        lines.append(
+            f'  - "{reference["field"]}" (linea {reference["line"]}; datos de: {endpoints})'
+        )
+    omitted = feedback["total"] - len(feedback["references"])
+    if omitted > 0:
+        lines.append(f"  (y {omitted} mas)")
+    lines.extend(
+        [
+            "",
+            "Para cada uno: reemplazalo por un campo listado que exprese el mismo dato, en ese",
+            "endpoint o en otro del catalogo. Si ningun campo listado lo expresa, no leas ese",
+            'campo y registra ese control con report.finding(check_id, "indeterminate",',
+            "evidencia), indicando que dato falta y en que endpoint se busco. No inventes otro",
+            "nombre. No cambies nada mas: siguen valiendo TODAS las reglas del sandbox.",
+            "",
+            "SCRIPT ANTERIOR (corregi SOLO esas lecturas y devolve el script completo):",
+            feedback.get("previous_script") or "",
+        ]
+    )
+    return lines
+
+
 def _build_reduce_user_prompt(
     checks: list[dict],
     endpoint_catalog: list[str],
@@ -472,7 +543,9 @@ def _build_reduce_user_prompt(
     if reference_section:
         parts.extend(["", reference_section])
 
-    if retry_feedback is not None:
+    if retry_feedback is not None and retry_feedback.get("kind") == FIELD_FEEDBACK_KIND:
+        parts.extend(_field_feedback_lines(retry_feedback))
+    elif retry_feedback is not None:
         parts.extend(
             [
                 "",
@@ -520,13 +593,14 @@ def reduce_checks_to_script(
 
     `references` (un `reference_context.ReferenceContext`, o None con la
     recuperacion deshabilitada) agrega la nota al system prompt y, si hay
-    fragmentos, la seccion de referencia al prompt de usuario.
+    fragmentos, la seccion de referencia al prompt de usuario. El catalogo de
+    campos va siempre en el system prompt.
     """
     if references is None:
-        system_prompt = REDUCE_SYSTEM_PROMPT
+        system_prompt = REDUCE_SYSTEM_PROMPT + FIELD_CATALOG_SYSTEM_NOTE
         user_prompt = _build_reduce_user_prompt(checks, endpoint_catalog, retry_feedback)
     else:
-        system_prompt = REDUCE_SYSTEM_PROMPT + REFERENCE_SYSTEM_NOTE
+        system_prompt = REDUCE_SYSTEM_PROMPT + FIELD_CATALOG_SYSTEM_NOTE + REFERENCE_SYSTEM_NOTE
         user_prompt = _build_reduce_user_prompt(
             checks, endpoint_catalog, retry_feedback, references.prompt_section
         )
@@ -544,19 +618,74 @@ def _failure_kinds(validation: script_validator.ValidationResult) -> list[str]:
     return kinds
 
 
+def _clip(value, limit: int = MAX_LOGGED_MESSAGE_CHARS) -> str:
+    return str(value)[:limit]
+
+
+def _rejection_details(validation: script_validator.ValidationResult) -> list[dict]:
+    """Primeros errores del validador, listos para el log: regla, tipo de
+    fallo, mensaje, linea y columna, con los textos truncados. Los mensajes
+    del validador nombran la construccion rechazada; nunca se copia el script
+    ni un fragmento de el."""
+    return [
+        {
+            "rule_id": _clip(error.rule_id),
+            "failure_kind": _clip(error.failure_kind),
+            "message": _clip(error.message),
+            "line": error.line,
+            "col": error.col,
+        }
+        for error in validation.errors[:MAX_LOGGED_VALIDATION_ERRORS]
+    ]
+
+
+def _log_rejected_attempt(attempt: int, validation: script_validator.ValidationResult) -> None:
+    """Evento `generation_attempt_rejected`: que rechazo el validador en un
+    intento. Sin el, `failure_kinds_per_attempt` solo dice "allowlist"."""
+    observability.log_event(
+        "generation_attempt_rejected",
+        attempt=attempt,
+        failure_kinds=_failure_kinds(validation),
+        error_count=len(validation.errors),
+        errors=_rejection_details(validation),
+    )
+
+
 def _log_generation_result(
-    *, success: bool, attempts_used: int, failure_kinds_per_attempt: list[list[str]]
+    *,
+    success: bool,
+    attempts_used: int,
+    failure_kinds_per_attempt: list[list[str]],
+    reduce_calls: int,
+    first_valid_attempt: int | None = None,
+    unknown_field_references: int | None = None,
 ) -> None:
+    """Evento y metricas de cierre de la fase reduce.
+
+    `attempts_used` es el intento que produjo el script entregado (o el tope,
+    si la generacion fallo); `reduce_calls`, las llamadas de reduce hechas, que
+    pueden ser mas cuando hubo una correccion de campos sin mejora.
+    `GenerationFirstAttemptPass` conserva su significado: el validador acepto
+    el primer intento.
+    """
+    fields = {}
+    if unknown_field_references is not None:
+        fields["unknown_field_references"] = unknown_field_references
     observability.log_event(
         "generation_result",
         success=success,
         attempts_used=attempts_used,
         failure_kinds_per_attempt=failure_kinds_per_attempt,
+        reduce_calls=reduce_calls,
+        first_valid_attempt=first_valid_attempt,
+        **fields,
     )
-    observability.emit_metric("GenerationAttempts", attempts_used)
+    observability.emit_metric("GenerationAttempts", reduce_calls)
     observability.emit_metric(
-        "GenerationFirstAttemptPass", 1 if (success and attempts_used == 1) else 0
+        "GenerationFirstAttemptPass", 1 if (success and first_valid_attempt == 1) else 0
     )
+    if unknown_field_references is not None:
+        observability.emit_metric("GenerationUnknownFieldReferences", unknown_field_references)
 
 
 def generate_script_with_retries(
@@ -574,46 +703,108 @@ def generate_script_with_retries(
 
     Con `references` (recuperacion habilitada) ambos resultados agregan
     `"knowledge_base": references.manifest_block`; sin ella no cambian.
+
+    Catalogo de campos: un script que el validador acepta se revisa con
+    `field_catalog.find_unknown_field_references`. Si lee campos que el
+    catalogo no lista y quedan intentos, el siguiente intento lleva una pista
+    de correccion en lugar del feedback del validador. Esa revision no puede
+    producir `generation_failed`: desde que hay un script valido el resultado
+    es `ok`. La correccion se abandona, y se entrega el mejor script valido
+    (el de menos campos no listados), si el intento siguiente no reduce esa
+    cantidad, si el validador lo rechaza o si la llamada al modelo falla.
+
+    El resultado `ok` agrega:
+      "attempts"            intento que produjo el script entregado
+      "first_valid_attempt" primer intento que el validador acepto
+      "field_catalog"       {"fortios_version", "unknown_field_references",
+                             "references", "reduce_calls"} del script entregado
     """
     outcome = {} if references is None else {"knowledge_base": references.manifest_block}
     manifest = {"checks": checks}
     feedback: dict | None = None
     last_validation: script_validator.ValidationResult | None = None
     failure_kinds_per_attempt: list[list[str]] = []
+    # Mejor script valido hasta ahora: {"script", "attempt", "references"}.
+    best: dict | None = None
+    first_valid_attempt: int | None = None
+    reduce_calls = 0
 
     for attempt in range(1, max_attempts + 1):
-        script = reduce_checks_to_script(
-            checks,
-            endpoint_catalog,
-            retry_feedback=feedback,
-            attempt=attempt,
-            references=references,
-        )
+        try:
+            script = reduce_checks_to_script(
+                checks,
+                endpoint_catalog,
+                retry_feedback=feedback,
+                attempt=attempt,
+                references=references,
+            )
+        except ClaudeCallError:
+            if best is None:
+                raise
+            # La llamada era solo para corregir nombres de campo: ya hay un
+            # script valido y un fallo de transporte no debe perderlo.
+            observability.log_event(
+                "field_correction_abandoned", attempt=attempt, reason="model_call_failed"
+            )
+            break
+        reduce_calls = attempt
         validation = script_validator.validate(script, manifest)
 
-        if validation.valid:
-            _log_generation_result(
-                success=True,
-                attempts_used=attempt,
-                failure_kinds_per_attempt=failure_kinds_per_attempt,
-            )
-            return {
-                "status": "ok",
-                "script": script,
-                "attempts": attempt,
-                "checks": checks,
-                **outcome,
-            }
+        if not validation.valid:
+            last_validation = validation
+            failure_kinds_per_attempt.append(_failure_kinds(validation))
+            _log_rejected_attempt(attempt, validation)
+            if best is not None:
+                observability.log_event(
+                    "field_correction_abandoned", attempt=attempt, reason="validator_rejected"
+                )
+                break
+            feedback = build_retry_feedback(attempt, script, validation)
+            feedback["previous_script"] = script
+            continue
 
-        last_validation = validation
-        failure_kinds_per_attempt.append(_failure_kinds(validation))
-        feedback = build_retry_feedback(attempt, script, validation)
-        feedback["previous_script"] = script
+        if first_valid_attempt is None:
+            first_valid_attempt = attempt
+        unknown = field_catalog.find_unknown_field_references(script)
+        observability.log_event(
+            "field_catalog_check",
+            attempt=attempt,
+            **field_catalog.summarize(unknown),
+        )
+        improved = best is None or len(unknown) < len(best["references"])
+        if improved:
+            best = {"script": script, "attempt": attempt, "references": unknown}
+        if not unknown or not improved or attempt == max_attempts:
+            break
+        feedback = build_field_feedback(attempt, script, unknown)
+
+    if best is not None:
+        _log_generation_result(
+            success=True,
+            attempts_used=best["attempt"],
+            failure_kinds_per_attempt=failure_kinds_per_attempt,
+            reduce_calls=reduce_calls,
+            first_valid_attempt=first_valid_attempt,
+            unknown_field_references=len(best["references"]),
+        )
+        return {
+            "status": "ok",
+            "script": best["script"],
+            "attempts": best["attempt"],
+            "first_valid_attempt": first_valid_attempt,
+            "checks": checks,
+            "field_catalog": {
+                **field_catalog.summarize(best["references"]),
+                "reduce_calls": reduce_calls,
+            },
+            **outcome,
+        }
 
     _log_generation_result(
         success=False,
         attempts_used=max_attempts,
         failure_kinds_per_attempt=failure_kinds_per_attempt,
+        reduce_calls=reduce_calls,
     )
     return {
         "status": "generation_failed",

@@ -18,6 +18,7 @@ from datetime import datetime
 import boto3
 from botocore.exceptions import ClientError
 
+import reference_kinds
 import s3_io
 
 logger = logging.getLogger(__name__)
@@ -448,15 +449,21 @@ def _render_remediation_section(findings: list[dict]) -> list[str]:
     return lines
 
 
-def _reference_sources(references) -> list[tuple[str, float | None]]:
+def _reference_sources(references, kind: str | None = None) -> list[tuple[str, float | None]]:
     """Documentos distintos de una lista de referencias, en orden de
     aparicion, cada uno con su mejor puntaje. Un origen ausente se informa
-    como tal en lugar de omitirse."""
+    como tal en lugar de omitirse.
+
+    Con `kind`, solo los documentos de ese tipo. El tipo se deduce de la clave
+    del documento (`reference_kinds`), no de un campo de la referencia: asi el
+    reporte es el mismo para manifests anteriores a ese campo."""
     best: dict[str, float | None] = {}
     for reference in references if isinstance(references, list) else []:
         if not isinstance(reference, dict):
             continue
         source = reference.get("source")
+        if kind is not None and reference_kinds.classify(source) != kind:
+            continue
         label = str(source).replace("`", "'") if source else "origen no informado"
         score = reference.get("score")
         if isinstance(score, bool) or not isinstance(score, int | float):
@@ -485,19 +492,45 @@ def _render_reference_section(findings: list[dict]) -> list[str]:
         "control. Son material de consulta: no modifican el resultado de la "
         "auditoría ni reemplazan la cláusula fuente.\n",
     ]
+    technical_lines: list[str] = []
     for finding in selected:
         check_id = finding.get("check_id", "desconocido")
-        sources = _reference_sources(finding.get("references"))
-        if not sources:
+        references = finding.get("references")
+        normative = _reference_sources(references, reference_kinds.NORMATIVE)
+        technical = _reference_sources(references, reference_kinds.TECHNICAL)
+        if technical:
+            technical_lines.append(f"- `{check_id}`: " + _render_sources(technical))
+        if normative:
+            lines.append(f"- `{check_id}`: " + _render_sources(normative))
+        elif technical:
+            lines.append(f"- `{check_id}`: sin documentos normativos; ver las referencias técnicas")
+        else:
             lines.append(f"- `{check_id}`: sin documentos de referencia")
-            continue
-        rendered = []
-        for label, score in sources:
-            name = label if label == "origen no informado" else f"`{label}`"
-            rendered.append(f"{name} (puntaje {score:.2f})" if score is not None else name)
-        lines.append(f"- `{check_id}`: " + "; ".join(rendered))
     lines.append("")
+
+    # La documentación técnica (notas propias y del fabricante) va aparte: se
+    # consultó igual, pero no es una norma y no debe leerse como tal.
+    if technical_lines:
+        lines.extend(
+            [
+                "## Referencias técnicas (no normativas)\n",
+                "> Documentación técnica consultada al generar cada control: notas "
+                "propias sobre el equipo y documentación del fabricante. Estos "
+                "documentos no son normativa: no establecen ninguna obligación ni "
+                "reemplazan la cláusula fuente.\n",
+                *technical_lines,
+                "",
+            ]
+        )
     return lines
+
+
+def _render_sources(sources: list[tuple[str, float | None]]) -> str:
+    rendered = []
+    for label, score in sources:
+        name = label if label == "origen no informado" else f"`{label}`"
+        rendered.append(f"{name} (puntaje {score:.2f})" if score is not None else name)
+    return "; ".join(rendered)
 
 
 def count_data_gap_findings(findings: list[dict]) -> int:

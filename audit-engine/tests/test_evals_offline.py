@@ -94,3 +94,51 @@ def test_offline_evals_exit_1_when_thresholds_are_not_met(tmp_path):
     assert exit_code == 1
     payload = json.loads(next(tmp_path.glob("*-offline.json")).read_text(encoding="utf-8"))
     assert payload["threshold_failures"] == ["overall: first_attempt_pass_rate=0.667 < 1.0"]
+
+
+def test_offline_evals_report_the_field_catalog_metrics(tmp_path, capsys):
+    """Las fixtures grabadas son anteriores al catálogo de campos: sus tres
+    scripts leen campos que el catálogo no lista y no traen una respuesta para
+    el intento de corrección. El runner debe informarlo, no esconderlo: el
+    script grabado se entrega igual y la llamada de corrección queda contada
+    como pedida y sin respuesta."""
+    run_evals = _load_run_evals()
+
+    exit_code = run_evals.main(["--mode", "offline", "--results-dir", str(tmp_path)])
+    out = capsys.readouterr().out
+
+    assert exit_code == 0
+    payload = json.loads(next(tmp_path.glob("*-offline.json")).read_text(encoding="utf-8"))
+    by_name = {m["policy"]: m for m in payload["per_policy"]}
+
+    logging_policy = by_name["politica-registro-y-ntp"]
+    assert logging_policy["first_attempt_pass"] is True
+    assert logging_policy["attempts_used"] == 1
+    assert logging_policy["unknown_field_references"] == 2
+    assert logging_policy["unknown_fields"] == ["event", "forward-traffic"]
+    assert logging_policy["reduce_calls"] == 1
+    assert logging_policy["reduce_calls_unanswered"] == 1
+
+    assert by_name["politica-contrasenas"]["unknown_fields"] == [
+        "min-length",
+        "must-contain",
+        "password-expire",
+    ]
+    admin_policy = by_name["politica-acceso-administrativo"]
+    assert admin_policy["unknown_fields"] == ["admintimeout"]
+    assert admin_policy["reduce_calls"] == 2
+    assert admin_policy["reduce_calls_unanswered"] == 1
+
+    assert payload["overall"]["total_unknown_field_references"] == 6
+    assert payload["overall"]["reduce_calls_unanswered"] == 3
+    assert "field catalog: 6 unknown field reference(s)" in out
+    assert "re-record with --mode live --record" in out
+
+
+def test_live_token_estimate_counts_the_field_catalog():
+    run_evals = _load_run_evals()
+    import llm_client
+
+    estimate = run_evals.estimate_live_tokens("", attempts=1)
+
+    assert estimate >= len(llm_client.FIELD_CATALOG_SYSTEM_NOTE) // 4

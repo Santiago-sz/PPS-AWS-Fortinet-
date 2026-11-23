@@ -104,6 +104,40 @@ documento respaldó cada control.
 - El filtro solo funciona si los documentos se cargan con el metadato
   `fortios_version`; ese etiquetado no está hecho.
 
+## Actualización del 2026-11-22: referencias técnicas y normativas
+
+La base de conocimientos guarda en el mismo bucket normativas y documentación
+técnica: notas propias del laboratorio bajo `propio/` (listas de campos de
+FortiOS 7.6.8, el catálogo de endpoints) y documentación del fabricante bajo
+`fortinet/`. El manifest registraba todas las fuentes sin tipo y el reporte
+las listaba juntas en «Documentación de referencia», de modo que una nota
+técnica podía leerse como si fuera una norma.
+
+Cambio, en la rama `feature/generator-field-catalog`, verificado solo con
+tests:
+
+- `contracts/reference_kinds.py` clasifica una referencia por el prefijo de
+  su clave: `propio/` y `fortinet/` son `technical`; todo lo demás, incluido
+  un origen ausente, es `normative`.
+- Cada referencia del bloque `knowledge_base` del manifest gana el campo
+  aditivo `kind`.
+- El reporte Markdown lista las fuentes técnicas en una sección aparte,
+  «Referencias técnicas (no normativas)», con una nota que aclara que no
+  establecen ninguna obligación. «Documentación de referencia» conserva las
+  normativas.
+- El reporte clasifica por la clave del documento, no por `kind`: un manifest
+  anterior, sin ese campo, produce el mismo resultado.
+
+Sin cambios: la recuperación, el prompt, `toolkit.py` (sigue copiando solo
+`source` y `score` a cada hallazgo, por lo que `report.json` no trae `kind`)
+y el reporte de un manifest sin el bloque. `local-api` y `gui` no leen las
+referencias; no se modificaron.
+
+Límite: la regla depende de la organización del bucket. Una carpeta técnica
+nueva con otro prefijo se informa como normativa hasta que se agregue a
+`TECHNICAL_PREFIXES`. Los prefijos fueron informados en el encargo; el bucket
+no se consultó.
+
 ## Sin verificar
 
 - El código de este incremento no se ejecutó contra la Knowledge Base real

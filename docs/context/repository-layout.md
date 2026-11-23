@@ -48,7 +48,9 @@ mediante bloques `source`. Los nombres de los handlers y recursos Terraform no
 cambian. No se incluyen tests ni bytecode en ese archivo. Tampoco `scripts/`:
 `run_executor_local.py` (2026-11-21), `diagnose_fortigate_local.py` y su módulo
 compartido `local_run_common.py` (2026-11-22) se usan solo en una estación de
-trabajo.
+trabajo, igual que `build_field_catalog.py` (2026-11-22). El catálogo de campos
+que este último escribe, `generator/fortios_field_catalog.py`, sí viaja en el
+ZIP: es un módulo `.py` de `generator/`.
 
 La separación de carpetas no constituye aislamiento de permisos. Los roles IAM
 siguen definiendo las capacidades del generador y executor. Este cambio conserva

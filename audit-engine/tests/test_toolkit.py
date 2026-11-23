@@ -253,6 +253,32 @@ class TestReportCapabilityReferences:
         assert findings[1]["references"] == []
         assert findings[2]["references"] == []
 
+    def test_a_manifest_whose_references_declare_a_kind_is_read_as_before(self):
+        """El generador agrega `kind` a cada referencia del manifest. El
+        toolkit no cambió: sigue copiando solo `source` y `score`, y el
+        reporte clasifica por la clave del documento."""
+        manifest = {
+            **VALID_MANIFEST,
+            "knowledge_base": {
+                "enabled": True,
+                "references": {
+                    "chk1": [
+                        {"source": "propio/nota.md", "score": 0.9, "kind": "technical"},
+                        {"source": "nist/norma.pdf", "score": 0.8, "kind": "normative"},
+                    ]
+                },
+            },
+        }
+        findings: list[dict] = []
+        report = ReportCapability(manifest, findings, notes=[])
+
+        report.finding("chk1", "fail", "sin bloqueo")
+
+        assert findings[0]["references"] == [
+            {"source": "propio/nota.md", "score": 0.9},
+            {"source": "nist/norma.pdf", "score": 0.8},
+        ]
+
     def test_finding_signature_does_not_accept_a_references_argument(self):
         findings: list[dict] = []
         report = ReportCapability(REFERENCES_MANIFEST, findings, notes=[])

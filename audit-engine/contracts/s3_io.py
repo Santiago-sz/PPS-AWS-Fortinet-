@@ -70,6 +70,7 @@ def build_manifest(
     model: str,
     generated_at: str,
     knowledge_base: dict | None = None,
+    field_catalog: dict | None = None,
 ) -> dict:
     """Arma un RunManifest según el contrato de design.md (Interfaces/Contracts).
 
@@ -83,6 +84,14 @@ def build_manifest(
     `check_id`, origen y puntaje de cada fragmento usado; nunca su texto).
     Con `None` la clave no se escribe y el manifest es idéntico al anterior;
     un manifest sin la clave significa recuperación deshabilitada.
+
+    `field_catalog` es otro bloque ADITIVO y opcional: resultado de comparar
+    el script entregado con el catálogo de campos del generador (versión de
+    FortiOS del catálogo, cantidad de nombres de campo que el script lee y el
+    catálogo no lista, las primeras referencias y las llamadas de reduce
+    hechas). Solo lleva nombres escritos por el script y claves de endpoint.
+    Es informativo: el executor no lo lee y el estado de cada hallazgo lo
+    sigue decidiendo `toolkit` al ejecutar.
     """
     manifest = {
         "run_id": run_id,
@@ -97,6 +106,8 @@ def build_manifest(
     }
     if knowledge_base is not None:
         manifest["knowledge_base"] = knowledge_base
+    if field_catalog is not None:
+        manifest["field_catalog"] = field_catalog
     return manifest
 
 

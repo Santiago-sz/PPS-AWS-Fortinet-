@@ -320,6 +320,7 @@ def lambda_handler(event: dict, context) -> dict:
     script = result["script"]
     checks = result["checks"]
     attempts = result["attempts"]
+    field_catalog_block = result.get("field_catalog")
 
     script_key = f"artifacts/{run_id}/script.py"
     manifest_key = f"artifacts/{run_id}/manifest.json"
@@ -337,8 +338,18 @@ def lambda_handler(event: dict, context) -> dict:
         generated_at=run_ts,
         # None con la Knowledge Base deshabilitada: el manifest no cambia.
         knowledge_base=result.get("knowledge_base"),
+        # Comparación del script con el catálogo de campos (informativo).
+        field_catalog=field_catalog_block,
     )
     s3_io.put_manifest(reports_bucket, manifest_key, manifest)
+
+    # Cantidad de nombres de campo que el script lee y el catálogo no lista;
+    # la clave solo viaja en el evento cuando la generación la informó.
+    field_metrics: dict = {}
+    if isinstance(field_catalog_block, dict):
+        field_metrics["unknown_field_references"] = field_catalog_block.get(
+            "unknown_field_references"
+        )
 
     pointer = {
         "run_id": run_id,
@@ -361,6 +372,7 @@ def lambda_handler(event: dict, context) -> dict:
             checks_count=len(checks),
             map_calls=map_calls,
             attempts=attempts,
+            **field_metrics,
         )
         return {"status": "awaiting_approval", **pointer, "attempts": attempts}
 
@@ -376,5 +388,12 @@ def lambda_handler(event: dict, context) -> dict:
         run_id,
         attempts,
     )
-    _log_result(run_id, "invoked", checks_count=len(checks), map_calls=map_calls, attempts=attempts)
+    _log_result(
+        run_id,
+        "invoked",
+        checks_count=len(checks),
+        map_calls=map_calls,
+        attempts=attempts,
+        **field_metrics,
+    )
     return {"status": "invoked", **pointer, "attempts": attempts}
