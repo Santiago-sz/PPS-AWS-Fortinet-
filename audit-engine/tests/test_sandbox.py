@@ -243,3 +243,120 @@ class TestSuccessfulExecution:
         assert len(result.findings) == 1
         assert result.findings[0]["check_id"] == "chk1"
         assert result.notes == [{"check_id": "chk1", "message": "revisado"}]
+
+
+# ---------------------------------------------------------------------------
+# Datos ausentes: el sandbox cablea el registro entre `fgt` y `report`
+# (decisión 12). Los scripts imitan los modismos de los scripts generados y
+# no cooperan: no comprueban None ni declaran lagunas.
+# ---------------------------------------------------------------------------
+
+LAB_MANIFEST = {
+    "run_id": "run-lab",
+    "checks": [
+        {"check_id": "chk-0002", "clause_ref": {"page": 1}, "endpoints": ["admins"]},
+        {
+            "check_id": "chk-0003",
+            "clause_ref": {"page": 2},
+            "endpoints": ["admins", "api_users"],
+        },
+        {"check_id": "chk-0010", "clause_ref": {"page": 3}, "endpoints": ["vpn_ipsec"]},
+        {"check_id": "chk-0011", "clause_ref": {"page": 4}, "endpoints": ["radius_servers"]},
+        {"check_id": "chk-0012", "clause_ref": {"page": 5}, "endpoints": ["dhcp_servers"]},
+        {"check_id": "chk-0013", "clause_ref": {"page": 6}, "endpoints": ["snmp_sysinfo"]},
+    ],
+}
+
+# Formas leídas del equipo de laboratorio (FortiOS 7.6.8, perfil
+# super_admin_readonly): 200 con lista vacía en las cuatro tablas y un error
+# HTTP (None en el cliente) en las dos rutas mal formadas.
+LAB_RESPONSES = {
+    "admins": [],
+    "api_users": [],
+    "vpn_ipsec": [],
+    "radius_servers": [],
+    "dhcp_servers": None,
+    "snmp_sysinfo": None,
+}
+
+LAB_SCRIPT = """
+admins = fgt.get("admins")
+api_users = fgt.get("api_users")
+supers = [a["name"] for a in admins if a["accprofile"] == "super_admin"]
+report.finding(
+    "chk-0002",
+    "pass" if len(supers) <= 2 else "fail",
+    "total_admins=" + str(len(admins)) + " super_admin_accounts=" + str(supers),
+)
+report.finding(
+    "chk-0003",
+    "pass",
+    "total_admins=" + str(len(admins)) + " api_users=" + str(len(api_users)),
+)
+tunnels = fgt.get("vpn_ipsec")
+report.finding("chk-0010", "pass", "tunnels=" + str(len(tunnels)), ["vpn_ipsec"])
+radius = fgt.get("radius_servers")
+report.finding("chk-0011", "not_applicable", "radius=" + str(len(radius)))
+dhcp = fgt.get("dhcp_servers")
+enabled = [s for s in dhcp if s["status"] == "enable"]
+report.finding("chk-0012", "pass", "dhcp_enabled=" + str(len(enabled)))
+snmp = fgt.get("snmp_sysinfo")
+snmp_status = snmp["status"] if "status" in snmp else "disable"
+report.finding("chk-0013", "fail" if snmp_status == "enable" else "pass", "snmp=" + snmp_status)
+"""
+
+
+class TestAbsentDataEndsInIndeterminate:
+    def _run(self):
+        result = execute(LAB_SCRIPT, LAB_MANIFEST, _FakeFortiGateClient(dict(LAB_RESPONSES)))
+        return {f["check_id"]: f for f in result.findings}
+
+    def test_the_false_pass_on_administrators_is_no_longer_reported(self):
+        findings = self._run()
+
+        for check_id in ("chk-0002", "chk-0003"):
+            assert findings[check_id]["status"] == "indeterminate"
+            assert findings[check_id]["reported_status"] == "pass"
+            assert "admins" in findings[check_id]["status_reason"]
+        assert {g["endpoint"] for g in findings["chk-0003"]["data_gaps"]} == {
+            "admins",
+            "api_users",
+        }
+
+    def test_legitimately_empty_tables_keep_their_result(self):
+        findings = self._run()
+
+        assert findings["chk-0010"]["status"] == "pass"
+        assert findings["chk-0011"]["status"] == "not_applicable"
+        assert "data_gaps" not in findings["chk-0010"]
+        assert "reported_status" not in findings["chk-0011"]
+
+    def test_unreadable_endpoints_do_not_crash_the_run_and_are_indeterminate(self):
+        findings = self._run()
+
+        assert len(findings) == 6
+        for check_id, endpoint in (("chk-0012", "dhcp_servers"), ("chk-0013", "snmp_sysinfo")):
+            assert findings[check_id]["status"] == "indeterminate"
+            assert findings[check_id]["reported_status"] == "pass"
+            assert {"endpoint": endpoint, "kind": "unreadable"} in findings[check_id]["data_gaps"]
+
+    def test_no_pass_survives_on_a_check_with_absent_data(self):
+        findings = self._run()
+
+        passed = {cid for cid, f in findings.items() if f["status"] == "pass"}
+        assert passed == {"chk-0010"}
+
+    def test_budgets_still_count_calls_on_unreadable_endpoints(self):
+        source = "for i in range(10):\n    fgt.get('dhcp_servers')\n"
+        budget = SandboxBudget(max_wall_clock_s=120.0, max_fgt_calls=3, max_findings=500)
+
+        with pytest.raises(SandboxBudgetExceeded) as excinfo:
+            execute(source, LAB_MANIFEST, _FakeFortiGateClient(), budget=budget)
+
+        assert excinfo.value.reason == "call_count_exceeded"
+
+    def test_the_script_gains_no_new_names_in_its_namespace(self):
+        source = "x = ReadLedger\n"
+
+        with pytest.raises(NameError):
+            execute(source, LAB_MANIFEST, _FakeFortiGateClient())

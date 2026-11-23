@@ -500,6 +500,39 @@ def _render_reference_section(findings: list[dict]) -> list[str]:
     return lines
 
 
+def count_data_gap_findings(findings: list[dict]) -> int:
+    """Cantidad de hallazgos que el toolkit dejó en `indeterminate` porque
+    dependían de un dato ausente, ilegible o imposiblemente vacío."""
+    return sum(1 for f in findings if f.get("data_gaps"))
+
+
+def _render_status_reason_section(findings: list[dict]) -> list[str]:
+    """Motivo de los hallazgos cuyo estado fijó el toolkit.
+
+    Solo se emite si algún hallazgo trae `status_reason`, que el toolkit
+    agrega únicamente cuando interviene. Sin esa clave el reporte no cambia.
+    El motivo nombra endpoints y campos, nunca valores leídos del equipo.
+    """
+    selected = [f for f in findings if f.get("status_reason")]
+    if not selected:
+        return []
+
+    lines = [
+        "## Datos no disponibles\n",
+        "> Estos controles quedaron en `indeterminate` porque dependen de un "
+        "dato que no se pudo leer del equipo. No son un resultado aprobado ni "
+        "reprobado: el resultado que informó el script se conserva solo como "
+        "referencia.\n",
+    ]
+    for finding in selected:
+        check_id = finding.get("check_id", "desconocido")
+        reported = finding.get("reported_status")
+        prefix = f"informado `{reported}`. " if reported else ""
+        lines.append(f"- `{check_id}`: {prefix}{finding['status_reason']}")
+    lines.append("")
+    return lines
+
+
 def _finding_is_traceable(finding: dict) -> bool:
     """A finding is only truly traceable if BOTH the toolkit marked it as
     such AND its `clause_ref` is a well-formed citation with a real quote.
@@ -628,6 +661,7 @@ def build_policy_report_markdown(
             lines.append(f"- `{note.get('check_id', '')}`: {note.get('message', '')}")
         lines.append("")
 
+    lines.extend(_render_status_reason_section(findings))
     lines.extend(_render_remediation_section(findings))
     lines.extend(_render_reference_section(findings))
 
@@ -728,6 +762,9 @@ def build_policy_sns_message(
     ]
     if untraceable_count:
         lines.append(f"⚠️ {untraceable_count} hallazgo(s) no trazable(s)")
+    data_gap_count = count_data_gap_findings(findings)
+    if data_gap_count:
+        lines.append(f"⚠️ {data_gap_count} hallazgo(s) indeterminado(s) por datos no disponibles")
     lines.append(f"Reporte completo: {s3_key}")
 
     return "\n".join(lines)

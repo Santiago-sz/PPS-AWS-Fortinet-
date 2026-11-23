@@ -916,3 +916,66 @@ class TestReferencesInPolicyReport:
         )
 
         assert "## Documentación de referencia" in markdown
+
+
+# ---------------------------------------------------------------------------
+# Hallazgos degradados por datos no disponibles (decisión 12)
+# ---------------------------------------------------------------------------
+
+DEGRADED_FINDING = {
+    **GOLDEN_FINDING,
+    "check_id": "chk-0002",
+    "status": "indeterminate",
+    "evidence": "total_admins=0",
+    "reported_status": "pass",
+    "data_gaps": [{"endpoint": "admins", "kind": "empty_not_possible"}],
+    "status_reason": "Datos no disponibles: el endpoint `admins` devolvió una respuesta vacía.",
+}
+
+
+class TestDataGapsInPolicyReport:
+    def test_markdown_explains_why_the_finding_is_indeterminate(self):
+        markdown = build_policy_report_markdown(
+            [GOLDEN_FINDING, DEGRADED_FINDING], [], *GOLDEN_ARGS
+        )
+
+        assert "## Datos no disponibles" in markdown
+        section = markdown.split("## Datos no disponibles")[1].split("\n## ")[0]
+        line = next(ln for ln in section.splitlines() if ln.startswith("- `chk-0002`"))
+        assert "`pass`" in line
+        assert "`admins`" in line
+        assert "chk-0001" not in section
+
+    def test_markdown_table_shows_the_degraded_status_not_the_reported_one(self):
+        markdown = build_policy_report_markdown([DEGRADED_FINDING], [], *GOLDEN_ARGS)
+
+        row = next(ln for ln in markdown.splitlines() if ln.startswith("| `chk-0002`"))
+        assert "| indeterminate |" in row
+
+    def test_report_without_gaps_has_no_such_section(self):
+        markdown = build_policy_report_markdown([GOLDEN_FINDING], [], *GOLDEN_ARGS)
+
+        assert "Datos no disponibles" not in markdown
+
+    def test_json_keeps_the_additive_keys(self):
+        payload = build_policy_report_json([DEGRADED_FINDING], [], *GOLDEN_ARGS)
+
+        finding = payload["findings"][0]
+        assert finding["status"] == "indeterminate"
+        assert finding["reported_status"] == "pass"
+        assert finding["data_gaps"] == [{"endpoint": "admins", "kind": "empty_not_possible"}]
+        assert "admins" in finding["status_reason"]
+
+    def test_sns_message_counts_findings_degraded_by_missing_data(self):
+        message = build_policy_sns_message(
+            "completed", "run-1", [GOLDEN_FINDING, DEGRADED_FINDING], "reports/run-1/report.md"
+        )
+
+        assert "1 hallazgo(s) indeterminado(s) por datos no disponibles" in message
+
+    def test_sns_message_without_gaps_is_unchanged(self):
+        message = build_policy_sns_message(
+            "completed", "run-1", [GOLDEN_FINDING], "reports/run-1/report.md"
+        )
+
+        assert "datos no disponibles" not in message
