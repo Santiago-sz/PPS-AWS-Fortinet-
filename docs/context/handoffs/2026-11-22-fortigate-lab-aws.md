@@ -10,6 +10,17 @@
 - Commits propios: `0727679` (infraestructura) y un commit documental
   posterior.
 - Revisión del desarrollador y merge: pendientes. Push: no realizado.
+- Actualización posterior (2026-11-22): el laboratorio se aplicó ese mismo día
+  en la cuenta de laboratorio, región `us-east-1`. `terraform plan` informó 37
+  recursos a crear y ninguno a modificar o destruir; `terraform apply` creó los
+  37. Comprobado desde la estación autorizada: la página de administración
+  respondió HTTP 200 por HTTPS y la página de demostración (puerto 8080,
+  reenviada al host Ubuntu) respondió HTTP 200, lo que indica que al menos esa
+  parte de la configuración inicial se cargó. Sin comprobar todavía: el resto
+  de la configuración inicial, el primer inicio de sesión, la generación del
+  token y una auditoría de PostureGuard contra el equipo. La suscripción de
+  Marketplace ya existía en la cuenta; la tarifa del acuerdo para `t2.small` es
+  USD 0,36 por hora.
 
 ## Objetivo y aceptación
 
