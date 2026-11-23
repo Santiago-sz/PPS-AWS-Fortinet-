@@ -304,7 +304,9 @@ def estimate_live_tokens(text: str, attempts: int) -> int:
     """Estimación grosera (4 chars ≈ 1 token) del consumo de un run live:
     1 map (system + catálogo + texto) + hasta `attempts` reduce."""
     map_prompt = len(llm_client.MAP_SYSTEM_PROMPT) + len(text) + 400
-    reduce_prompt = len(llm_client.REDUCE_SYSTEM_PROMPT) + 2500
+    reduce_prompt = (
+        len(llm_client.REDUCE_SYSTEM_PROMPT) + len(llm_client.FIELD_CATALOG_SYSTEM_NOTE) + 2500
+    )
     return (map_prompt + llm_client.MAP_MAX_TOKENS // 2) // 4 + attempts * (
         (reduce_prompt + llm_client.REDUCE_MAX_TOKENS // 2) // 4
     )
@@ -359,6 +361,18 @@ def run_policy(name: str, mode: str, max_attempts: int, verbose: bool) -> tuple[
     if script is not None:
         validation_ok = script_validator.validate(script, {"checks": checks}).valid
 
+    # Catálogo de campos: nombres que el script entregado lee y el catálogo no
+    # lista, y llamadas de reduce pedidas que quedaron sin respuesta (en modo
+    # offline, una fixture que no trae el intento de corrección).
+    field_block = generation.get("field_catalog") or {}
+    reduce_requested = sum(1 for p in transport.captured_prompts if p["stage"] == "reduce")
+    reduce_answered = len(transport.calls) - sum(
+        1 for p in transport.captured_prompts[: len(transport.calls)] if p["stage"] != "reduce"
+    )
+    # El validador aceptó el primer intento, aunque después se haya entregado
+    # una corrección de nombres de campo de un intento posterior.
+    first_valid_attempt = generation.get("first_valid_attempt", attempts_used)
+
     recall, matched, missed = check_recall(checks, expected)
     precision, good_refs, total_refs = endpoint_precision(checks, expected, catalog)
     min_checks = int(expected.get("min_checks", 0))
@@ -370,8 +384,12 @@ def run_policy(name: str, mode: str, max_attempts: int, verbose: bool) -> tuple[
         "error": error,
         "chunks": len(chunks),
         "map_calls": sum(1 for p in transport.captured_prompts if p["stage"] == "map"),
-        "first_attempt_pass": status == "ok" and attempts_used == 1,
+        "first_attempt_pass": status == "ok" and first_valid_attempt == 1,
         "attempts_used": attempts_used,
+        "unknown_field_references": int(field_block.get("unknown_field_references", 0) or 0),
+        "unknown_fields": sorted({r["field"] for r in field_block.get("references", [])}),
+        "reduce_calls": reduce_answered,
+        "reduce_calls_unanswered": reduce_requested - reduce_answered,
         "validator_ok_final": validation_ok,
         "checks_count": len(checks),
         "checks_in_range": min_checks <= len(checks) <= max_checks,
@@ -441,6 +459,8 @@ def aggregate(per_policy: list[dict]) -> dict:
         "total_input_tokens": sum(m["input_tokens"] for m in per_policy),
         "total_output_tokens": sum(m["output_tokens"] for m in per_policy),
         "total_latency_ms": round(sum(m["latency_ms"] for m in per_policy), 1),
+        "total_unknown_field_references": sum(m["unknown_field_references"] for m in per_policy),
+        "reduce_calls_unanswered": sum(m["reduce_calls_unanswered"] for m in per_policy),
     }
 
 
@@ -574,6 +594,19 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"## Evals ({args.mode}) — {len(per_policy)} policies\n")
     print(markdown_table(per_policy, agg))
+    print(
+        f"\nfield catalog: {agg['total_unknown_field_references']} unknown field reference(s) "
+        "in the delivered scripts"
+    )
+    for m in per_policy:
+        if m["unknown_fields"]:
+            print(f"  - {m['policy']}: {', '.join(m['unknown_fields'])}")
+    if agg["reduce_calls_unanswered"]:
+        print(
+            f"warning: {agg['reduce_calls_unanswered']} field-correction call(s) had no answer; "
+            "the earlier valid script was kept. In offline mode this means the recorded "
+            "fixtures predate the field catalog: re-record with --mode live --record."
+        )
     print(f"\nresults: {out}")
     if failures:
         print("\nTHRESHOLD FAILURES:")
