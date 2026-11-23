@@ -17,6 +17,12 @@ hallazgos existentes. Rutas vigentes: `infrastructure/pipeline/` e
 `infrastructure/fortigate-lab/`; procedimientos en `audit-engine/TESTING.md`.
 Las rutas del resto del informe son referencias históricas.
 
+Actualización del 2026-11-22: `infrastructure/fortigate-lab/` fue reescrito. Su
+resultado con Checkov 3.2.379 es **74 passed / 8 failed / 0 skipped**; el
+detalle y la justificación están en
+[su README](../fortigate-lab/README.md#verificación). El resultado del pipeline
+no cambia.
+
 Generado con `checkov` 3.2.379, análisis de solo lectura (sin `terraform apply`/`plan`,
 sin fixes automáticos aplicados). Se corrió por separado sobre los dos directorios
 Terraform independientes del proyecto.

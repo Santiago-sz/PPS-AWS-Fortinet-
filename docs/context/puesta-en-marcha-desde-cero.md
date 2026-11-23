@@ -530,6 +530,15 @@ Estado detallado y con fechas: [status.md](status.md). Resumen:
 
 **(a) Laboratorio FortiGate en AWS para la demostración.** No está hecho.
 
+> Actualización del 2026-11-22: el módulo fue reescrito en la rama
+> `feature/fortigate-lab-aws` (región `us-east-1`, cuenta separada, entrada
+> limitada a direcciones autorizadas, FortiOS 7.6.8 fijado, usuario de API de
+> solo lectura y configuración de ejemplo). Está validado solo en forma
+> estática y **no se aplicó en AWS**. La descripción y la tabla que siguen
+> corresponden al módulo anterior; lo vigente está en
+> [el README del laboratorio](../../infrastructure/fortigate-lab/README.md). La
+> conexión privada con la Lambda ejecutora sigue pendiente.
+
 Lo que existe, comprobado leyendo el repositorio [V]:
 `infrastructure/fortigate-lab` es un módulo de Terraform que crea una VPC
 `10.0.0.0/16`, una subred pública, un grupo de seguridad con el puerto 443
