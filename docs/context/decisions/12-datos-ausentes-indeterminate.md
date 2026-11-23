@@ -1,21 +1,163 @@
 # 12 — Un dato ausente o ilegible termina en `indeterminate`
 
 - Fecha: 2026-11-22.
-- Estado: **propuesta, no implementada.** Es el diseño elaborado por el agente
-  a pedido de la tarea; no fue aceptado por los autores. No tratarlo como
-  decisión vigente.
+- Estado: **implementada el 2026-11-22** en la rama `fix/toolkit-absent-data`,
+  por encargo del dueño del repositorio. Verificada solo con tests: **no se
+  volvió a ejecutar contra un equipo.** Revisión de los autores y merge
+  pendientes. Lo construido y sus diferencias con el diseño están en
+  [«Implementación»](#implementación-2026-11-22); el resto del documento es el
+  diseño original y se conserva como antecedente.
 - No sustituye ninguna decisión. Se apoya en el principio ya aplicado a
   `clause_ref` (decisión de diseño n.º 4 del pipeline): las propiedades de
   seguridad y trazabilidad las garantiza el toolkit, no el script generado.
-- Depende de la salida del diagnóstico
-  (`audit-engine/scripts/diagnose_fortigate_local.py`), que todavía no se
-  ejecutó contra un equipo.
+- El diagnóstico (`audit-engine/scripts/diagnose_fortigate_local.py`) se ejecutó
+  contra un equipo de laboratorio; sus resultados, informados en el encargo,
+  están en «Implementación».
 
 ## En una frase
 
-El toolkit debe registrar qué datos pidió el script y no obtuvo, y convertir en
+El toolkit registra qué datos pidió el script y no obtuvo, y convierte en
 `indeterminate` todo `pass`, `fail` o `not_applicable` de un control afectado,
 sin cambiar el validador.
+
+## Implementación (2026-11-22)
+
+### Evidencia que la motivó
+
+Informada en el encargo, no observada por el agente que implementó. Equipo de
+laboratorio con FortiOS 7.6.8, usuario de API con perfil
+`super_admin_readonly`, diagnóstico ejecutado con `--probe-global-scope`:
+
+| Endpoint | Respuesta | Lectura |
+|---|---|---|
+| `system/admin` | HTTP 200, lista vacía, también con `scope=global` | El equipo tiene al menos cuatro administradores: el dato no se observó |
+| `system/api-user` | HTTP 200, lista vacía | El usuario de API que consulta existe: el dato no se observó |
+| `vpn.ipsec/phase1-interface`, `user/radius` | HTTP 200, lista vacía | Tablas realmente vacías en ese equipo |
+| `system/dhcp/server`, `system/snmp/sysinfo` | HTTP 400 | Ruta mal formada en el catálogo |
+
+Consecuencia observada: los controles generados informaron `total_admins=0` y
+`super_admin_accounts=[]` con estado `pass`. Una lista vacía no prueba por sí
+sola que falte un dato; por eso la regla distingue los endpoints que no pueden
+estar vacíos de los que sí.
+
+### Regla implementada
+
+Todo en `audit-engine/executor/toolkit.py`; `sandbox.py` solo crea el registro
+y lo pasa a `fgt` y `report`. El validador y su lista de permitidos no
+cambiaron, y el namespace del script tampoco.
+
+1. `ReadLedger`: registro por corrida, compartido por `FgtCapability` y
+   `ReportCapability`. Guarda nombres de endpoint, tipos de laguna y nombres de
+   campo; nunca un valor leído.
+2. `fgt.get` anota una laguna en tres casos:
+   - `unreadable`: el cliente devolvió `None` (error HTTP, fallo de red o
+     respuesta sin `results`). El script recibe una lista vacía en lugar de
+     `None`, así no falla.
+   - `empty_not_possible`: respuesta vacía de un endpoint de
+     `NEVER_EMPTY_ENDPOINTS` (`admins`, `admin_profiles`, `interfaces`,
+     `api_users`).
+   - `missing_field`: el script pidió, con `d[k]` o `k in d`, un campo que
+     falta en todos los objetos hermanos de esa respuesta (`TrackedDict`).
+3. `report.finding` decide el estado final. Reúne las lagunas de los endpoints
+   que el control declara: los de `checks[].endpoints` del manifest más los que
+   el script pasa en `endpoints_used`. Si hay alguna, guarda
+   `status = "indeterminate"`.
+4. También queda en `indeterminate` un estado fuera de los cuatro permitidos y
+   un control que declara endpoints y no leyó ninguno (`not_read`).
+5. Un control que no declara ningún endpoint, ni en el manifest ni en el
+   script, hereda todas las lagunas anotadas hasta ese momento en la corrida:
+   sin declaración no se puede acotar de qué dato depende. El generador no
+   obliga a declarar endpoints (`llm_client.py` usa `c.get("endpoints", [])`),
+   así que el caso puede darse.
+
+**Regla para `fail`.** Un `fail` con una laguna en un endpoint declarado
+también pasa a `indeterminate`, igual que `pass` y `not_applicable`: el punto 7
+del diseño lo establece así. No es silencioso: el hallazgo conserva
+`reported_status = "fail"`, las lagunas y el motivo, y el reporte los muestra.
+La pregunta 5 (conservar un `fail` establecido con otro endpoint que sí se
+leyó) sigue abierta para los autores; con la atribución por endpoint el
+toolkit no puede saber con cuál de los endpoints se estableció el resultado.
+
+### Contrato del hallazgo
+
+Tres claves aditivas, presentes solo cuando el toolkit intervino. Un hallazgo
+sin lagunas conserva exactamente las claves y los valores anteriores, y un
+reporte sin lagunas es idéntico byte a byte (lo fijan los tests de hash de
+`test_reporter.py`).
+
+| Clave | Contenido |
+|---|---|
+| `reported_status` | Estado que informó el script, si el toolkit lo cambió |
+| `data_gaps` | Lista de `{"endpoint", "kind", "field"?}` |
+| `status_reason` | Texto en español que nombra el endpoint y, si corresponde, el campo |
+
+Un hallazgo con lagunas lleva `remediation = null`: sin el dato no hay
+evidencia que respalde una propuesta.
+
+Presentación: `reporter.py` agrega la sección «Datos no disponibles» al
+Markdown y una línea al aviso de SNS; el evento `executor_result` suma
+`data_gap_count`. La API local ya conservaba claves desconocidas y su
+exportación Markdown ahora imprime el motivo. La aplicación muestra el motivo
+en el detalle del control y no presenta la propuesta del manifest para un
+hallazgo con `data_gaps`.
+
+Los scripts ya generados y guardados en S3 obtienen el comportamiento nuevo sin
+regenerarse: la regla vive en el toolkit que los ejecuta.
+
+### Rutas del catálogo
+
+`system/dhcp/server` y `system/snmp/sysinfo` pasaron a `system.dhcp/server` y
+`system.snmp/sysinfo`: una ruta `cmdb` de varios niveles se escribe con punto y
+una sola barra antes del nombre de la tabla, como `vpn.ipsec/phase1-interface`
+y `log.syslogd/setting`. Verificación: la forma `system.dhcp/server` figura en
+la documentación pública de una biblioteca de terceros
+([fortigate-api](https://fortigate-api.readthedocs.io/en/latest/fortigateapi/cmdb/system_dhcp/server.html));
+`system.snmp/sysinfo` se dedujo de la misma convención y de la orden
+`config system snmp sysinfo` de la referencia de la CLI. No se consultó la
+referencia de la API de Fortinet (FNDN requiere cuenta) ni se probó contra un
+equipo.
+
+### Diferencias con el diseño
+
+| Diseño | Implementado | Motivo |
+|---|---|---|
+| Subclases de `dict` y de `list` | Solo `TrackedDict`; las listas son `list` comunes | La respuesta se envuelve completa al leerla, así que recorrer, cortar u ordenar una lista conserva el seguimiento sin otra clase |
+| `endpoints_read` en cada hallazgo | No se agrega | Habría cambiado la forma de todos los hallazgos, incluidos los que no tienen lagunas. Un control que no leyó nada de lo declarado queda marcado con `not_read` |
+| Sin clave para el motivo | Se agrega `status_reason` | El encargo pide un motivo legible que nombre el endpoint |
+| Suprimir la remediación en `reporter.py` | Se anula en el toolkit | Un solo lugar cubre el Markdown, el JSON, la API local y la aplicación |
+| Atribución por endpoint declarado o por ventana, a elegir | Por endpoint declarado, con el punto 5 de la regla para los controles sin declaración | Es la variante que el diseño propone para empezar. No se midió cuántos `indeterminate` de más produce |
+| Cambio de prompt como decisión aparte | No se cambió el prompt | Cambiarlo obliga a regrabar las evaluaciones en vivo (`evals/README.md`), lo que requiere llamadas a AWS no autorizadas en esta tarea. La garantía no depende del prompt |
+| Regresión con `shapes.json` y los dos scripts reales | No se hizo | Los scripts y la salida del diagnóstico no están en el repositorio. Los tests usan las formas informadas en el encargo y scripts que imitan los modismos de los reales |
+
+Cambio de contrato para los scripts: `fgt.get` ya no devuelve `None`. Un script
+que comprobara `is None` sigue por la rama de datos presentes y el toolkit
+corrige el estado. Por ese motivo se actualizó un test existente
+(`test_handler_executor.py`, tolerancia a un endpoint inalcanzable): el control
+del endpoint ilegible deja de ser una nota y pasa a ser un hallazgo
+`indeterminate`; el control del endpoint que sí se leyó conserva su `fail`.
+
+### Pendiente
+
+- Repetir una corrida contra el equipo de laboratorio y comprobar los estados.
+- Medir la proporción de `indeterminate` con los scripts reales (pregunta 8).
+- Aprobación de `NEVER_EMPTY_ENDPOINTS` por los autores (pregunta 7).
+- Supuesto A1 (una lectura `cmdb` devuelve todos los campos del esquema): sin
+  confirmar. Si no se cumple, la regla `missing_field` degrada de más, nunca de
+  menos.
+- Copias con `dict(x)`: el acceso sobre una copia del nivel superior no se
+  registra (pregunta 10).
+- Preguntas 5, 6 y 9.
+
+### Pregunta abierta: por qué `system/admin` llega vacío
+
+Sin resolver. Un usuario de API con perfil `super_admin_readonly` recibió una
+lista vacía de `system/admin` y de `system/api-user`, con y sin
+`scope=global`. Que el resultado no cambie con `scope=global` no respalda la
+hipótesis H2 (alcance de VDOM). La hipótesis H1 (esas tablas solo son visibles
+para el perfil `super_admin` completo) es compatible con lo observado, pero
+**no está verificada**: falta el experimento de repetir la lectura con otro
+perfil. Hasta entonces el toolkit trata esas respuestas vacías como dato no
+observado, sin suponer la causa.
 
 ## Problema
 
@@ -65,7 +207,7 @@ al prompt o a la base de conocimientos.
 | (d) Solo cambios de prompt | Nada por construcción | Insuficiente sola: la segunda corrida «mejoró» mostrando `disable` para un campo ausente, que es peor. Útil como complemento |
 | (e) Dar al generador el catálogo de campos de cada endpoint | La causa de la clase 2: el modelo no conoce los nombres de campo de FortiOS | Recomendada como paso posterior, con la salida del diagnóstico |
 
-## Diseño propuesto: (a) + (b) + (c), aplicado en `ReportCapability.finding`
+## Diseño original: (a) + (b) + (c), aplicado en `ReportCapability.finding`
 
 Todo en `audit-engine/executor/toolkit.py`, sin agregar nodos, nombres ni
 métodos a la lista de permitidos (regla 1 de `AGENTS.md`).

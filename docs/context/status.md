@@ -99,8 +99,9 @@ La rama y el árbol de trabajo actuales se obtienen de Git, no de ese relato.
     medición; para medir hacen falta varias corridas por lado.
   - Ambas corridas quedaron asociadas a auditorías locales de la aplicación
     para verlas lado a lado; los reportes no se versionan.
-- **Diagnóstico de la forma de las respuestas (2026-11-22): implementado,
-  pendiente de ejecutar contra el equipo.**
+- **Diagnóstico de la forma de las respuestas (2026-11-22): implementado y
+  ejecutado contra un equipo de laboratorio; pendiente contra el equipo
+  institucional.**
   `audit-engine/scripts/diagnose_fortigate_local.py` repite el `GET` del
   pipeline para cada endpoint del catálogo e informa solo la estructura de la
   respuesta (código HTTP, tipo de `results`, cantidad de elementos y nombres de
@@ -109,10 +110,36 @@ La rama y el árbol de trabajo actuales se obtienen de Git, no de ese relato.
   `system/api-user`, `system/accprofile`, los endpoints de registro,
   `system/ntp` y `system/fortiguard`. Pasos en
   [la guía](local-executor-run.md#10-diagnóstico-de-la-forma-de-las-respuestas).
-  La corrección del defecto (dato ausente o ilegible debe terminar en
-  `indeterminate`, garantizado por el toolkit) está diseñada como
-  [decisión 12](decisions/12-datos-ausentes-indeterminate.md), en estado de
-  propuesta: falta la aceptación de los autores y la implementación.
+  Actualización del mismo día: el diagnóstico se ejecutó contra un equipo de
+  laboratorio (ver el punto siguiente).
+- **Corrección del falso `pass` por datos ausentes (2026-11-22): implementada
+  y verificada solo con tests; no se volvió a ejecutar contra un equipo.**
+  Rama `fix/toolkit-absent-data`, sin merge. El diagnóstico, ejecutado con
+  `--probe-global-scope` contra un equipo de laboratorio con FortiOS 7.6.8 y
+  un usuario de API con perfil `super_admin_readonly`, mostró (informado en el
+  encargo): `system/admin` y `system/api-user` responden HTTP 200 con lista
+  vacía aunque el equipo tiene al menos cuatro administradores y el propio
+  usuario de API; `vpn.ipsec/phase1-interface` y `user/radius` responden lista
+  vacía y están realmente vacías; `system/dhcp/server` y `system/snmp/sysinfo`
+  responden HTTP 400. Los controles generados informaban `total_admins=0` con
+  estado `pass`. Con el cambio, el toolkit guarda `indeterminate` cuando el
+  control depende de un endpoint ilegible, de una tabla que no puede estar
+  vacía o de un campo que la respuesta no trae, y conserva el estado
+  informado, las lagunas y el motivo; un `fail` afectado también pasa a
+  `indeterminate`. Las dos rutas con HTTP 400 se corrigieron a
+  `system.dhcp/server` y `system.snmp/sysinfo`. Detalle, diferencias con el
+  diseño y pendientes en la
+  [decisión 12](decisions/12-datos-ausentes-indeterminate.md#implementación-2026-11-22)
+  y en [el handoff](handoffs/2026-11-22-toolkit-absent-data.md).
+  - Pregunta abierta: por qué un usuario de API `super_admin_readonly` recibe
+    vacía la tabla de administradores. Que el perfil limite la visibilidad es
+    una hipótesis sin verificar; falta repetir la lectura con otro perfil. La
+    afirmación anterior de este documento («la causa está en el script o en el
+    manejo de la respuesta, no en los permisos») queda sin respaldo: el equipo
+    responde la lista vacía.
+  - No resuelto por este cambio: criterios incorrectos sobre datos leídos
+    (NTP, cobertura de antivirus e IPS) y nombres de campo que el modelo
+    inventa. El prompt del generador no se modificó.
 - **Demostración de la tesis (decisión de los dos autores, 2026-11-22):** se
   hará con un FortiGate de laboratorio dentro de AWS, no con el equipo
   institucional, para que la Lambda ejecutora alcance el equipo y todo el flujo
@@ -162,6 +189,8 @@ por el agente que lo registró.
 | 2026-11-21 | Corpus de la Knowledge Base cargado: 25 documentos, 24,45 MB. Ingesta `R4MQ9D7QQZ` en `COMPLETE`: 25 examinados, 23 nuevos indexados, 3 quitados del índice, 0 fallidos. Consultas `Retrieve` devuelven los documentos nuevos y ya no las normativas de ejemplo retiradas. Suite del motor en Windows: 522 aprobados y 1 omitido | Observado en AWS en esa sesión (`get-ingestion-job`, `list-knowledge-base-documents`, `retrieve`), con autorización del dueño para escribir en el bucket de conocimiento e iniciar la ingesta; [resumen del RAG](rag/README.md) y [manifiesto](rag/corpus.md) |
 | 2026-11-22 | Existe un diagnóstico de solo lectura de la forma de las respuestas del FortiGate (`scripts/diagnose_fortigate_local.py`), fuera del paquete de la Lambda y sin acceso a AWS. Suite del motor en Windows: 572 aprobados y 1 omitido | Commit `7673cfa` y [handoff](handoffs/2026-11-22-fortigate-shape-diagnostic.md); corrida local con HTTP simulado, sin AWS ni FortiGate |
 | 2026-11-22 | Recursos desplegados comprobados con lecturas: tres Lambdas `pps-prod-*`, tres buckets, base de conocimientos `ACTIVE` con dos ingestas en `COMPLETE` y una en `STOPPED`, 26 objetos en el bucket de conocimiento (24 documentos y 2 archivos de metadatos), generador con `AUTO_EXECUTE=true`, executor fuera de VPC. El reporte que la Lambda dejó para la segunda corrida está en `could_not_audit` con `preparation_error:ValueError` | Observado en AWS con comandos de solo lectura al escribir [la guía de puesta en marcha](puesta-en-marcha-desde-cero.md); [handoff](handoffs/2026-11-22-puesta-en-marcha-desde-cero.md) |
+| 2026-11-22 | Diagnóstico ejecutado contra un equipo de laboratorio (FortiOS 7.6.8, usuario de API `super_admin_readonly`): `system/admin` y `system/api-user` devuelven HTTP 200 con lista vacía, también con `scope=global`; `system/dhcp/server` y `system/snmp/sysinfo` devuelven HTTP 400 | Informado en el encargo; no observado por el agente que lo registró |
+| 2026-11-22 | El toolkit guarda `indeterminate` ante datos ausentes, ilegibles o imposiblemente vacíos (decisión 12) y el catálogo usa `system.dhcp/server` y `system.snmp/sysinfo`. Suites en Windows: motor 620 aprobados y 1 omitido, API local 38, aplicación 51 | Rama `fix/toolkit-absent-data` y [handoff](handoffs/2026-11-22-toolkit-absent-data.md); corrida local con respuestas simuladas, sin AWS ni FortiGate |
 
 Con 10 pedidos por minuto, una corrida live hace pocas llamadas por normativa
 (una por grupo de map y hasta tres de reduce), pero varias corridas seguidas o

@@ -21,8 +21,8 @@ confiar en cada paso:
    el entorno virtual: [sección 3](#3-instalación-desde-cero-en-windows).
 2. Configurar el perfil de AWS y comprobar que los recursos existen, solo con
    lecturas: [sección 4](#4-acceso-a-aws).
-3. Correr los tests: [sección 5](#5-tests-y-linters). Resultado esperado: 572,
-   37 y 49 aprobados.
+3. Correr los tests: [sección 5](#5-tests-y-linters). Resultado esperado: 620,
+   38 y 51 aprobados.
 4. Hacer la demostración que no necesita FortiGate:
    [sección 6](#6-guion-de-demostración).
 5. Leer el estado y lo que sigue: [sección 9](#9-estado-actual-defectos-conocidos-y-próximos-pasos).
@@ -267,12 +267,12 @@ cd ..
 
 | Comprobación | Resultado esperado [V] |
 |---|---|
-| `pytest` en `audit-engine` | `572 passed, 1 skipped` |
+| `pytest` en `audit-engine` | `620 passed, 1 skipped` |
 | `ruff check` en `audit-engine` | `All checks passed!` |
 | `ruff format --check` | `53 files already formatted` |
 | Evaluaciones offline (ambas) | Código de salida 0 |
-| `pytest` en `local-api` | `37 passed` |
-| `pytest` en `gui` | `49 passed` |
+| `pytest` en `local-api` | `38 passed` |
+| `pytest` en `gui` | `51 passed` |
 | `ruff check` en `gui` | `All checks passed!` |
 
 Los comandos se ejecutaron desde Git Bash con las mismas rutas; en PowerShell
@@ -510,13 +510,18 @@ Estado detallado y con fechas: [status.md](status.md). Resumen:
    - el control de NTP falla por no tener servidores propios aunque el equipo
      sincroniza con FortiGuard (criterio incorrecto, no dato ausente).
 
-   La corrección está **diseñada y no implementada**:
-   [decisión 12](decisions/12-datos-ausentes-indeterminate.md). Hasta que se
-   implemente, un `pass` de esos controles no debe presentarse como evidencia
-   de cumplimiento.
-2. El diagnóstico de la forma de las respuestas existe pero no se ejecutó
-   contra un equipo. Su salida es necesaria para cerrar las preguntas abiertas
-   de la decisión 12.
+   La corrección está **implementada en la rama `fix/toolkit-absent-data`
+   (2026-11-22), sin merge, y verificada solo con tests**:
+   [decisión 12](decisions/12-datos-ausentes-indeterminate.md). El toolkit deja
+   en `indeterminate` un control que depende de un endpoint ilegible, de una
+   tabla que no puede estar vacía o de un campo que la respuesta no trae. No
+   se repitió una corrida contra un equipo; hasta entonces, y en cualquier
+   reporte anterior al cambio, un `pass` de esos controles no debe presentarse
+   como evidencia de cumplimiento. El criterio de NTP no cambia con esto.
+2. El diagnóstico de la forma de las respuestas se ejecutó contra un equipo de
+   laboratorio (2026-11-22) y no contra el institucional. Queda abierta la
+   causa de que un usuario de API `super_admin_readonly` reciba vacía la tabla
+   de administradores.
 3. La aplicación no muestra las referencias de la base de conocimientos.
 4. Las evaluaciones de recuperación tienen `expected_sources` desactualizados
    respecto del corpus actual (`audit-engine/evals/retrieval/questions.json`).
@@ -559,9 +564,10 @@ Todo `terraform apply` lo ejecuta el usuario. Documentos de partida:
 [README del laboratorio](../../infrastructure/fortigate-lab/README.md) y la
 sección 8 del [paso a paso de despliegue](../base/02-paso-a-paso-despliegue-y-prueba.md).
 
-**(b) Corrección de datos ausentes en el toolkit.** Ejecutar el diagnóstico
-contra un equipo (el laboratorio sirve), cerrar las preguntas de la
-[decisión 12](decisions/12-datos-ausentes-indeterminate.md) e implementarla.
+**(b) Corrección de datos ausentes en el toolkit.** Implementada en
+`fix/toolkit-absent-data`. Falta revisarla e integrarla, repetir una corrida
+contra el equipo de laboratorio y cerrar las preguntas que siguen abiertas en
+la [decisión 12](decisions/12-datos-ausentes-indeterminate.md).
 
 **(c) El resto**, sin orden estricto: mostrar las referencias en la aplicación;
 actualizar y grabar las evaluaciones de recuperación y de generación en vivo;
@@ -621,7 +627,7 @@ excepciones:
 | Estado con fechas y fuentes | [status.md](status.md) |
 | Ejecución local, diagnóstico y reporte en la aplicación | [local-executor-run.md](local-executor-run.md) |
 | Base de conocimientos y corpus | [rag/README.md](rag/README.md), [rag/corpus.md](rag/corpus.md) |
-| Diseño pendiente de datos ausentes | [decisions/12-datos-ausentes-indeterminate.md](decisions/12-datos-ausentes-indeterminate.md) |
+| Datos ausentes: diseño e implementación | [decisions/12-datos-ausentes-indeterminate.md](decisions/12-datos-ausentes-indeterminate.md) |
 | Conexión de un FortiGate | [06-conexion-fortigate.md](../base/06-conexion-fortigate.md) |
 | Tests, Terraform y Checkov | [TESTING.md](../../audit-engine/TESTING.md) |
 | API local y aplicación | [local-api/README.md](../../local-api/README.md), [gui/README.md](../../gui/README.md) |

@@ -39,6 +39,14 @@ cd audit-engine
 ../.venv/Scripts/python.exe -m pytest -q -p no:cacheprovider
 ```
 
+Verificación local del 2026-11-22 (Windows, Python 3.12, `.venv`), después
+de la corrección de datos ausentes en el toolkit: **620 tests passed, 1
+skipped**; los 48 nuevos cubren el registro de lecturas, los endpoints que no
+pueden estar vacíos, los endpoints ilegibles, los campos ausentes, la sección
+del reporte y las rutas `cmdb` (`test_toolkit.py`, `test_sandbox.py`,
+`test_reporter.py`, `test_handler_executor.py`, `test_fortigate_client.py`).
+Las cifras siguientes son anteriores.
+
 Verificación local del 2026-11-21 (Windows, Python 3.12, `.venv`, pytest
 8.3.5): 522 passed, 1 skipped; los 21 nuevos son los del conversor
 de STIG a Markdown (`test_stig_to_markdown.py`). Verificación del 2026-11-22,

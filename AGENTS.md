@@ -130,13 +130,24 @@ agregar `references` a cada hallazgo; no importa `knowledge_retriever` ni
 `reference_context`. Diseño en
 [la decisión 11](docs/context/decisions/11-referencias-en-generacion.md).
 
+Datos ausentes (toolkit): el estado final de un hallazgo lo decide
+`toolkit.ReportCapability`, no el script. `fgt` y `report` comparten un
+`ReadLedger` que el sandbox solo cablea; un endpoint ilegible (el script recibe
+una lista vacía, nunca `None`), una respuesta vacía de un endpoint de
+`NEVER_EMPTY_ENDPOINTS` o un campo ausente en todos los objetos hermanos dejan
+en `indeterminate` a todo control que declare ese endpoint, con las claves
+aditivas `reported_status`, `data_gaps` y `status_reason` (nombres de endpoint
+y de campo, nunca valores). No mover esa garantía al script ni al prompt, y no
+agregar un tercer elemento a las tuplas de `ENDPOINTS`. Diseño y límites en
+[la decisión 12](docs/context/decisions/12-datos-ausentes-indeterminate.md).
+
 ## 5. Comandos
 
 Todo desde `audit-engine/` con el venv de la raíz (`../.venv`), detalle en
 `audit-engine/TESTING.md`:
 
 ```bash
-../.venv/Scripts/python.exe -m pytest -q -p no:cacheprovider        # 572 passed, 1 skipped (Windows)
+../.venv/Scripts/python.exe -m pytest -q -p no:cacheprovider        # 620 passed, 1 skipped (Windows)
 ../.venv/Scripts/python.exe -m ruff check generator/ executor/ contracts/ legacy/ tests/ evals/ scripts/
 ../.venv/Scripts/python.exe -m ruff format --check generator/ executor/ contracts/ legacy/ tests/ evals/ scripts/
 ../.venv/Scripts/python.exe scripts/build_layer.py                    # layers/pps-doc-parsers.zip
