@@ -41,6 +41,10 @@ Roles: `admin`, `analyst`, `reader`. Esta respuesta es la autoridad de identidad
 el servidor sigue siendo la autoridad en **cada operación**. `max_upload_bytes` debe ser
 positivo y no superar el límite de la infraestructura. El lector solo consulta/exporta.
 
+La API local de desarrollo agrega `capabilities.automatic_dispatch` (booleano, opcional;
+ausente equivale a `false`): indica que el servidor envía a AWS y recupera reportes por
+su cuenta. La GUI solo lo usa para el aviso de estado; no cambia permisos.
+
 `GET /api/policies` y `GET /api/audits` devuelven
 `{"items": [...], "next_cursor": "opaque-or-null"}`. El cursor se envía como `?cursor=...`.
 Hasta 100 páginas por lectura; un cursor repetido produce error, no un bucle.

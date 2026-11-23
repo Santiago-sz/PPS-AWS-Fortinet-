@@ -4,10 +4,14 @@ Terraform que crea un FortiGate-VM y un host Ubuntu detrás de él, en una cuent
 de AWS separada, para que PostureGuard tenga un equipo que auditar durante la
 demostración. Todo se elimina con un solo `terraform destroy`.
 
-Estado al 2026-11-22: el código está escrito y validado en forma estática
-(`fmt`, `validate`, Checkov). **Todavía no se aplicó en AWS**: nada de lo que
-sigue fue comprobado contra un equipo en funcionamiento. Las afirmaciones sin
-comprobar están reunidas en [Lo que falta comprobar](#lo-que-falta-comprobar).
+Estado al 2026-11-22: el laboratorio **se aplicó ese día** en la cuenta de
+laboratorio (`us-east-1`, 37 recursos). Desde la estación autorizada
+respondieron la página de administración por HTTPS y la página de demostración
+reenviada al host Ubuntu. Sigue sin comprobarse el resto de la configuración
+inicial, el primer ingreso, el token y una auditoría contra el equipo: ver
+[Lo que falta comprobar](#lo-que-falta-comprobar). La conexión privada con la
+cuenta de PostureGuard está escrita y validada en forma estática, **sin
+aplicar**.
 
 ## Qué crea
 
@@ -54,14 +58,37 @@ comprobar están reunidas en [Lo que falta comprobar](#lo-que-falta-comprobar).
   con debilidades puestas a propósito para que la auditoría encuentre algo.
   Detalle en [Configuración inicial](#configuración-inicial-del-fortigate).
 
-## Lo que no hace todavía
+## Conexión privada desde PostureGuard
 
-La conexión privada desde la cuenta de PostureGuard (emparejamiento de VPC y la
-Lambda ejecutora dentro de una VPC) es una fase posterior. Hoy el laboratorio
-solo se alcanza por su dirección pública, desde las direcciones autorizadas, y
-la auditoría se ejecuta con el script local. La variable `peer_cidrs` y las
-salidas de red (`vpc_id`, `subnet_ids`, `route_table_ids`) ya están preparadas
-para esa fase.
+Para que la Lambda ejecutora audite el laboratorio desde AWS, la cuenta de
+PostureGuard crea una red propia y la empareja con esta VPC. Esa red está en
+[`infrastructure/executor-network/`](../executor-network/README.md), que tiene
+el procedimiento completo entre las dos cuentas. Código escrito y validado en
+forma estática; **sin aplicar**.
+
+De este lado intervienen dos variables:
+
+- `peering_connection_id`: id del emparejamiento que solicitó la otra cuenta.
+  Con un valor, el laboratorio lo acepta y agrega, en la tabla de rutas de
+  `wan`, una ruta de regreso por cada bloque de `peer_cidrs`. Vacío (por
+  defecto), no crea nada.
+- `peer_cidrs`: bloques de la otra VPC que pueden llegar al FortiGate por
+  TCP 443.
+
+Aplicar estas variables solo agrega recursos (aceptación, rutas y una regla de
+entrada). No cambia la instancia del FortiGate, sus interfaces de red ni la
+dirección pública: la configuración inicial depende de `peer_cidrs`, pero
+Terraform ignora sus cambios una vez creado el equipo
+(ver [Cambios posteriores](#cambios-posteriores)). Por eso mismo, el origen de
+confianza del usuario `pps-auditor` para la red nueva se agrega a mano en el
+equipo (paso 4 del procedimiento).
+
+En cada `apply`, `admin_cidrs` debe llevar **todas** las direcciones de
+operador autorizadas: una que falte pierde el acceso.
+
+Sin esta conexión, el laboratorio solo se alcanza por su dirección pública,
+desde las direcciones autorizadas, y la auditoría se ejecuta con el script
+local.
 
 ## Costo
 
@@ -142,7 +169,8 @@ ignora. Contiene las contraseñas generadas: no copiarlo ni compartirlo.
 | Variable | Valor por defecto | Uso |
 |---|---|---|
 | `admin_cidrs` | (obligatoria) | Direcciones públicas autorizadas |
-| `peer_cidrs` | `[]` | Bloques de la VPC emparejada, para la fase posterior |
+| `peer_cidrs` | `[]` | Bloques de la VPC emparejada autorizados por TCP 443 |
+| `peering_connection_id` | `""` | Emparejamiento a aceptar; vacío = sin conexión privada |
 | `aws_profile` | `lab-fortigate-pfg` | Perfil de AWS CLI de la cuenta de laboratorio |
 | `aws_region` | `us-east-1` | Región |
 | `availability_zone` | primera disponible | Zona de disponibilidad |
@@ -203,6 +231,12 @@ Si pudo quedar expuesto, repetir el comando: genera uno nuevo e invalida el
 anterior.
 
 ## Ejecutar una auditoría de PostureGuard
+
+Hay dos caminos. Con la
+[conexión privada](#conexión-privada-desde-postureguard) aplicada, la auditoría
+corre completa en AWS y se lanza desde la aplicación de escritorio
+([una sola ventana](../../gui/README.md#una-sola-ventana)). Sin ella, se usa el
+script local, como sigue.
 
 Se usa el script local existente,
 `audit-engine/scripts/run_executor_local.py`. La guía completa es
@@ -391,8 +425,9 @@ terraform validate
 Resultado del 2026-11-22 con Terraform 1.15.9 y los proveedores aws 6.44.0,
 random 3.9.1 y cloudinit 2.4.1: `Success! The configuration is valid.`
 
-Checkov 3.2.379 sobre esta carpeta, el mismo día: 74 comprobaciones aprobadas y
-8 fallidas, aceptadas para un laboratorio desechable:
+Checkov 3.2.379 sobre esta carpeta, el mismo día, con la conexión privada
+incluida: 76 comprobaciones aprobadas y 8 fallidas, aceptadas para un
+laboratorio desechable:
 
 | Comprobación | Recurso | Motivo |
 |---|---|---|
@@ -406,7 +441,10 @@ Una validación estática no demuestra que el despliegue funcione.
 
 ## Lo que falta comprobar
 
-Se comprueba recién al aplicar por primera vez:
+El primer `apply` (2026-11-22) creó los recursos y la página de demostración
+respondió a través del reenvío, lo que indica que la imagen se resolvió y que
+al menos esa parte de la configuración inicial se cargó. El resto de esta
+lista no se revisó punto por punto en el equipo:
 
 - Que la imagen 7.6.8 se resuelve con el código de producto y el patrón de
   nombre, y que acepta volúmenes cifrados en el lanzamiento.
@@ -427,7 +465,8 @@ Se comprueba recién al aplicar por primera vez:
 - Que la contraseña inicial de `admin` es el id de la instancia y que el
   comando `diagnose debug cloudinit show` existe en la imagen de AWS (la
   documentación de Fortinet lo describe para otras nubes).
-- Que el servicio web del host Ubuntu arranca y responde a través del reenvío.
+- La conexión privada: que el emparejamiento queda activo y que el FortiGate
+  responde a la Lambda ejecutora por su dirección privada.
 
 La sintaxis del resto de los comandos se contrastó con la
 [referencia de la CLI de FortiOS 7.6.8](https://docs.fortinet.com/document/fortigate/7.6.8/cli-reference).
@@ -440,7 +479,7 @@ El uso de IMDSv2 por FortiGate-VM en AWS está documentado
 versions.tf      Versiones de Terraform y de los proveedores
 provider.tf      Perfil, región y etiquetas por defecto
 variables.tf     Variables y sus validaciones
-network.tf       VPC, subredes, gateway y tablas de rutas
+network.tf       VPC, subredes, gateway, tablas de rutas y emparejamiento opcional
 security.tf      Grupos de seguridad
 fortigate.tf     Imagen, interfaces, dirección pública e instancia del FortiGate
 ubuntu.tf        Host Ubuntu

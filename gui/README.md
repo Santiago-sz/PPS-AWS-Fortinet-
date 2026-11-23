@@ -1,8 +1,10 @@
 # PPS Desktop
 
 Aplicación de escritorio **PySide6** para `SPEC_GUI_PPS_AWS_FORTINET.md` (v1.1).
-Primera plataforma: Windows 10/11 x64, Python 3.11 o superior. No abre un
-servidor de aplicación ni se conecta directamente a FortiGate, Lambda o Secrets Manager.
+Primera plataforma: Windows 10/11 x64, Python 3.11 o superior. No se conecta
+directamente a FortiGate, Lambda o Secrets Manager, y no maneja credenciales de AWS.
+Desde un checkout puede iniciar la API local como proceso aparte
+([una sola ventana](#una-sola-ventana)).
 
 ## Ejecutar
 
@@ -22,6 +24,55 @@ Para iniciar sin datos ficticios:
 
 También se puede abrir `gui/dist/PPS-Desktop.exe` después de
 compilar. El modo demostración está disponible en **Configuración**.
+
+## Una sola ventana
+
+Con la aplicación abierta alcanza para lanzar una auditoría y ver el resultado,
+sin iniciar la API local ni ejecutar comandos de envío en otra consola.
+
+Al abrirse sin `--demo` y sin una sesión institucional guardada, la aplicación
+comprueba si algo responde en `127.0.0.1:8765`:
+
+- **Si no responde nadie**, inicia la API local como proceso aparte, con el mismo
+  intérprete de Python y con el envío automático a AWS
+  (`serve --aws-bridge`, ver [la API local](../local-api/README.md#envío-y-recuperación-automáticos-opcional)),
+  y se conecta. Al cerrar la aplicación, termina ese proceso.
+- **Si ya hay una API en ejecución**, se conecta a ella. No inicia otra y no la
+  detiene al salir.
+
+Lo mismo ocurre al pulsar **Conectar API local** con la dirección habitual.
+
+El estado se informa en dos lugares:
+
+- En **Configuración → API local de desarrollo**: si la aplicación inició la API,
+  si ya estaba en ejecución o si no pudo iniciarse.
+- En el aviso superior: «Envío automático a AWS activo» cuando la API conectada
+  envía y recupera por su cuenta; si no, «el procesamiento AWS requiere el comando
+  de envío». Este dato lo informa la propia API, también cuando la inició otra
+  persona.
+
+Requisitos y límites:
+
+- La configuración de AWS se lee del `.env` de la raíz del repositorio, como en los
+  comandos de la API. La aplicación no la lee ni la recibe. Si falta, la API se
+  inicia igual, **sin envío automático**, y la aplicación lo indica.
+- Hace falta el paquete `pps_api` instalado en el mismo entorno
+  (`pip install -e './local-api[dev]'`) o ejecutar desde un checkout del
+  repositorio. El ejecutable compilado no puede iniciar la API: hay que iniciarla
+  a mano.
+- Solo se administra la dirección `http://127.0.0.1:8765`. Con otra dirección o
+  con HTTPS local, la API se inicia a mano, como antes.
+- La salida de la API iniciada por la aplicación se guarda en `local-api.log`,
+  dentro de la carpeta de datos locales de la aplicación. No contiene credenciales.
+- El proceso se termina de forma inmediata al salir. Si en ese instante había un
+  envío a S3 en curso, queda marcado como ambiguo y no se repite solo
+  (ver el manual de la API).
+- `--no-local-api` desactiva este comportamiento.
+
+Para que la auditoría llegue al FortiGate de laboratorio hace falta, además, la
+[conexión privada](../infrastructure/executor-network/README.md) entre la cuenta
+de PostureGuard y la del laboratorio. Al 2026-11-22 esa conexión no está
+aplicada, y este flujo completo no se ejecutó contra AWS ni contra el equipo.
 
 ## Funciones implementadas
 
@@ -74,10 +125,13 @@ para los requisitos del certificado.
 
 Ya existe una [API local para desarrollo](../local-api/README.md) con
 persistencia SQLite, carga/validación de PDF y DOCX, consultas, exportación y
-reanálisis en cola. Iniciar `python local-api/launch.py serve` desde la
-raíz y usar **Configuración → API local de desarrollo → Conectar API local**.
+reanálisis en cola. La aplicación la inicia sola si no hay una en ejecución
+([una sola ventana](#una-sola-ventana)); también se puede iniciar a mano con
+`python local-api/launch.py serve` desde la raíz y usar
+**Configuración → API local de desarrollo → Conectar API local**.
 No requiere login. El envío a AWS y la recuperación de resultados son comandos
-explícitos; las cargas no generan auditorías ficticias. Esta alternativa local
+explícitos, salvo que la API se inicie con el envío automático; las cargas no
+generan auditorías ficticias. Esta alternativa local
 no reemplaza los componentes remotos autenticados enumerados a continuación.
 
 Esta entrega implementa **la GUI y el cliente del contrato remoto**. El repositorio original

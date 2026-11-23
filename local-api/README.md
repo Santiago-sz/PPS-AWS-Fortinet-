@@ -15,7 +15,8 @@ Escucha exclusivamente en `127.0.0.1`; rechaza solicitudes con `Origin` y con ot
 
 `service.py`, `aws_bridge.py` y `config.py` conservan los imports anteriores como
 adaptadores de compatibilidad. La implementación nueva usa los paquetes separados.
-Las cargas HTTP/HTTPS no despachan trabajos a AWS. Los tests de integración usan
+Las cargas HTTP/HTTPS no despachan trabajos a AWS; el ciclo opcional de
+`pps_api/aws/worker.py` corre aparte y solo con `serve --aws-bridge`. Los tests de integración usan
 el cliente de la GUI, pero el servidor y sus servicios no dependen de ese paquete.
 
 ## HTTPS local
@@ -155,8 +156,9 @@ Con el `.env` completado, desde la raíz:
 ```
 
 Para otro archivo, usar `--env-file ruta/al/archivo` antes de `aws`. Las credenciales
-se cargan únicamente en los comandos AWS, no en el servidor HTTP ni en la GUI.
-El envío sigue siendo explícito: `serve` no sube automáticamente a S3.
+se cargan únicamente en los comandos AWS y, si se pide con `--aws-bridge`, en el ciclo
+automático descrito más abajo; nunca en el transporte HTTP ni en la GUI.
+El envío sigue siendo explícito por defecto: `serve` sin opciones no sube nada a S3.
 
 La carga HTTP **no llama a AWS**. Queda pendiente hasta ejecutar el comando de envío.
 El puente usa credenciales de la cadena habitual de boto3 (por ejemplo un perfil
@@ -186,9 +188,43 @@ con el `audit_id` persistido. Para fallos anteriores al manifest se proporciona 
 vacío usando el `run_id` real del reporte y el hash de la carga confirmada.
 
 Solo se registran hechos confirmados: documento validado, S3 recibió el documento
-y reporte recuperado. No se inventan las fases internas de las Lambdas. No hay
-worker automático: el sondeo de la GUI consulta SQLite; `aws sync` incorpora los
-resultados de AWS a esa base.
+y reporte recuperado. No se inventan las fases internas de las Lambdas. El sondeo
+de la GUI consulta SQLite; `aws sync` incorpora los resultados de AWS a esa base.
+Por defecto no hay ciclo automático; es opcional (sección siguiente).
+
+### Envío y recuperación automáticos (opcional)
+
+Para operar solo desde la aplicación de escritorio, `serve` acepta un ciclo en
+segundo plano que repite `aws dispatch` y después `aws sync`:
+
+```powershell
+.\.venv-gui\Scripts\python local-api/launch.py serve --aws-bridge
+.\.venv-gui\Scripts\python local-api/launch.py serve --aws-bridge --aws-bridge-interval 30
+```
+
+- Está apagado por defecto. Sin `--aws-bridge`, el servidor no importa el SDK de
+  AWS ni contacta AWS.
+- Usa la misma configuración que los comandos explícitos (`.env` y entorno). Si
+  faltan los buckets, las credenciales o el archivo de `--env-file`, el servidor
+  **no arranca**: informa el motivo y termina con código 2.
+- El intervalo entre ciclos es de 15 segundos por defecto y de 5 como mínimo.
+- Un error de AWS o de red no detiene el servidor: se informa por la salida de
+  error y el ciclo sigue. Solo se registra el tipo de error y el código de AWS,
+  nunca el mensaje ni credenciales. Un error que se repite se informa una vez.
+- Las reglas del puente no cambian. Un envío ambiguo o interrumpido queda marcado
+  y **no se repite**; un conflicto por ejecuciones duplicadas no se resuelve solo.
+  En los dos casos hay que actuar a mano, como se describe abajo.
+- Al cerrar el servidor con `Ctrl+C`, el ciclo termina el paso en curso y se
+  detiene.
+- `GET /api/session` informa `capabilities.automatic_dispatch` (`true` solo con
+  esta opción); la GUI lo usa para indicar si el envío automático está activo.
+- No aprueba ejecuciones: con `AUTO_EXECUTE=false` en la Lambda generadora sigue
+  haciendo falta `aws approve`.
+
+Cada ciclo con auditorías en curso enumera los reportes del bucket, igual que
+`aws sync`: es adecuado para un sandbox pequeño. La
+[aplicación de escritorio](../gui/README.md#una-sola-ventana) inicia el servidor con
+esta opción cuando no encuentra uno en ejecución.
 
 La cola marca el envío antes de contactar S3. Un envío ambiguo o interrumpido no se
 repite automáticamente y boto3 se configura sin reintentos en este comando. Ejecutar
@@ -263,7 +299,9 @@ scripts. No puede reemplazar resultados ya asociados por otros diferentes.
 
 Pruebas HTTP reales en loopback con el cliente de escritorio, persistencia SQLite,
 idempotencia concurrente, integridad/expiración de cargas, validación de documentos,
-resultados inmutables, paginación y puente S3 con Moto. No prueban un despliegue AWS.
+resultados inmutables, paginación y puente S3 con Moto. El ciclo automático se prueba
+con un puente simulado: orden de los pasos, continuidad ante errores, registro sin
+mensajes y detención. No prueban un despliegue AWS.
 
 Pendientes para un servicio remoto: identidad/OIDC, autorización por organización,
 hosting HTTPS, persistencia compartida, carga directa a S3, aislamiento del parser,
