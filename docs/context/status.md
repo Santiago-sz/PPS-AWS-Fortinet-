@@ -135,7 +135,23 @@ La rama y el árbol de trabajo actuales se obtienen de Git, no de ese relato.
   una VPC) queda para una fase posterior; mientras tanto la auditoría contra el
   laboratorio se ejecuta con el script local. Detalle en
   [el README del laboratorio](../../infrastructure/fortigate-lab/README.md) y
-  [el handoff](handoffs/2026-11-22-fortigate-lab-aws.md).
+  [el handoff](handoffs/2026-11-22-fortigate-lab-aws.md). El laboratorio se
+  aplicó ese mismo día (ver «Hechos registrados»).
+- **Auditorías del laboratorio desde la aplicación (2026-11-22): escrito, sin
+  aplicar ni ejecutar.** Dos partes. Red: el módulo nuevo
+  `infrastructure/executor-network` crea, en la cuenta del pipeline, una VPC
+  privada para la Lambda ejecutora con puntos de enlace de S3, Secrets Manager
+  y SNS, y solicita un emparejamiento con la VPC del laboratorio; el
+  laboratorio lo acepta con la variable nueva `peering_connection_id`. El
+  pipeline no cambia: recibe valores para variables que ya tenía. Aplicación:
+  la API local acepta `serve --aws-bridge`, un ciclo opcional que envía a S3 y
+  recupera reportes, y la aplicación de escritorio inicia la API con esa
+  opción cuando no hay una en ejecución. Validado con `terraform validate`,
+  Checkov y tests locales; **no se ejecutó `plan` ni `apply`, no se contactó
+  AWS ni el FortiGate, y el flujo completo no se probó**. Quedan seis pasos
+  del dueño, dos de ellos a mano en el equipo y en Secrets Manager. Detalle en
+  [el README de la red](../../infrastructure/executor-network/README.md) y
+  [el handoff](handoffs/2026-11-22-gui-driven-lab-audits.md).
 - La arquitectura objetivo sigue siendo VPN Site-to-Site IPsec con el executor
   en una VPC.
 - Confirmación SNS.
@@ -178,6 +194,7 @@ por el agente que lo registró.
 | 2026-11-22 | Recursos desplegados comprobados con lecturas: tres Lambdas `pps-prod-*`, tres buckets, base de conocimientos `ACTIVE` con dos ingestas en `COMPLETE` y una en `STOPPED`, 26 objetos en el bucket de conocimiento (24 documentos y 2 archivos de metadatos), generador con `AUTO_EXECUTE=true`, executor fuera de VPC. El reporte que la Lambda dejó para la segunda corrida está en `could_not_audit` con `preparation_error:ValueError` | Observado en AWS con comandos de solo lectura al escribir [la guía de puesta en marcha](puesta-en-marcha-desde-cero.md); [handoff](handoffs/2026-11-22-puesta-en-marcha-desde-cero.md) |
 | 2026-11-22 | El módulo `infrastructure/fortigate-lab` fue reescrito como laboratorio desechable de tres zonas en `us-east-1`. `terraform validate` aprobado; Checkov: 74 aprobadas y 8 fallidas justificadas. No aplicado en AWS | Rama `feature/fortigate-lab-aws`, commit `0727679` y [handoff](handoffs/2026-11-22-fortigate-lab-aws.md); verificación local, sin AWS ni FortiGate |
 | 2026-11-22 | El laboratorio se aplicó en la cuenta de laboratorio (`us-east-1`): 37 recursos creados. La administración por HTTPS y la página de demostración reenviada al host Ubuntu respondieron HTTP 200 desde la estación autorizada. Pendiente: primer inicio de sesión, token y primera auditoría contra el equipo | `terraform plan` y `terraform apply` del 2026-11-22; [handoff](handoffs/2026-11-22-fortigate-lab-aws.md) |
+| 2026-11-22 | Existen el módulo `infrastructure/executor-network` (red privada del executor y emparejamiento con el laboratorio), la aceptación opcional del emparejamiento en el laboratorio, el ciclo `serve --aws-bridge` de la API local y el inicio de la API desde la aplicación de escritorio. `terraform validate` aprobado en los dos módulos; Checkov: 31 aprobadas y 2 fallidas justificadas en `executor-network`, 76 y 8 en el laboratorio. Tests en Windows: API local 52 aprobados, GUI 65 aprobados. No aplicado en AWS y sin prueba de punta a punta | Rama `feature/gui-driven-lab-audits` y [handoff](handoffs/2026-11-22-gui-driven-lab-audits.md); verificación local, sin AWS ni FortiGate |
 
 Con 10 pedidos por minuto, una corrida live hace pocas llamadas por normativa
 (una por grupo de map y hasta tres de reduce), pero varias corridas seguidas o

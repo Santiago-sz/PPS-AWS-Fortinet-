@@ -18,6 +18,7 @@ infrastructure/
   pipeline/                  Terraform canónico del pipeline
   knowledge-base/            Knowledge Base administrada de Bedrock (módulo aislado)
   fortigate-lab/             Laboratorio independiente
+  executor-network/          Red privada del executor y emparejamiento con el laboratorio (módulo aislado)
 docs/base/                   Documentación original conservada como antecedente
 docs/context/                Conocimiento actualizado y handoffs
 lambda/, terraform/          Copias legacy de raíz: intactas
@@ -30,6 +31,10 @@ El paquete `aws/` contiene el puente, la configuración de credenciales y el
 despacho de comandos CLI. No se importa desde el servidor. El SDK se carga solo
 al ejecutar operaciones AWS. El formato SQLite y la sintaxis `serve`,
 `import-result` y `aws dispatch|sync|list-pending|approve` se mantienen.
+Desde el 2026-11-22, `serve --aws-bridge` activa un ciclo opcional
+(`aws/worker.py`) que repite el envío y la recuperación; sin esa opción el
+servidor no carga el SDK. La GUI inicia la API con esa opción cuando no
+encuentra una en ejecución (`gui/pps_desktop/local_server.py`).
 
 HTTPS es configurable por certificado/clave PEM. La GUI permite confiar en una
 CA local sin desactivar validación TLS. Se mantiene HTTP loopback para desarrollo
@@ -58,6 +63,12 @@ ni ejecutar plan/apply por interpretar esta migración como un despliegue.
 propio provider (aws 6.x), lock y estado; el pipeline sigue en aws 5.x. Solo se
 relacionan por el id de la Knowledge Base, que el operador pasa como variable.
 Ver [la decisión](decisions/10-bedrock-knowledge-base.md).
+
+`infrastructure/executor-network/` (2026-11-22) es otro módulo independiente
+(aws 6.x, lock y estado propios), de la cuenta del pipeline. Se relaciona con
+el pipeline solo por los ids de subred y de grupo de seguridad, y con el
+laboratorio solo por el id del emparejamiento; el operador pasa esos valores
+como variables. Ver [su README](../../infrastructure/executor-network/README.md).
 
 ## Rutas anteriores
 
