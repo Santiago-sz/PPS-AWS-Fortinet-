@@ -51,8 +51,11 @@ ENDPOINTS = [
     ("system/central-management", "central_management"),
     ("router/static", "static_routes"),
     ("system/sdwan", "sdwan"),
-    ("system/dhcp/server", "dhcp_servers"),
-    ("system/snmp/sysinfo", "snmp_sysinfo"),
+    # Un path de varios niveles se escribe con punto y una sola barra antes
+    # del nombre de la tabla (`system.dhcp/server`), igual que `vpn.ipsec` y
+    # `log.syslogd`. Con barra (`system/dhcp/server`) el equipo responde 400.
+    ("system.dhcp/server", "dhcp_servers"),
+    ("system.snmp/sysinfo", "snmp_sysinfo"),
     # Seguridad
     ("system/fortiguard", "fortiguard"),
     ("firewall/address", "firewall_addresses"),

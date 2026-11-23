@@ -154,6 +154,36 @@ class TestPublicGet:
 
         assert result == [{"name": "admin"}]
 
+    @pytest.mark.parametrize(
+        ("label", "path"),
+        [
+            ("dhcp_servers", "system.dhcp/server"),
+            ("snmp_sysinfo", "system.snmp/sysinfo"),
+            ("vpn_ipsec", "vpn.ipsec/phase1-interface"),
+            ("log_syslogd", "log.syslogd/setting"),
+        ],
+    )
+    def test_nested_cmdb_paths_use_a_dot_between_path_and_a_slash_before_the_name(
+        self, mocker, label, path
+    ):
+        # FortiOS: /api/v2/cmdb/<path>/<name>; un path de varios niveles se
+        # escribe con punto (`system.dhcp`), nunca con otra barra. Con barra
+        # el equipo de laboratorio (7.6.8) respondió HTTP 400.
+        client = FortiGateClient(host="192.0.2.10", token="dummy-token", verify_ssl=False)
+        urlopen = mocker.patch(
+            "fortigate_client.urllib.request.urlopen",
+            return_value=_fake_response({"http_status": 200, "results": []}),
+        )
+
+        client.get(label)
+
+        request = urlopen.call_args.args[0]
+        assert request.full_url == f"https://192.0.2.10/api/v2/cmdb/{path}"
+        assert request.get_method() == "GET"
+
+    def test_no_catalog_path_has_more_than_one_slash(self):
+        assert [path for path, _ in ENDPOINTS if path.count("/") != 1] == []
+
     def test_get_memoizes_repeated_calls_same_endpoint(self, mocker):
         """Llamadas repetidas al mismo endpoint_key no deben repetir el fetch HTTP."""
         client = FortiGateClient(host="192.168.1.1", token="dummy-token", verify_ssl=False)
