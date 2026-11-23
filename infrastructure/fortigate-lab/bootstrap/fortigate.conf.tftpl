@@ -1,0 +1,479 @@
+config system global
+set hostname "${hostname}"
+set timezone "America/Argentina/Buenos_Aires"
+set admintimeout 480
+set admin-lockout-threshold 10
+set admin-lockout-duration 30
+end
+config system interface
+edit "port1"
+set alias "wan"
+set description "Salida a Internet"
+set mode dhcp
+set role wan
+set allowaccess ping https ssh
+next
+edit "port2"
+set alias "lan"
+set description "Red interna de usuarios y servidores"
+set mode static
+set ip ${lan_ip} ${subnet_mask}
+set role lan
+set allowaccess ping https ssh http telnet
+next
+edit "port3"
+set alias "dmz"
+set description "Servidores publicados"
+set mode static
+set ip ${dmz_ip} ${subnet_mask}
+set role dmz
+set allowaccess ping
+next
+end
+config system zone
+edit "zona-wan"
+set description "Internet"
+set interface "port1"
+next
+edit "zona-lan"
+set description "Red interna"
+set interface "port2"
+next
+edit "zona-dmz"
+set description "Servidores publicados"
+set interface "port3"
+next
+end
+config system dns
+set protocol cleartext
+set primary ${vpc_dns}
+set secondary 1.1.1.1
+end
+config system ntp
+set ntpsync enable
+set type custom
+config ntpserver
+edit 1
+set server "time.aws.com"
+next
+edit 2
+set server "pool.ntp.org"
+next
+end
+end
+config firewall address
+edit "red-vpc"
+set subnet ${vpc_ip} ${vpc_mask}
+set comment "Bloque completo del laboratorio"
+next
+edit "red-lan"
+set subnet ${lan_net} ${subnet_mask}
+set comment "Red interna"
+next
+edit "red-dmz"
+set subnet ${dmz_net} ${subnet_mask}
+set comment "Servidores publicados"
+next
+edit "red-sucursal"
+set subnet ${branch_net} ${subnet_mask}
+set comment "Sucursal (no existe como red real)"
+next
+edit "rango-usuarios"
+set type iprange
+set start-ip ${lan_users_start}
+set end-ip ${lan_users_end}
+set comment "Puestos de trabajo"
+next
+edit "rango-ti"
+set type iprange
+set start-ip ${ti_start}
+set end-ip ${ti_end}
+set comment "Equipo de TI"
+next
+edit "srv-web-demo"
+set subnet ${ubuntu_ip} 255.255.255.255
+set comment "Host Ubuntu del laboratorio (existe)"
+next
+edit "srv-bd-interna"
+set subnet ${srv_db_ip} 255.255.255.255
+set comment "Base de datos interna (no existe como equipo)"
+next
+edit "srv-monitoreo"
+set subnet ${srv_monitor_ip} 255.255.255.255
+set comment "Monitoreo (no existe como equipo)"
+next
+edit "srv-web-dmz"
+set subnet ${srv_web_ip} 255.255.255.255
+set comment "Portal web (no existe como equipo)"
+next
+edit "srv-app-dmz"
+set subnet ${srv_app_ip} 255.255.255.255
+set comment "Aplicacion de gestion (no existe como equipo)"
+next
+edit "srv-directorio"
+set subnet ${srv_dir_ip} 255.255.255.255
+set comment "Directorio LDAP (no existe como equipo)"
+next
+edit "srv-syslog"
+set subnet ${srv_syslog_ip} 255.255.255.255
+set comment "Servidor de registros (no existe como equipo)"
+next
+%{ for s in admin_sources ~}
+edit "${s.name}"
+set subnet ${s.ip} ${s.mask}
+set comment "Origen de administracion autorizado"
+next
+%{ endfor ~}
+%{ for s in peer_sources ~}
+edit "${s.name}"
+set subnet ${s.ip} ${s.mask}
+set comment "VPC emparejada de PostureGuard"
+next
+%{ endfor ~}
+end
+config firewall addrgrp
+edit "grp-servidores-dmz"
+set member "srv-web-dmz" "srv-app-dmz" "srv-directorio" "srv-syslog"
+set comment "Servidores de la DMZ"
+next
+edit "grp-web-dmz"
+set member "srv-web-dmz" "srv-app-dmz"
+set comment "Servidores web y de aplicacion"
+next
+edit "grp-puestos"
+set member "rango-usuarios" "rango-ti"
+set comment "Puestos de trabajo y TI"
+next
+edit "grp-origenes-admin"
+set member ${join(" ", [for s in admin_sources : "\"${s.name}\""])}
+set comment "Origenes de administracion autorizados"
+next
+end
+config firewall service custom
+edit "svc-app-8443"
+set tcp-portrange 8443
+set comment "Aplicacion de gestion"
+next
+edit "svc-monitoreo-10050"
+set tcp-portrange 10050
+set comment "Agente de monitoreo"
+next
+end
+config firewall service group
+edit "grp-web"
+set member "HTTP" "HTTPS"
+next
+edit "grp-correo-seguro"
+set member "SMTPS" "IMAPS"
+next
+edit "grp-admin-remota"
+set member "SSH" "RDP"
+next
+end
+config firewall vip
+edit "vip-web-demo"
+set comment "Publica el servidor web de demostracion en el puerto 8080"
+set extintf "any"
+set extip ${wan_ip}
+set mappedip "${ubuntu_ip}"
+set portforward enable
+set protocol tcp
+set extport 8080
+set mappedport 80
+next
+end
+config firewall policy
+edit 1
+set name "LAN-Internet-Web"
+set srcintf "zona-lan"
+set dstintf "zona-wan"
+set action accept
+set srcaddr "grp-puestos"
+set dstaddr "all"
+set schedule "always"
+set service "grp-web" "DNS"
+set utm-status enable
+set ssl-ssh-profile "certificate-inspection"
+set av-profile "default"
+set webfilter-profile "default"
+set ips-sensor "default"
+set logtraffic all
+set nat enable
+set comments "Navegacion de los puestos con perfiles de seguridad"
+next
+edit 2
+set name "LAN-Internet-Correo"
+set srcintf "zona-lan"
+set dstintf "zona-wan"
+set action accept
+set srcaddr "grp-puestos"
+set dstaddr "all"
+set schedule "always"
+set service "grp-correo-seguro"
+set utm-status enable
+set ssl-ssh-profile "certificate-inspection"
+set av-profile "default"
+set ips-sensor "default"
+set logtraffic all
+set nat enable
+set comments "Correo cifrado hacia el proveedor externo"
+next
+edit 3
+set name "LAN-DMZ-Aplicaciones"
+set srcintf "zona-lan"
+set dstintf "zona-dmz"
+set action accept
+set srcaddr "grp-puestos"
+set dstaddr "grp-web-dmz"
+set schedule "always"
+set service "HTTPS" "svc-app-8443"
+set utm-status enable
+set ssl-ssh-profile "certificate-inspection"
+set ips-sensor "default"
+set logtraffic all
+set comments "Acceso de los puestos a las aplicaciones internas"
+next
+edit 4
+set name "TI-DMZ-Administracion"
+set srcintf "zona-lan"
+set dstintf "zona-dmz"
+set action accept
+set srcaddr "rango-ti"
+set dstaddr "grp-servidores-dmz"
+set schedule "always"
+set service "grp-admin-remota"
+set logtraffic all
+set comments "Administracion remota de servidores solo desde TI"
+next
+edit 5
+set name "LAN-DMZ-Monitoreo"
+set srcintf "zona-lan"
+set dstintf "zona-dmz"
+set action accept
+set srcaddr "srv-monitoreo"
+set dstaddr "grp-servidores-dmz"
+set schedule "always"
+set service "PING" "SNMP" "svc-monitoreo-10050"
+set logtraffic utm
+set comments "Sondeo de los servidores desde el monitoreo"
+next
+edit 6
+set name "DMZ-Internet-Actualizaciones"
+set srcintf "zona-dmz"
+set dstintf "zona-wan"
+set action accept
+set srcaddr "grp-servidores-dmz"
+set dstaddr "all"
+set schedule "always"
+set service "grp-web" "DNS" "NTP"
+set utm-status enable
+set ssl-ssh-profile "certificate-inspection"
+set ips-sensor "default"
+set logtraffic all
+set nat enable
+set comments "Actualizaciones de los servidores"
+next
+edit 7
+set name "DMZ-LAN-BaseDatos"
+set srcintf "zona-dmz"
+set dstintf "zona-lan"
+set action accept
+set srcaddr "srv-app-dmz"
+set dstaddr "srv-bd-interna"
+set schedule "always"
+set service "MYSQL"
+set logtraffic disable
+set comments "LAB-D5 politica sin registro de trafico"
+next
+edit 8
+set name "DMZ-LAN-Registros"
+set srcintf "zona-dmz"
+set dstintf "zona-lan"
+set action accept
+set srcaddr "grp-servidores-dmz"
+set dstaddr "srv-monitoreo"
+set schedule "always"
+set service "SYSLOG"
+set logtraffic all
+set comments "Envio de registros al monitoreo"
+next
+edit 9
+set name "WAN-LAN-Web-Demo"
+set srcintf "zona-wan"
+set dstintf "zona-lan"
+set action accept
+set srcaddr "grp-origenes-admin"
+set dstaddr "vip-web-demo"
+set schedule "always"
+set service "HTTP"
+set logtraffic all
+set nat enable
+set comments "Reenvio de demostracion solo desde origenes autorizados"
+next
+edit 10
+set name "LAN-Internet-Bloqueo-Telnet"
+set srcintf "zona-lan"
+set dstintf "zona-wan"
+set action deny
+set srcaddr "all"
+set dstaddr "all"
+set schedule "always"
+set service "TELNET"
+set logtraffic all
+set comments "Telnet saliente prohibido"
+next
+edit 11
+set name "LAN-Internet-Temporal-Proveedor"
+set srcintf "zona-lan"
+set dstintf "zona-wan"
+set action accept
+set srcaddr "all"
+set dstaddr "all"
+set schedule "always"
+set service "ALL"
+set logtraffic disable
+set nat enable
+set comments "LAB-D4 regla temporal amplia que nunca se retiro"
+next
+edit 12
+set name "DMZ-Internet-FTP-Heredada"
+set status disable
+set srcintf "zona-dmz"
+set dstintf "zona-wan"
+set action accept
+set srcaddr "srv-web-dmz"
+set dstaddr "all"
+set schedule "always"
+set service "FTP"
+set logtraffic all
+set nat enable
+set comments "Regla heredada deshabilitada"
+next
+end
+config router static
+edit 1
+set dst ${branch_net} ${subnet_mask}
+set gateway ${lan_gateway}
+set device "port2"
+set comment "Sucursal (destino de ejemplo, no existe)"
+next
+end
+config system dhcp server
+edit 1
+set interface "port2"
+set default-gateway ${lan_ip}
+set netmask ${subnet_mask}
+set dns-service default
+config ip-range
+edit 1
+set start-ip ${lan_users_start}
+set end-ip ${lan_users_end}
+next
+end
+next
+end
+config user ldap
+edit "directorio-corp"
+set server "${srv_dir_ip}"
+set cnid "sAMAccountName"
+set dn "dc=corp,dc=example"
+set port 389
+set secure disable
+next
+end
+config user local
+edit "jperez"
+set type password
+set passwd ${user_passwords["jperez"]}
+next
+edit "mgomez"
+set type password
+set passwd ${user_passwords["mgomez"]}
+set status disable
+next
+end
+config log setting
+set fwpolicy-implicit-log enable
+set local-in-allow enable
+set local-in-deny-unicast enable
+end
+config log memory setting
+set status enable
+end
+config log syslogd setting
+set status enable
+set server "${srv_syslog_ip}"
+set port 514
+end
+config system snmp sysinfo
+set status enable
+set description "FortiGate de laboratorio PostureGuard"
+set contact-info "Equipo de TI"
+set location "Laboratorio AWS"
+end
+config system accprofile
+edit "pg-solo-lectura"
+set comments "Consulta sin cambios para auditoria interna"
+set secfabgrp read
+set ftviewgrp read
+set authgrp read
+set sysgrp read
+set netgrp read
+set loggrp read
+set fwgrp read
+set vpngrp read
+set utmgrp read
+set wanoptgrp read
+set wifi read
+next
+end
+config system admin
+edit "netops"
+set accprofile "prof_admin"
+set vdom "root"
+set trusthost1 ${lan_net} ${subnet_mask}
+set comments "Operaciones de red, solo desde la red interna"
+set password ${admin_passwords["netops"]}
+next
+edit "auditoria"
+set accprofile "pg-solo-lectura"
+set vdom "root"
+%{ for i, s in admin_sources ~}
+set trusthost${i + 1} ${s.ip} ${s.mask}
+%{ endfor ~}
+set comments "Auditoria interna, solo lectura"
+set password ${admin_passwords["auditoria"]}
+next
+edit "soporte-ext"
+set accprofile "super_admin"
+set vdom "root"
+set comments "LAB-D6 proveedor externo sin origenes de confianza"
+set password ${admin_passwords["soporte-ext"]}
+next
+end
+config system api-user
+edit "${api_user}"
+set comments "PostureGuard, lectura por REST API"
+set accprofile "super_admin_readonly"
+set vdom "root"
+config trusthost
+%{ for i, s in concat(admin_sources, peer_sources) ~}
+edit ${i + 1}
+set type ipv4-trusthost
+set ipv4-trusthost ${s.ip} ${s.mask}
+next
+%{ endfor ~}
+end
+next
+end
+config system password-policy
+set status enable
+set apply-to admin-password
+set minimum-length 12
+set min-lower-case-letter 0
+set min-upper-case-letter 0
+set min-number 0
+set min-non-alphanumeric 0
+set expire-status disable
+set reuse-password enable
+end

@@ -1,0 +1,3 @@
+# La configuracion inicial viaja como user-data: fin de linea fijo para que
+# el contenido sea el mismo en Windows y en Linux.
+bootstrap/* text eol=lf

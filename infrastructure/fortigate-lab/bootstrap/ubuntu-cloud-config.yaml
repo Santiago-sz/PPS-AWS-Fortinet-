@@ -1,0 +1,31 @@
+#cloud-config
+# Servidor web mínimo de demostración. Usa solo lo que trae la imagen de
+# Ubuntu 24.04 (python3 y systemd): no instala paquetes ni necesita Internet.
+write_files:
+  - path: /srv/demo-web/index.html
+    permissions: "0644"
+    content: |
+      PostureGuard lab: servidor web interno de demostracion (detras del FortiGate).
+  - path: /etc/systemd/system/demo-web.service
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=Servidor web de demostracion del laboratorio PostureGuard
+      After=network-online.target
+      Wants=network-online.target
+
+      [Service]
+      User=www-data
+      Group=www-data
+      AmbientCapabilities=CAP_NET_BIND_SERVICE
+      NoNewPrivileges=true
+      ProtectSystem=strict
+      ProtectHome=true
+      ExecStart=/usr/bin/python3 -m http.server 80 --bind 0.0.0.0 --directory /srv/demo-web
+      Restart=on-failure
+
+      [Install]
+      WantedBy=multi-user.target
+runcmd:
+  - [systemctl, daemon-reload]
+  - [systemctl, enable, --now, demo-web.service]
