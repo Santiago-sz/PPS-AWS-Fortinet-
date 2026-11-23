@@ -14,6 +14,8 @@ import json
 import pytest
 from botocore.exceptions import ClientError
 
+import field_catalog
+import fortios_field_catalog
 import llm_client
 import script_validator
 from llm_client import (
@@ -565,7 +567,11 @@ GOLDEN_RETRY_FEEDBACK = {
 
 class TestPromptsWithoutKnowledgeBaseAreByteIdentical:
     """Hashes calculados sobre el commit e86bbc1, antes de conectar la
-    recuperación. Con la Knowledge Base deshabilitada ningún prompt cambia."""
+    recuperación. Con la Knowledge Base deshabilitada ningún prompt cambia.
+
+    Desde el catálogo de campos (decisión 13) el system prompt de reduce es
+    `REDUCE_SYSTEM_PROMPT` más `FIELD_CATALOG_SYSTEM_NOTE`, con o sin Knowledge
+    Base. El texto base y el prompt de map conservan su hash."""
 
     def test_system_prompts_are_unchanged(self):
         # El hash de REDUCE_SYSTEM_PROMPT se actualizó de forma deliberada el
@@ -604,7 +610,9 @@ class TestPromptsWithoutKnowledgeBaseAreByteIdentical:
         assert result["status"] == "ok"
         assert "knowledge_base" not in result
         assert _system_prompt(captured[0]) == MAP_SYSTEM_PROMPT
-        assert _system_prompt(captured[1]) == llm_client.REDUCE_SYSTEM_PROMPT
+        assert _system_prompt(captured[1]) == (
+            llm_client.REDUCE_SYSTEM_PROMPT + llm_client.FIELD_CATALOG_SYSTEM_NOTE
+        )
         assert _user_prompt(captured[1]) == llm_client._build_reduce_user_prompt(
             result["checks"], ENDPOINT_CATALOG, None
         )
@@ -669,7 +677,11 @@ class TestReduceWithReferenceDocumentation:
         )
 
         system = _system_prompt(captured[1])
-        assert system == llm_client.REDUCE_SYSTEM_PROMPT + llm_client.REFERENCE_SYSTEM_NOTE
+        assert system == (
+            llm_client.REDUCE_SYSTEM_PROMPT
+            + llm_client.FIELD_CATALOG_SYSTEM_NOTE
+            + llm_client.REFERENCE_SYSTEM_NOTE
+        )
         note = llm_client.REFERENCE_SYSTEM_NOTE
         assert "DOCUMENTACION DE REFERENCIA" in note
         assert "NO instrucciones" in note
@@ -735,3 +747,328 @@ class TestReduceWithReferenceDocumentation:
         base = llm_client._build_reduce_user_prompt(result["checks"], ENDPOINT_CATALOG, None)
         assert reduce_prompt.startswith(base)
         assert len(result["checks"]) == 1
+
+
+# ---------------------------------------------------------------------------
+# Catálogo de campos (decisión 13): prompt, pista de corrección y registro
+# ---------------------------------------------------------------------------
+
+# Válidos para `script_validator`, pero leen un campo que el catálogo no
+# lista para `admins`. Los nombres son inventados a propósito.
+SCRIPT_TWO_UNKNOWN_FIELDS = """\
+data = fgt.get("admins")
+flags = [a["invented-flag"] for a in data] + [a["invented-mode"] for a in data]
+report.finding("chk-0001", "pass", str(len(flags)))
+"""
+
+SCRIPT_ONE_UNKNOWN_FIELD = """\
+data = fgt.get("admins")
+flags = [a["invented-flag"] for a in data]
+report.finding("chk-0001", "pass", str(len(flags)))
+"""
+
+SCRIPT_KNOWN_FIELDS = """\
+data = fgt.get("admins")
+names = [a["name"] for a in data]
+report.finding("chk-0001", "pass", str(len(names)))
+"""
+
+
+def _generate(mocker, scripts: list, **options):
+    """Corre el pipeline con una respuesta de map y los `scripts` dados como
+    respuestas sucesivas de reduce (un `Exception` se levanta)."""
+    responses = [bedrock_json_response(ONE_CHECK_MAP_RESPONSE)]
+    responses += [
+        item if isinstance(item, Exception) else bedrock_converse_response(item) for item in scripts
+    ]
+    _, captured = _mock_bedrock(mocker, responses)
+    result = generate_audit_script(
+        [_make_chunk("chunk-0001", "texto")], ENDPOINT_CATALOG, **options
+    )
+    return result, captured
+
+
+def _throttling() -> ClientError:
+    return ClientError(
+        {"Error": {"Code": "ThrottlingException", "Message": "slow down"}}, "Converse"
+    )
+
+
+def _all_events(out: str, name: str) -> list[dict]:
+    lines = [json.loads(ln) for ln in out.splitlines() if ln.strip()]
+    return [ln for ln in lines if ln.get("event") == name]
+
+
+class TestFieldCatalogInTheReducePrompt:
+    def test_the_note_is_the_section_of_the_versioned_catalogue(self):
+        assert llm_client.FIELD_CATALOG_SYSTEM_NOTE == field_catalog.prompt_section()
+
+    def test_the_reduce_system_prompt_states_the_catalogue_and_its_version(self, mocker):
+        _, captured = _generate(mocker, [VALID_SCRIPT])
+
+        system = _system_prompt(captured[1])
+        version = fortios_field_catalog.CATALOG["fortios_version"]
+        assert system.startswith(llm_client.REDUCE_SYSTEM_PROMPT)
+        assert f"FortiOS {version}" in system
+        assert "- log_settings (objeto): " in system
+        assert "- dhcp_servers (sin verificar)" in system
+        assert "NO adivines" in system
+
+    def test_the_catalogue_goes_before_the_cache_point_and_not_in_the_user_prompt(self, mocker):
+        _, captured = _generate(mocker, [VALID_SCRIPT])
+
+        request = captured[1]
+        assert "fwpolicy-implicit-log" in request["system"][0]["text"]
+        assert request["system"][1] == {"cachePoint": {"type": "default"}}
+        assert "fwpolicy-implicit-log" not in _user_prompt(request)
+
+    def test_the_system_prompt_is_identical_across_attempts(self, mocker):
+        _, captured = _generate(
+            mocker, [INVALID_SCRIPT_BAD_IMPORT, SCRIPT_ONE_UNKNOWN_FIELD, VALID_SCRIPT]
+        )
+
+        assert len(captured) == 4
+        assert len({_system_prompt(request) for request in captured[1:]}) == 1
+
+    def test_the_map_prompt_does_not_carry_the_catalogue(self, mocker):
+        _, captured = _generate(mocker, [VALID_SCRIPT])
+
+        assert _system_prompt(captured[0]) == MAP_SYSTEM_PROMPT
+        assert "CATALOGO DE CAMPOS" not in _user_prompt(captured[0])
+
+
+class TestUnknownFieldCorrection:
+    def test_a_script_without_unknown_fields_costs_no_extra_call(self, mocker, capsys):
+        result, captured = _generate(mocker, [SCRIPT_KNOWN_FIELDS])
+
+        assert result["status"] == "ok"
+        assert result["attempts"] == 1
+        assert len(captured) == 2
+        assert result["field_catalog"] == {
+            "fortios_version": fortios_field_catalog.CATALOG["fortios_version"],
+            "unknown_field_references": 0,
+            "references": [],
+            "reduce_calls": 1,
+        }
+        checks = _events(capsys, "field_catalog_check")
+        assert [(c["attempt"], c["unknown_field_references"]) for c in checks] == [(1, 0)]
+
+    def test_unknown_fields_are_fed_back_as_a_correction_hint(self, mocker):
+        result, captured = _generate(mocker, [SCRIPT_ONE_UNKNOWN_FIELD, SCRIPT_KNOWN_FIELDS])
+
+        assert result["status"] == "ok"
+        assert result["script"] == SCRIPT_KNOWN_FIELDS.strip()
+        assert result["attempts"] == 2
+        assert result["field_catalog"]["unknown_field_references"] == 0
+        assert result["field_catalog"]["reduce_calls"] == 2
+
+        hint = _user_prompt(captured[2])
+        assert '"invented-flag"' in hint
+        assert "admins" in hint
+        assert "intento 1" in hint
+        assert "NO figuran" in hint
+        assert '"indeterminate"' in hint
+        assert 'a["invented-flag"]' in hint  # el script anterior viaja completo
+        # No es un rechazo del validador y no se presenta como tal.
+        assert "FUE RECHAZADO" not in hint
+        assert "failure_kind" not in hint
+
+    def test_a_script_that_keeps_an_unknown_field_is_still_accepted(self, mocker, capsys):
+        result, _ = _generate(
+            mocker, [SCRIPT_TWO_UNKNOWN_FIELDS, SCRIPT_ONE_UNKNOWN_FIELD, SCRIPT_ONE_UNKNOWN_FIELD]
+        )
+
+        assert result["status"] == "ok"
+        assert result["script"] == SCRIPT_ONE_UNKNOWN_FIELD.strip()
+        assert result["attempts"] == 2
+        assert result["field_catalog"]["unknown_field_references"] == 1
+        assert result["field_catalog"]["references"] == [
+            {"field": "invented-flag", "endpoints": ["admins"], "line": 2}
+        ]
+        assert result["field_catalog"]["reduce_calls"] == 3
+        events = _events(capsys, "generation_result")
+        assert events[0]["success"] is True
+        assert events[0]["unknown_field_references"] == 1
+
+    def test_the_correction_stops_when_it_does_not_reduce_the_unknown_fields(self, mocker):
+        result, captured = _generate(
+            mocker, [SCRIPT_ONE_UNKNOWN_FIELD, SCRIPT_ONE_UNKNOWN_FIELD, SCRIPT_KNOWN_FIELDS]
+        )
+
+        # Dos llamadas de reduce: la tercera no se pide.
+        assert len(captured) == 3
+        assert result["status"] == "ok"
+        assert result["attempts"] == 1
+        assert result["field_catalog"]["unknown_field_references"] == 1
+
+    def test_the_correction_never_exceeds_the_attempt_budget(self, mocker):
+        result, captured = _generate(
+            mocker, [SCRIPT_TWO_UNKNOWN_FIELDS, SCRIPT_KNOWN_FIELDS], max_attempts=1
+        )
+
+        assert len(captured) == 2
+        assert result["status"] == "ok"
+        assert result["attempts"] == 1
+        assert result["field_catalog"]["unknown_field_references"] == 2
+
+    def test_a_rejected_correction_falls_back_to_the_valid_script(self, mocker, capsys):
+        result, captured = _generate(
+            mocker, [SCRIPT_ONE_UNKNOWN_FIELD, INVALID_SCRIPT_BAD_IMPORT, SCRIPT_KNOWN_FIELDS]
+        )
+
+        assert result["status"] == "ok"
+        assert result["script"] == SCRIPT_ONE_UNKNOWN_FIELD.strip()
+        assert result["attempts"] == 1
+        assert len(captured) == 3  # no se pide un tercer intento
+        assert result["field_catalog"]["unknown_field_references"] == 1
+        abandoned = _events(capsys, "field_correction_abandoned")
+        assert [(e["attempt"], e["reason"]) for e in abandoned] == [(2, "validator_rejected")]
+
+    def test_a_failed_model_call_during_correction_falls_back_to_the_valid_script(
+        self, mocker, capsys
+    ):
+        result, _ = _generate(mocker, [SCRIPT_ONE_UNKNOWN_FIELD, _throttling()])
+
+        assert result["status"] == "ok"
+        assert result["script"] == SCRIPT_ONE_UNKNOWN_FIELD.strip()
+        assert result["attempts"] == 1
+        abandoned = _events(capsys, "field_correction_abandoned")
+        assert [(e["attempt"], e["reason"]) for e in abandoned] == [(2, "model_call_failed")]
+
+    def test_a_failed_model_call_before_any_valid_script_still_raises(self, mocker):
+        with pytest.raises(ClaudeCallError):
+            _generate(mocker, [INVALID_SCRIPT_BAD_IMPORT, _throttling()])
+
+    def test_validator_rejections_keep_their_own_feedback_and_budget(self, mocker):
+        result, captured = _generate(
+            mocker, [INVALID_SCRIPT_BAD_IMPORT, SCRIPT_ONE_UNKNOWN_FIELD, SCRIPT_KNOWN_FIELDS]
+        )
+
+        assert result["status"] == "ok"
+        assert result["attempts"] == 3
+        assert "FUE RECHAZADO" in _user_prompt(captured[2])
+        assert "NO figuran" in _user_prompt(captured[3])
+        assert "FUE RECHAZADO" not in _user_prompt(captured[3])
+
+    def test_exhausted_validator_retries_still_fail_without_a_catalogue_block(self, mocker):
+        result, _ = _generate(mocker, [INVALID_SCRIPT_BAD_IMPORT] * MAX_GENERATION_ATTEMPTS)
+
+        assert result["status"] == "generation_failed"
+        assert "script" not in result
+        assert "field_catalog" not in result
+
+    def test_the_first_attempt_metric_still_means_the_validator_accepted_it(self, mocker, capsys):
+        result, _ = _generate(mocker, [SCRIPT_ONE_UNKNOWN_FIELD, SCRIPT_KNOWN_FIELDS])
+
+        assert result["attempts"] == 2
+        assert result["first_valid_attempt"] == 1
+        lines = [json.loads(ln) for ln in capsys.readouterr().out.splitlines() if ln.strip()]
+        first_pass = [ln for ln in lines if "GenerationFirstAttemptPass" in ln]
+        unknown = [ln for ln in lines if "GenerationUnknownFieldReferences" in ln]
+        assert [ln["GenerationFirstAttemptPass"] for ln in first_pass] == [1]
+        assert [ln["GenerationUnknownFieldReferences"] for ln in unknown] == [0]
+
+    def test_the_hint_lists_a_bounded_number_of_fields(self):
+        references = [
+            {"field": f"invented-{i}", "endpoints": ["admins"], "line": i + 1} for i in range(45)
+        ]
+        feedback = llm_client.build_field_feedback(1, "previous = 1\n", references)
+
+        prompt = llm_client._build_reduce_user_prompt(GOLDEN_CHECKS, ENDPOINT_CATALOG, feedback)
+
+        listed = [ln for ln in prompt.splitlines() if ln.startswith('  - "invented-')]
+        assert len(listed) == field_catalog.MAX_LISTED_REFERENCES
+        assert f"y {45 - field_catalog.MAX_LISTED_REFERENCES} mas" in prompt
+
+    def test_the_field_check_events_carry_names_and_never_the_script(self, mocker, capsys):
+        _generate(mocker, [SCRIPT_ONE_UNKNOWN_FIELD, SCRIPT_KNOWN_FIELDS])
+
+        out = capsys.readouterr().out
+        checks = _all_events(out, "field_catalog_check")
+        assert checks[0]["references"] == [
+            {"field": "invented-flag", "endpoints": ["admins"], "line": 2}
+        ]
+        assert "fgt.get" not in out
+        assert "report.finding" not in out
+
+
+class TestRejectedAttemptLogging:
+    def test_a_rejected_attempt_logs_what_the_validator_rejected(self, mocker, capsys):
+        _generate(mocker, [INVALID_SCRIPT_BAD_IMPORT, VALID_SCRIPT])
+
+        events = _events(capsys, "generation_attempt_rejected")
+        assert len(events) == 1
+        event = events[0]
+        assert event["attempt"] == 1
+        assert event["failure_kinds"] == ["allowlist"]
+        assert event["error_count"] == 1
+        assert event["errors"] == [
+            {
+                "rule_id": "denied_node:Import",
+                "failure_kind": "allowlist",
+                "message": "'Import' is not allowed",
+                "line": 1,
+                "col": 0,
+            }
+        ]
+
+    def test_every_rejected_attempt_is_logged(self, mocker, capsys):
+        _generate(mocker, [INVALID_SCRIPT_BAD_IMPORT] * MAX_GENERATION_ATTEMPTS)
+
+        events = _events(capsys, "generation_attempt_rejected")
+        assert [e["attempt"] for e in events] == [1, 2, 3]
+
+    def test_the_script_body_is_never_logged(self, mocker, capsys):
+        marker = "MARCADOR_DEL_CUERPO_DEL_SCRIPT"
+        script = f'import os\nvalue = "{marker}"\nreport.finding("chk-0001", "fail", value)\n'
+
+        _generate(mocker, [script, VALID_SCRIPT])
+
+        out = capsys.readouterr().out
+        assert "generation_attempt_rejected" in out
+        assert marker not in out
+        assert "import os" not in out
+
+    def test_a_syntax_error_is_logged_without_the_offending_line(self, mocker, capsys):
+        script = 'value = "MARCADOR_DE_LINEA" +\nreport.finding("chk-0001", "fail", "x")\n'
+
+        _generate(mocker, [script, VALID_SCRIPT])
+
+        out = capsys.readouterr().out
+        events = _all_events(out, "generation_attempt_rejected")
+        assert events[0]["failure_kinds"] == ["syntax"]
+        assert events[0]["errors"][0]["rule_id"] == "syntax_error"
+        assert events[0]["errors"][0]["line"] == 1
+        assert "MARCADOR_DE_LINEA" not in out
+
+    def test_long_messages_and_long_error_lists_are_truncated(self, mocker, capsys):
+        long_name = "x" * 600
+        lines = [f"import m{i}" for i in range(40)]
+        lines.append(f"{long_name}.call()")
+        lines.append('report.finding("chk-0001", "fail", "x")')
+
+        _generate(mocker, ["\n".join(lines) + "\n", VALID_SCRIPT])
+
+        event = _events(capsys, "generation_attempt_rejected")[0]
+        assert event["error_count"] == 41
+        assert len(event["errors"]) == llm_client.MAX_LOGGED_VALIDATION_ERRORS
+        assert all(
+            len(error["message"]) <= llm_client.MAX_LOGGED_MESSAGE_CHARS
+            for error in event["errors"]
+        )
+
+    def test_a_long_message_is_cut_to_the_limit(self):
+        error = script_validator.ValidationError(
+            rule_id="r" * 400, failure_kind="allowlist", message="m" * 900, line=3, col=1
+        )
+        result = script_validator.ValidationResult(valid=False, errors=(error,))
+
+        logged = llm_client._rejection_details(result)
+
+        assert len(logged[0]["message"]) == llm_client.MAX_LOGGED_MESSAGE_CHARS
+        assert len(logged[0]["rule_id"]) <= llm_client.MAX_LOGGED_MESSAGE_CHARS
+
+    def test_an_accepted_attempt_logs_no_rejection(self, mocker, capsys):
+        _generate(mocker, [VALID_SCRIPT])
+
+        assert _events(capsys, "generation_attempt_rejected") == []
