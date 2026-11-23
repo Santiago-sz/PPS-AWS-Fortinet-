@@ -9,7 +9,14 @@ el script generado nunca puede pasar/forjar su propio clause_ref.
 
 import pytest
 
-from toolkit import FgtCapability, ReportCapability, UnknownEndpointError
+import fortigate_client
+from toolkit import (
+    NEVER_EMPTY_ENDPOINTS,
+    FgtCapability,
+    ReadLedger,
+    ReportCapability,
+    UnknownEndpointError,
+)
 
 
 class _FakeFortiGateClient:
@@ -313,3 +320,311 @@ class TestReportCapabilityReferences:
             {"source": "s" * 300, "score": 0.5},
         ]
         assert findings[1]["references"] == []
+
+
+# ---------------------------------------------------------------------------
+# Datos ausentes, ilegibles o imposiblemente vacíos (decisión 12)
+# ---------------------------------------------------------------------------
+
+GAPS_MANIFEST = {
+    "run_id": "run-gaps",
+    "checks": [
+        {
+            "check_id": "chk-admins",
+            "clause_ref": {"page": 1, "quote": "..."},
+            "endpoints": ["admins", "api_users"],
+            "remediation": REMEDIATION,
+        },
+        {
+            "check_id": "chk-vpn",
+            "clause_ref": {"page": 2, "quote": "..."},
+            "endpoints": ["vpn_ipsec"],
+        },
+        {
+            "check_id": "chk-dhcp",
+            "clause_ref": {"page": 3, "quote": "..."},
+            "endpoints": ["dhcp_servers"],
+        },
+        {
+            "check_id": "chk-log",
+            "clause_ref": {"page": 4, "quote": "..."},
+            "endpoints": ["log_settings"],
+        },
+        {
+            "check_id": "chk-policies",
+            "clause_ref": {"page": 5, "quote": "..."},
+            "endpoints": ["firewall_policies"],
+        },
+        {"check_id": "chk-undeclared", "clause_ref": {"page": 6, "quote": "..."}},
+    ],
+}
+
+LEGACY_FINDING_KEYS = [
+    "check_id",
+    "clause_ref",
+    "status",
+    "evidence",
+    "endpoints_used",
+    "traceable",
+    "remediation",
+]
+
+
+def _wired(responses: dict[str, object]):
+    """`fgt` y `report` compartiendo un registro, como los cablea el sandbox."""
+    ledger = ReadLedger()
+    findings: list[dict] = []
+    fgt = FgtCapability(_FakeFortiGateClient(responses), ledger=ledger)
+    report = ReportCapability(GAPS_MANIFEST, findings, notes=[], ledger=ledger)
+    return fgt, report, findings
+
+
+class TestNeverEmptyEndpoints:
+    def test_the_set_names_tables_a_device_in_service_always_has(self):
+        assert {"admins", "api_users"} <= NEVER_EMPTY_ENDPOINTS
+        assert "vpn_ipsec" not in NEVER_EMPTY_ENDPOINTS
+        assert "radius_servers" not in NEVER_EMPTY_ENDPOINTS
+        known = {label for _, label in fortigate_client.ENDPOINTS}
+        assert known >= NEVER_EMPTY_ENDPOINTS
+
+    def test_catalog_tuples_keep_their_two_element_shape(self):
+        # `collect_all` del flujo legacy las desempaqueta de a dos.
+        assert all(len(entry) == 2 for entry in fortigate_client.ENDPOINTS)
+
+    def test_empty_admins_turns_a_pass_into_indeterminate(self):
+        # Forma observada en el laboratorio: HTTP 200 con lista vacía.
+        fgt, report, findings = _wired({"admins": [], "api_users": []})
+
+        admins = fgt.get("admins")
+        report.finding("chk-admins", "pass", f"total_admins={len(admins)}", ["admins"])
+
+        finding = findings[0]
+        assert finding["status"] == "indeterminate"
+        assert finding["reported_status"] == "pass"
+        assert finding["data_gaps"] == [{"endpoint": "admins", "kind": "empty_not_possible"}]
+        assert "admins" in finding["status_reason"]
+        # La evidencia que escribió el script no se altera.
+        assert finding["evidence"] == "total_admins=0"
+
+    def test_degradation_does_not_need_the_script_to_declare_endpoints(self):
+        fgt, report, findings = _wired({"admins": [], "api_users": []})
+
+        fgt.get("api_users")
+        report.finding("chk-admins", "pass", "api_users=0")
+
+        assert findings[0]["status"] == "indeterminate"
+        assert findings[0]["data_gaps"] == [{"endpoint": "api_users", "kind": "empty_not_possible"}]
+
+    def test_legitimately_empty_table_keeps_the_reported_status_and_shape(self):
+        fgt, report, findings = _wired({"vpn_ipsec": [], "radius_servers": []})
+
+        tunnels = fgt.get("vpn_ipsec")
+        report.finding("chk-vpn", "pass", f"tunnels={len(tunnels)}", ["vpn_ipsec"])
+
+        assert tunnels == []
+        assert findings[0]["status"] == "pass"
+        assert list(findings[0]) == LEGACY_FINDING_KEYS
+
+    def test_a_gap_in_another_endpoint_does_not_affect_an_unrelated_check(self):
+        fgt, report, findings = _wired({"admins": [], "vpn_ipsec": []})
+
+        fgt.get("admins")
+        fgt.get("vpn_ipsec")
+        report.finding("chk-vpn", "pass", "tunnels=0")
+
+        assert findings[0]["status"] == "pass"
+
+
+class TestUnreadableEndpoint:
+    def test_unreadable_endpoint_is_usable_as_an_empty_collection(self):
+        # HTTP 400/401/403 o fallo de red: el cliente devuelve None.
+        fgt, _, _ = _wired({})
+
+        data = fgt.get("dhcp_servers")
+
+        assert data is not None
+        assert len(data) == 0
+        assert [item for item in data] == []
+        assert ("status" in data) is False
+
+    def test_unreadable_endpoint_turns_the_finding_into_indeterminate(self):
+        fgt, report, findings = _wired({})
+
+        servers = fgt.get("dhcp_servers")
+        report.finding("chk-dhcp", "pass", f"dhcp_servers={len(servers)}", ["dhcp_servers"])
+
+        assert findings[0]["status"] == "indeterminate"
+        assert findings[0]["reported_status"] == "pass"
+        assert findings[0]["data_gaps"] == [{"endpoint": "dhcp_servers", "kind": "unreadable"}]
+        assert "dhcp_servers" in findings[0]["status_reason"]
+
+    def test_unreadable_endpoint_is_fetched_once_and_recorded_once(self):
+        ledger = ReadLedger()
+        client = _FakeFortiGateClient({})
+        fgt = FgtCapability(client, ledger=ledger)
+
+        fgt.get("dhcp_servers")
+        fgt.get("dhcp_servers")
+
+        assert client.calls == ["dhcp_servers"]
+        assert ledger.gaps == [{"endpoint": "dhcp_servers", "kind": "unreadable"}]
+
+
+class TestStatusRules:
+    @pytest.mark.parametrize("reported", ["pass", "fail", "not_applicable"])
+    def test_every_conclusive_status_is_degraded_and_preserved(self, reported):
+        fgt, report, findings = _wired({"admins": []})
+
+        fgt.get("admins")
+        report.finding("chk-admins", reported, "x", ["admins"])
+
+        assert findings[0]["status"] == "indeterminate"
+        assert findings[0]["reported_status"] == reported
+
+    def test_script_reported_indeterminate_keeps_status_and_gains_the_gaps(self):
+        fgt, report, findings = _wired({"admins": []})
+
+        fgt.get("admins")
+        report.finding("chk-admins", "indeterminate", "x", ["admins"])
+
+        assert findings[0]["status"] == "indeterminate"
+        assert "reported_status" not in findings[0]
+        assert findings[0]["data_gaps"] == [{"endpoint": "admins", "kind": "empty_not_possible"}]
+
+    def test_degraded_finding_carries_no_remediation(self):
+        # Una propuesta sin evidencia que la respalde no se presenta.
+        fgt, report, findings = _wired({"admins": []})
+
+        fgt.get("admins")
+        report.finding("chk-admins", "fail", "x", ["admins"])
+
+        assert findings[0]["remediation"] is None
+
+    @pytest.mark.parametrize("status", ["PASS", "ok", "", None, 1, ["pass"]])
+    def test_status_outside_the_four_allowed_becomes_indeterminate(self, status):
+        findings: list[dict] = []
+        report = ReportCapability(VALID_MANIFEST, findings, notes=[])
+
+        report.finding("chk1", status, "x")
+
+        assert findings[0]["status"] == "indeterminate"
+        assert "reported_status" in findings[0]
+        assert findings[0]["status_reason"]
+
+    def test_check_whose_declared_endpoints_were_never_read_is_indeterminate(self):
+        fgt, report, findings = _wired({"vpn_ipsec": []})
+
+        report.finding("chk-vpn", "pass", "sin leer nada", ["vpn_ipsec"])
+
+        assert findings[0]["status"] == "indeterminate"
+        assert findings[0]["data_gaps"] == [{"endpoint": "vpn_ipsec", "kind": "not_read"}]
+
+    def test_check_without_declared_endpoints_inherits_every_gap_of_the_run(self):
+        # Sin declaración no se puede acotar de qué dato depende el control.
+        fgt, report, findings = _wired({"admins": []})
+
+        fgt.get("admins")
+        report.finding("chk-undeclared", "pass", "x")
+
+        assert findings[0]["status"] == "indeterminate"
+
+    def test_check_without_declared_endpoints_and_without_gaps_is_untouched(self):
+        fgt, report, findings = _wired({"dns": {"primary": "192.0.2.1"}})
+
+        fgt.get("dns")
+        report.finding("chk-undeclared", "pass", "x")
+
+        assert findings[0]["status"] == "pass"
+        assert list(findings[0]) == LEGACY_FINDING_KEYS
+
+
+class TestTrackedContainers:
+    def test_returned_data_still_behaves_like_plain_dicts_and_lists(self):
+        raw = [
+            {"name": "p1", "status": "enable", "srcintf": [{"name": "port1"}]},
+            {"name": "p2", "status": "disable", "srcintf": [{"name": "port2"}]},
+        ]
+        fgt, _, _ = _wired({"firewall_policies": raw})
+
+        data = fgt.get("firewall_policies")
+
+        assert data == raw
+        assert isinstance(data, list)
+        assert isinstance(data[0], dict)
+        assert len(data) == 2
+        assert [p["name"] for p in data if p["status"] == "enable"] == ["p1"]
+        assert sorted(key for key in data[0]) == ["name", "srcintf", "status"]
+        assert data[0]["srcintf"][0]["name"] == "port1"
+        assert str(data[1]) == str(raw[1])
+        assert data[:1] == raw[:1]
+
+    def test_field_missing_in_every_sibling_is_a_gap(self):
+        raw = {"status": "enable", "resolve-ip": "disable"}
+        fgt, report, findings = _wired({"log_settings": raw})
+
+        settings = fgt.get("log_settings")
+        event = settings["event"] if "event" in settings else "disable"
+        report.finding("chk-log", "fail", f"event={event}", ["log_settings"])
+
+        assert findings[0]["status"] == "indeterminate"
+        assert findings[0]["reported_status"] == "fail"
+        assert findings[0]["data_gaps"] == [
+            {"endpoint": "log_settings", "kind": "missing_field", "field": "event"}
+        ]
+        assert "event" in findings[0]["status_reason"]
+
+    def test_field_present_in_some_siblings_is_optional_and_not_a_gap(self):
+        raw = [{"name": "p1", "comments": "x"}, {"name": "p2"}]
+        fgt, report, findings = _wired({"firewall_policies": raw})
+
+        policies = fgt.get("firewall_policies")
+        commented = [p for p in policies if "comments" in p]
+        report.finding("chk-policies", "pass", f"commented={len(commented)}")
+
+        assert findings[0]["status"] == "pass"
+
+    def test_reading_a_present_field_is_not_a_gap(self):
+        fgt, report, findings = _wired({"log_settings": {"status": "enable"}})
+
+        settings = fgt.get("log_settings")
+        report.finding("chk-log", "pass", "status=" + settings["status"])
+
+        assert findings[0]["status"] == "pass"
+
+    def test_subscript_on_a_missing_field_still_raises_and_is_recorded(self):
+        ledger = ReadLedger()
+        fgt = FgtCapability(_FakeFortiGateClient({"dns": {"primary": "192.0.2.1"}}), ledger=ledger)
+
+        with pytest.raises(KeyError):
+            fgt.get("dns")["tertiary"]
+
+        assert ledger.gaps == [{"endpoint": "dns", "kind": "missing_field", "field": "tertiary"}]
+
+    def test_nested_objects_keep_the_tracking(self):
+        raw = [{"name": "p1", "srcintf": [{"name": "port1"}]}]
+        fgt, report, findings = _wired({"firewall_policies": raw})
+
+        policies = fgt.get("firewall_policies")
+        zones = [i["zone"] for p in policies for i in p["srcintf"] if "zone" in i]
+        report.finding("chk-policies", "pass", f"zones={zones}")
+
+        assert findings[0]["data_gaps"] == [
+            {"endpoint": "firewall_policies", "kind": "missing_field", "field": "zone"}
+        ]
+
+    def test_gaps_name_endpoints_and_fields_never_values(self):
+        raw = [{"name": "valor-secreto-del-equipo", "accprofile": "perfil-secreto"}]
+        fgt, report, findings = _wired({"admins": raw, "api_users": []})
+
+        admins = fgt.get("admins")
+        fgt.get("api_users")
+        trusted = [a for a in admins if "trusthost1" in a]
+        report.finding("chk-admins", "pass", f"trusted={len(trusted)}")
+
+        rendered = str(findings[0]["data_gaps"]) + findings[0]["status_reason"]
+        assert "valor-secreto-del-equipo" not in rendered
+        assert "perfil-secreto" not in rendered
+        assert {gap["kind"] for gap in findings[0]["data_gaps"]} == {
+            "missing_field",
+            "empty_not_possible",
+        }

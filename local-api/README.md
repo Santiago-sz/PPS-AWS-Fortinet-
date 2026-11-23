@@ -105,7 +105,10 @@ ejecutar todos los comandos desde la raíz para compartir la base.
    el saneado no la elimina. En el Markdown, cada control `fail` (y cada `indeterminate`
    con propuesta) incluye un bloque `### Remediación propuesta` con resumen, pasos
    numerados y la CLI en un bloque de código; el encabezado del archivo aclara que son
-   propuestas y que nada se aplicó al dispositivo.
+   propuestas y que nada se aplicó al dispositivo. Un hallazgo que el executor dejó
+   en `indeterminate` por un dato ausente o ilegible conserva sus claves aditivas
+   `status_reason`, `reported_status` y `data_gaps`; el Markdown agrega el motivo y el
+   estado que había informado el script debajo de la evidencia.
 6. `POST /api/audits`: encola una nueva ejecución de una versión confirmada con una
    clave de idempotencia nueva, conservando los resultados de las anteriores.
 

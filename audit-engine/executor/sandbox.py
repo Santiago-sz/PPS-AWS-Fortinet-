@@ -37,7 +37,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from toolkit import FgtCapability, ReportCapability
+from toolkit import FgtCapability, ReadLedger, ReportCapability
 
 logger = logging.getLogger(__name__)
 
@@ -190,9 +190,18 @@ def execute(
             f"execution exceeded the {budget.max_wall_clock_s}s wall-clock budget (signal)",
         )
 
-    fgt = FgtCapability(fgt_client, on_call=_on_fgt_call)
+    # Registro de lecturas compartido (solo cableado): con él `report.finding`
+    # guarda `indeterminate` cuando el control depende de un dato ausente,
+    # sin que el script tenga que cooperar. No entra al namespace del script.
+    ledger = ReadLedger()
+    fgt = FgtCapability(fgt_client, on_call=_on_fgt_call, ledger=ledger)
     report = ReportCapability(
-        manifest, findings, notes, on_finding=_on_finding_call, on_note=_on_note_call
+        manifest,
+        findings,
+        notes,
+        on_finding=_on_finding_call,
+        on_note=_on_note_call,
+        ledger=ledger,
     )
     namespace = _build_namespace(fgt, report)
 

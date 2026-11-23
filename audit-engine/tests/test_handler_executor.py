@@ -250,7 +250,13 @@ class TestPartialFortiGateEndpointFailureTolerance:
     ):
         """spec.md 'Partial FortiGate Endpoint Failure Tolerance': un endpoint
         inalcanzable (get() -> None, como hace fortigate_client.get() ante un
-        error de red real) no debe frenar el resto de la auditoría."""
+        error de red real) no debe frenar el resto de la auditoría.
+
+        Contrato desde la decisión 12: el script ya no recibe `None` por un
+        endpoint ilegible sino una lista vacía, y es el toolkit el que deja
+        ese control en `indeterminate`. El control que depende de un endpoint
+        que sí se leyó conserva su resultado. Los controles declaran sus
+        endpoints en el manifest, como los emite el generador."""
         script = (
             "admins = fgt.get('admins')\n"
             "dns = fgt.get('dns')\n"
@@ -272,8 +278,14 @@ class TestPartialFortiGateEndpointFailureTolerance:
                     "check_id": "chk-0001",
                     "title": "Admins",
                     "clause_ref": {"page": 1, "quote": "x"},
+                    "endpoints": ["admins"],
                 },
-                {"check_id": "chk-0002", "title": "DNS", "clause_ref": {"page": 2, "quote": "y"}},
+                {
+                    "check_id": "chk-0002",
+                    "title": "DNS",
+                    "clause_ref": {"page": 2, "quote": "y"},
+                    "endpoints": ["dns"],
+                },
             ],
         }
 
@@ -303,13 +315,44 @@ class TestPartialFortiGateEndpointFailureTolerance:
 
         _, kwargs = deliver.call_args
         findings = kwargs["findings"]
-        notes = kwargs["notes"]
 
         # Reachable endpoint produced a real finding
         assert any(f["check_id"] == "chk-0001" and f["status"] == "fail" for f in findings)
-        # Unreachable endpoint recorded explicitly, audit continued anyway
-        assert any(n["check_id"] == "chk-0002" for n in notes)
-        assert not any(f["check_id"] == "chk-0002" for f in findings)
+        # Unreachable endpoint recorded explicitly, audit continued anyway:
+        # the script's `pass` is not trusted, the toolkit records why.
+        dns_finding = next(f for f in findings if f["check_id"] == "chk-0002")
+        assert dns_finding["status"] == "indeterminate"
+        assert dns_finding["reported_status"] == "pass"
+        assert dns_finding["data_gaps"] == [{"endpoint": "dns", "kind": "unreadable"}]
+        assert kwargs["notes"] == []
+
+    def test_false_pass_on_an_empty_administrator_table_is_reported_indeterminate(
+        self, executor_env, mocker, mock_secrets_manager
+    ):
+        """Forma leída del equipo de laboratorio: `system/admin` responde 200
+        con lista vacía. El script de siempre informa `pass`; el reporte que
+        se entrega dice `indeterminate` y nombra el endpoint."""
+        manifest = {**VALID_MANIFEST, "script_sha256": _valid_script_sha256()}
+        mocker.patch("handler_executor.s3_io.get_manifest", return_value=manifest)
+        mocker.patch("handler_executor.s3_io.get_script", return_value=VALID_SCRIPT)
+        mock_fgt_instance = mocker.MagicMock()
+        mock_fgt_instance.get.return_value = []
+        mocker.patch("handler_executor.FortiGateClient", return_value=mock_fgt_instance)
+        deliver = mocker.patch(
+            "handler_executor.reporter.deliver_policy_report",
+            return_value={"uploaded": {}, "sns_published": True},
+        )
+
+        result = handler_executor.lambda_handler(
+            _invoke_event(script_sha256=_valid_script_sha256()), _lambda_context()
+        )
+
+        assert result["status"] == "completed"
+        (finding,) = deliver.call_args.kwargs["findings"]
+        assert finding["status"] == "indeterminate"
+        assert finding["reported_status"] == "pass"
+        assert finding["evidence"] == "no hay admins configurados"
+        assert "admins" in finding["status_reason"]
 
 
 class TestSandboxBudgetExceededDuringExecution:

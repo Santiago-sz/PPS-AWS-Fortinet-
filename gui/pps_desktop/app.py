@@ -1410,6 +1410,17 @@ class Window(QMainWindow):
             "CRITERIO",
             str(finding["intent"]),
             "",
+        ]
+        # Presente solo cuando el executor fijó el estado por un dato ausente.
+        if finding.get("status_reason"):
+            content.extend(["MOTIVO DEL RESULTADO", str(finding["status_reason"])])
+            reported = finding.get("reported_status")
+            if reported:
+                content.append(
+                    "Estado informado por el script: " + STATUSES.get(reported, str(reported))
+                )
+            content.append("")
+        content += [
             "EVIDENCIA",
             str(finding["evidence"]),
             "",

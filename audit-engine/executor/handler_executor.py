@@ -119,6 +119,7 @@ def _finish(
         status=result.get("status"),
         findings_count=len(findings),
         fail_count=sum(1 for f in findings if f.get("status") == "fail"),
+        data_gap_count=reporter.count_data_gap_findings(findings),
         remediation_count=reporter.count_remediations(findings),
         wall_clock_ms=round(clock.elapsed_ms, 1),
         failure_reason=failure_reason or result.get("failure_reason"),

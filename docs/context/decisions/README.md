@@ -27,14 +27,13 @@ seguridad sean propiedades demostradas del código.
 |---|---|---|
 | [10](10-bedrock-knowledge-base.md) | Knowledge Base administrada de Bedrock en un módulo Terraform aislado; recuperación aditiva y deshabilitada por defecto | No subir el provider del pipeline para esto; no reemplazar el map/reduce completo por fragmentos recuperados |
 | [11](11-referencias-en-generacion.md) | Fragmentos recuperados como sección de referencia en reduce: una consulta por control, topes explícitos, fallo blando, trazabilidad en manifest y reporte; idéntico al comportamiento previo con la base deshabilitada | No recuperar con texto de la normativa ni desde el executor; no usar la referencia para ampliar el validador o el catálogo; regrabar evals en vivo antes de evaluar su efecto |
+| [12](12-datos-ausentes-indeterminate.md) | El toolkit registra los datos que el script pidió y no obtuvo (endpoint ilegible, tabla que no puede estar vacía, campo ausente) y guarda `indeterminate` en el control afectado, sin cambiar el validador. Implementada el 2026-11-22 en `fix/toolkit-absent-data`; verificada solo con tests, revisión y merge pendientes | No confiar en el estado que informa el script: la garantía es del toolkit. No devolver `None` desde `fgt.get`. Un endpoint nuevo que no pueda estar vacío se agrega a `NEVER_EMPTY_ENDPOINTS`, no a las tuplas de `ENDPOINTS` |
 
 ## Propuestas pendientes
 
 No son decisiones vigentes. Requieren la aceptación de los autores.
 
-| Referencia | Propuesta | Estado |
-|---|---|---|
-| [12](12-datos-ausentes-indeterminate.md) | El toolkit registra los datos que el script pidió y no obtuvo, y degrada a `indeterminate` el resultado del control afectado, sin cambiar el validador | Propuesta el 2026-11-22; no implementada. Depende de ejecutar el diagnóstico contra un equipo |
+Ninguna al 2026-11-22.
 
 ## Nuevas decisiones
 
