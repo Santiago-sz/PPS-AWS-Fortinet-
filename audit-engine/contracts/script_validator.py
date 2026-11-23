@@ -34,7 +34,7 @@ from dataclasses import dataclass, field
 import fortigate_client
 
 MAX_AST_NODES = 4000
-MAX_NESTING = 3
+MAX_NESTING = 4
 
 # Nodos explícitamente prohibidos — mensajes de rechazo específicos y
 # accionables (en vez de caer en el "no está en el allowlist" genérico).

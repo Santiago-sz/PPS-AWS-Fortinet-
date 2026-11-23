@@ -199,12 +199,21 @@ class TestAdversarialCorpus:
 
     def test_deeply_nested_ast_is_denied(self):
         source = (
-            "if True:\n    if True:\n        if True:\n            if True:\n                pass\n"
+            "if True:\n    if True:\n        if True:\n            if True:\n"
+            "                if True:\n                    pass\n"
         )
         result = validate(source, VALID_MANIFEST)
 
         assert result.valid is False
         assert "max_nesting_exceeded" in _rule_ids(result)
+
+    def test_nesting_at_the_cap_is_allowed(self):
+        source = (
+            "if True:\n    if True:\n        if True:\n            if True:\n                pass\n"
+        )
+        result = validate(source, VALID_MANIFEST)
+
+        assert "max_nesting_exceeded" not in _rule_ids(result)
 
     def test_non_literal_endpoint_arg_is_denied(self):
         source = 'key = "admins"\nx = fgt.get(key)\n'

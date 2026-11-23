@@ -68,10 +68,12 @@ def test_offline_evals_pass_thresholds_and_write_results(tmp_path, capsys):
         assert REQUIRED_POLICY_METRICS <= set(metrics)
         assert metrics["status"] == "ok"
 
-    # The retry loop is exercised by exactly one fixture (first reduce rejected).
+    # Since the nesting cap moved from 3 to 4 (2026-11-23), the first recorded
+    # reduce of this fixture (nesting depth 4) is accepted by the validator; its
+    # second recorded reduce now answers the field-correction call instead.
     by_name = {m["policy"]: m for m in payload["per_policy"]}
-    assert by_name["politica-acceso-administrativo"]["first_attempt_pass"] is False
-    assert by_name["politica-acceso-administrativo"]["attempts_used"] == 2
+    assert by_name["politica-acceso-administrativo"]["first_attempt_pass"] is True
+    assert by_name["politica-acceso-administrativo"]["attempts_used"] == 1
     assert by_name["politica-contrasenas"]["first_attempt_pass"] is True
 
     out = capsys.readouterr().out
@@ -83,7 +85,7 @@ def test_offline_evals_exit_1_when_thresholds_are_not_met(tmp_path):
     run_evals = _load_run_evals()
     strict = tmp_path / "strict.json"
     strict.write_text(
-        json.dumps({"per_policy": {}, "overall": {"first_attempt_pass_rate": 1.0}}),
+        json.dumps({"per_policy": {}, "overall": {"first_attempt_pass_rate": 1.01}}),
         encoding="utf-8",
     )
 
@@ -93,7 +95,7 @@ def test_offline_evals_exit_1_when_thresholds_are_not_met(tmp_path):
 
     assert exit_code == 1
     payload = json.loads(next(tmp_path.glob("*-offline.json")).read_text(encoding="utf-8"))
-    assert payload["threshold_failures"] == ["overall: first_attempt_pass_rate=0.667 < 1.0"]
+    assert payload["threshold_failures"] == ["overall: first_attempt_pass_rate=1.0 < 1.01"]
 
 
 def test_offline_evals_report_the_field_catalog_metrics(tmp_path, capsys):
@@ -127,10 +129,10 @@ def test_offline_evals_report_the_field_catalog_metrics(tmp_path, capsys):
     admin_policy = by_name["politica-acceso-administrativo"]
     assert admin_policy["unknown_fields"] == ["admintimeout"]
     assert admin_policy["reduce_calls"] == 2
-    assert admin_policy["reduce_calls_unanswered"] == 1
+    assert admin_policy["reduce_calls_unanswered"] == 0
 
     assert payload["overall"]["total_unknown_field_references"] == 6
-    assert payload["overall"]["reduce_calls_unanswered"] == 3
+    assert payload["overall"]["reduce_calls_unanswered"] == 2
     assert "field catalog: 6 unknown field reference(s)" in out
     assert "re-record with --mode live --record" in out
 
