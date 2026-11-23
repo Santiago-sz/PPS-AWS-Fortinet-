@@ -154,6 +154,8 @@ class Service:
     def __init__(self, database, clock=time.time):
         self.database, self.clock = str(database), clock
         self.storage = Database(database)
+        # Lo activa únicamente `serve --aws-bridge`; el servicio no contacta AWS.
+        self.automatic_dispatch = False
 
     def db(self):
         return self.storage.connect()
@@ -167,7 +169,11 @@ class Service:
             "development": True,
             "max_upload_bytes": MAX_UPLOAD,
             "devices": [DEVICE],
-            "capabilities": {"reaudit": True, "follow_up": False},
+            "capabilities": {
+                "reaudit": True,
+                "follow_up": False,
+                "automatic_dispatch": self.automatic_dispatch,
+            },
         }
 
     @staticmethod

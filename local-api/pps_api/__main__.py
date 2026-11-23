@@ -14,6 +14,18 @@ def main():
     serve.add_argument("--port", type=int, default=8765)
     serve.add_argument("--tls-cert", type=Path)
     serve.add_argument("--tls-key", type=Path)
+    serve.add_argument(
+        "--aws-bridge",
+        action="store_true",
+        help="Enviar a S3 y recuperar reportes en forma periódica (requiere credenciales AWS)",
+    )
+    serve.add_argument(
+        "--aws-bridge-interval",
+        type=float,
+        default=15.0,
+        metavar="SEGUNDOS",
+        help="Espera entre ciclos del puente AWS (mínimo 5, por defecto 15)",
+    )
     ingest = commands.add_parser(
         "import-result", help="Adjuntar artefactos reales a una auditoría local"
     )
@@ -36,18 +48,40 @@ def main():
         parser.error("HTTPS requiere --tls-cert y --tls-key juntos.")
     service = Service(args.database)
     if args.command == "serve":
-        from .server import create_server
+        from . import server as http_server
 
-        server = create_server(service, args.port, tls_cert=args.tls_cert, tls_key=args.tls_key)
+        worker = None
+        if args.aws_bridge:
+            # El SDK de AWS se importa solo con esta opción; server/ no lo conoce.
+            from .aws import worker as bridge_worker
+
+            try:
+                worker = bridge_worker.build_bridge_worker(
+                    service, args.env_file, args.aws_bridge_interval
+                )
+            except ValueError as exc:
+                parser.error(f"--aws-bridge: {exc}")
+            service.automatic_dispatch = True
+        server = http_server.create_server(
+            service, args.port, tls_cert=args.tls_cert, tls_key=args.tls_key
+        )
         print(
             f"API de desarrollo: {server.scheme}://127.0.0.1:{server.server_port} (sin OIDC)",
             flush=True,
         )
+        if worker:
+            print(
+                f"Puente AWS activo: envío y recuperación cada {worker.interval:g} s.",
+                flush=True,
+            )
+            worker.start()
         try:
             server.serve_forever()
         except KeyboardInterrupt:
             pass
         finally:
+            if worker:
+                worker.stop()
             server.server_close()
     elif args.command == "import-result":
         service.finish(
