@@ -12,6 +12,30 @@
   regla de partir de `master`: al integrar, el laboratorio va primero.
 - Commits propios: ver `git log feature/fortigate-lab-aws..feature/gui-driven-lab-audits`.
 - Revisión del desarrollador y merge: pendientes. Push: no realizado.
+- Actualización posterior (2026-11-22, misma jornada): la conexión se aplicó en
+  las dos cuentas desde la rama `integration/lab-demo`, que une este trabajo con
+  `fix/toolkit-absent-data`. Resultado por paso: `executor-network`, 15 recursos
+  creados; laboratorio, 3 agregados y ninguna modificación de instancias;
+  ruta al laboratorio creada y emparejamiento en estado `active`; host de
+  confianza `10.61.0.0/24` agregado a mano en el usuario de API; secreto del
+  token actualizado por el propietario; pipeline, 1 agregado y 3 funciones
+  actualizadas (executor dentro de la VPC, `FORTIGATE_HOST=10.60.0.10`,
+  `FORTIGATE_VERIFY_SSL=false` y código con el arreglo de datos ausentes).
+- Prueba de punta a punta (2026-11-22): una reauditoría creada en la API local,
+  enviada con `aws dispatch` y recuperada con `aws sync`, terminó `completed`
+  con 17 hallazgos leídos del equipo de laboratorio por el camino privado
+  (9 `pass`, 3 `fail`, 4 `indeterminate`, 1 `not_applicable`). El primer intento
+  del mismo día terminó `generation_failed`: los tres intentos del modelo fueron
+  rechazados por la lista de permitidos del validador; el código del generador
+  y del validador no cambió, y el reintento inmediato fue aceptado. La causa
+  del rechazo no quedó registrada (el log solo guarda la clase de fallo).
+- Hallazgo operativo: `terraform.tfvars` del pipeline fija `fortigate_host` y
+  tiene precedencia sobre `TF_VAR_fortigate_host`. Para apuntar al laboratorio
+  los cuatro valores deben pasarse con `-var` en cada `apply` del pipeline.
+- Sin probar todavía: el arranque automático de la API desde la ventana de la
+  aplicación. En la estación usada, `serve --aws-bridge` termina con código 2
+  porque el `.env` de la raíz no define `PPS_POLICIES_BUCKET`; el propietario
+  debe completarlo.
 
 ## Objetivo y aceptación
 

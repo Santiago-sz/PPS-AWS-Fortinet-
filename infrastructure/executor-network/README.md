@@ -253,6 +253,13 @@ terraform plan \
 
 En Windows PowerShell 5.1, la forma equivalente que no pierde las comillas:
 
+> **Precedencia comprobada el 2026-11-22.** Si `terraform.tfvars` del pipeline
+> ya define `fortigate_host` (u otro de estos valores), ese archivo tiene
+> precedencia sobre las variables de entorno `TF_VAR_*` y el plan no cambia el
+> host. En ese caso los cuatro valores deben pasarse con `-var` en la línea de
+> comandos (desde Git Bash las comillas de las listas se conservan), o bien
+> editarse en `terraform.tfvars`.
+
 ```powershell
 $env:TF_VAR_fortigate_host              = "10.60.0.10"
 $env:TF_VAR_fortigate_verify_ssl        = "false"
