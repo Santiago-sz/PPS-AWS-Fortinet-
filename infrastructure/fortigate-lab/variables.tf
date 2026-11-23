@@ -77,7 +77,7 @@ variable "admin_cidrs" {
 }
 
 variable "peer_cidrs" {
-  description = "Bloques privados de una VPC emparejada (fase posterior) autorizados a llegar al FortiGate por TCP 443."
+  description = "Bloques privados de la VPC emparejada (infrastructure/executor-network) autorizados a llegar al FortiGate por TCP 443. Con peering_connection_id definido, también son el destino de las rutas de regreso."
   type        = list(string)
   default     = []
 
@@ -92,6 +92,17 @@ variable "peer_cidrs" {
       can(cidrhost(c, 0)) && can(regex("^[0-9.]+/[0-9]+$", c)) && c != "0.0.0.0/0" && try(tonumber(split("/", c)[1]), 0) >= 16
     ])
     error_message = "Cada elemento de peer_cidrs debe ser un bloque IPv4 en notación CIDR, distinto de 0.0.0.0/0 y no más amplio que /16."
+  }
+}
+
+variable "peering_connection_id" {
+  description = "Id del emparejamiento de VPC solicitado desde la cuenta de PostureGuard (salida peering_connection_id de infrastructure/executor-network). Vacío (por defecto) = sin conexión privada: no se crea ningún recurso adicional."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.peering_connection_id == "" || can(regex("^pcx-[0-9a-f]{8,17}$", var.peering_connection_id))
+    error_message = "peering_connection_id debe estar vacío o tener la forma pcx-0123456789abcdef0."
   }
 }
 

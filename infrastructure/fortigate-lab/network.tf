@@ -83,6 +83,39 @@ resource "aws_route_table_association" "wan" {
   route_table_id = aws_route_table.wan.id
 }
 
+# -----------------------------------------------------------------------------
+# Conexión privada con la cuenta de PostureGuard (opcional)
+# -----------------------------------------------------------------------------
+# Con peering_connection_id vacío no se crea nada de esta sección. Solo agrega
+# recursos nuevos: no cambia la instancia, sus interfaces ni la dirección
+# pública. La entrada por TCP 443 la abre peer_cidrs en security.tf.
+
+locals {
+  peering_enabled = var.peering_connection_id != ""
+}
+
+# El emparejamiento lo solicita infrastructure/executor-network desde la otra
+# cuenta; acá solo se acepta. Destruir este recurso no elimina el
+# emparejamiento: eso lo hace la cuenta que lo solicitó.
+resource "aws_vpc_peering_connection_accepter" "pipeline" {
+  count = local.peering_enabled ? 1 : 0
+
+  vpc_peering_connection_id = var.peering_connection_id
+  auto_accept               = true
+
+  tags = { Name = "${var.name_prefix}-from-postureguard" }
+}
+
+# Ruta de regreso desde la interfaz WAN del FortiGate hacia la VPC emparejada.
+# Solo en la tabla de wan: lan y dmz no son alcanzables desde la otra cuenta.
+resource "aws_route" "wan_peer" {
+  for_each = local.peering_enabled ? toset(var.peer_cidrs) : toset([])
+
+  route_table_id            = aws_route_table.wan.id
+  destination_cidr_block    = each.value
+  vpc_peering_connection_id = aws_vpc_peering_connection_accepter.pipeline[0].id
+}
+
 # lan y dmz: todo el tráfico saliente pasa por la interfaz del FortiGate en
 # esa subred. No tienen ruta propia a Internet.
 resource "aws_route_table" "lan" {

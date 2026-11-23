@@ -99,6 +99,11 @@ output "ubuntu_private_ip" {
   value       = local.ubuntu_ip
 }
 
+output "peering_status" {
+  description = "Estado del emparejamiento con la cuenta de PostureGuard, o null si no está configurado."
+  value       = one(aws_vpc_peering_connection_accepter.pipeline[*].accept_status)
+}
+
 output "availability_zone" {
   description = "Zona de disponibilidad usada."
   value       = local.az
