@@ -652,3 +652,87 @@ class TestKnowledgeBaseEnabled:
         assert result == {"status": "generation_failed", "run_id": result["run_id"], "attempts": 3}
         assert put_report.call_count == 2
         put_manifest.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Catálogo de campos (decisión 13): bloque aditivo `field_catalog` del manifest
+# ---------------------------------------------------------------------------
+
+FIELD_CATALOG_BLOCK = {
+    "fortios_version": "v7.6.8",
+    "unknown_field_references": 1,
+    "references": [{"field": "zone", "endpoints": ["interfaces"], "line": 12}],
+    "reduce_calls": 2,
+}
+
+
+class TestFieldCatalogBlock:
+    def test_the_block_reaches_the_manifest_after_the_existing_keys(self, generator_env, mocker):
+        result, manifest = _run_and_capture_manifest(
+            mocker, lambda *a, **k: {**OK_RESULT, "field_catalog": FIELD_CATALOG_BLOCK}
+        )
+
+        assert result["status"] == "invoked"
+        assert manifest["field_catalog"] == FIELD_CATALOG_BLOCK
+        assert list(manifest)[-1] == "field_catalog"
+        assert list(manifest)[:9] == [
+            "run_id",
+            "policy_key",
+            "policy_sha256",
+            "script_key",
+            "script_sha256",
+            "checks",
+            "attempts",
+            "model",
+            "generated_at",
+        ]
+
+    def test_the_pointer_and_the_handler_result_do_not_change(self, generator_env, mocker):
+        result, _ = _run_and_capture_manifest(
+            mocker, lambda *a, **k: {**OK_RESULT, "field_catalog": FIELD_CATALOG_BLOCK}
+        )
+
+        assert set(result) == {
+            "status",
+            "run_id",
+            "manifest_key",
+            "script_key",
+            "script_sha256",
+            "attempts",
+        }
+
+    def test_the_terminal_event_counts_the_unknown_field_references(
+        self, generator_env, mocker, capsys
+    ):
+        _run_and_capture_manifest(
+            mocker, lambda *a, **k: {**OK_RESULT, "field_catalog": FIELD_CATALOG_BLOCK}
+        )
+
+        events = _generator_events(capsys)
+        assert len(events) == 1
+        assert events[0]["status"] == "invoked"
+        assert events[0]["unknown_field_references"] == 1
+
+    def test_a_result_without_the_block_keeps_the_event_and_the_manifest(
+        self, generator_env, mocker, capsys
+    ):
+        _, manifest = _run_and_capture_manifest(mocker, lambda *a, **k: OK_RESULT)
+
+        assert "field_catalog" not in manifest
+        assert "unknown_field_references" not in _generator_events(capsys)[0]
+
+    def test_awaiting_approval_also_reports_the_count(
+        self, generator_env, monkeypatch, mocker, capsys
+    ):
+        monkeypatch.setenv("AUTO_EXECUTE", "false")
+        _mock_happy_collaborators(
+            mocker, generate_result={**OK_RESULT, "field_catalog": FIELD_CATALOG_BLOCK}
+        )
+        mocker.patch("handler_generator.s3_io.put_script", return_value="c" * 64)
+        put_manifest = mocker.patch("handler_generator.s3_io.put_manifest")
+
+        result = handler_generator.lambda_handler(_s3_event(), _lambda_context())
+
+        assert result["status"] == "awaiting_approval"
+        assert put_manifest.call_args.args[2]["field_catalog"] == FIELD_CATALOG_BLOCK
+        assert _generator_events(capsys)[0]["unknown_field_references"] == 1
