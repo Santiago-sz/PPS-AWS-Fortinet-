@@ -537,5 +537,13 @@ class Service:
                     str(finding.get("evidence", "")),
                 ]
             )
+            # Claves aditivas del executor: presentes solo cuando dejó el
+            # control en `indeterminate` por un dato ausente o ilegible.
+            if finding.get("status_reason"):
+                lines.extend(["", str(finding["status_reason"])])
+                if finding.get("reported_status"):
+                    lines.append(
+                        f"Estado informado por el script: {finding['reported_status']}"
+                    )
             lines.extend(render_remediation(finding))
         return "\n".join(lines).encode(), "text/markdown; charset=utf-8"

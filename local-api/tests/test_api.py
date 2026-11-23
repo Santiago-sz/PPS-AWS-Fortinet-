@@ -221,6 +221,38 @@ def test_results_summary_and_markdown_remediations(service, document):
     assert exported["findings"][1]["remediation"] == remediation
 
 
+def test_finding_degraded_by_missing_data_keeps_its_reason(service, document):
+    """El executor deja en `indeterminate` un control que depende de un dato
+    ausente y agrega claves aditivas; la API las conserva y las exporta."""
+    created, _ = upload(service, document)
+    manifest, report = pair(document)
+    reason = "Datos no disponibles: el endpoint `admins` devolvió una respuesta vacía."
+    manifest["checks"] = [{"check_id": "C1", "title": "Administradores"}]
+    report["findings"] = [
+        {
+            "check_id": "C1",
+            "status": "indeterminate",
+            "evidence": "total_admins=0",
+            "remediation": None,
+            "reported_status": "pass",
+            "data_gaps": [{"endpoint": "admins", "kind": "empty_not_possible"}],
+            "status_reason": reason,
+        }
+    ]
+    service.finish(created["audit_id"], manifest, report)
+    result = service.audit(created["audit_id"], results=True)
+    finding = result["report"]["findings"][0]
+    assert finding["reported_status"] == "pass"
+    assert finding["data_gaps"] == [{"endpoint": "admins", "kind": "empty_not_possible"}]
+    assert finding["status_reason"] == reason
+    assert result["summary"]["indeterminate"] == 1 and result["summary"]["pass"] == 0
+    section = service.export(created["audit_id"], "md")[0].decode().split("## C1")[1]
+    assert "indeterminate" in section.splitlines()[0]
+    assert reason in section
+    assert "Estado informado por el script: pass" in section
+    assert "Remediación" not in section
+
+
 def test_pagination_has_no_duplicates(service, document):
     for index in range(52):
         service.create_policy(metadata(document), str(index))

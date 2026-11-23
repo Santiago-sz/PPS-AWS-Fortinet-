@@ -150,6 +150,37 @@ def test_remediation_normalized_redacted_and_counted():
     assert normalize_remediation("texto") is None
 
 
+def test_finding_degraded_by_missing_data_shows_reason_and_no_proposal():
+    manifest, report = pair()
+    proposal = {"summary": "Restringir administradores.", "steps": [], "fortigate_cli": None}
+    manifest["checks"][3]["remediation"] = proposal
+    manifest["checks"][2]["remediation"] = proposal
+    reason = "Datos no disponibles: el endpoint `admins` devolvió una respuesta vacía."
+    report["findings"][3].update(
+        {
+            "evidence": "total_admins=0",
+            "remediation": None,
+            "reported_status": "pass",
+            "data_gaps": [{"endpoint": "admins", "kind": "empty_not_possible"}],
+            "status_reason": reason,
+        }
+    )
+    result = normalize(manifest, report)
+    rows = {r["check_id"]: r for r in result["rows"]}
+    degraded = rows["4"]
+    assert degraded["status"] == "indeterminate"
+    assert degraded["status_reason"] == reason
+    assert degraded["reported_status"] == "pass"
+    # El resultado informado no cuenta como aprobado.
+    assert result["counts"]["pass"] == 2 and result["counts"]["indeterminate"] == 1
+    # Sin evidencia no se presenta la propuesta del manifest.
+    assert degraded["remediation"] is None
+    assert rows["3"]["remediation"] is not None
+    assert result["remediation_count"] == 1
+    # Un hallazgo sin lagunas no gana texto.
+    assert rows["1"]["status_reason"] is None and rows["1"]["reported_status"] is None
+
+
 def test_awaiting_approval_has_label_and_is_not_terminal():
     from pps_desktop.domain import TERMINAL
 

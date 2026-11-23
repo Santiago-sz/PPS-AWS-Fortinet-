@@ -108,6 +108,23 @@ def test_remediation_column_detail_and_dashboard_count(window):
     assert window.remediation_summary.text() == "Remediaciones propuestas: —"
 
 
+def test_detail_explains_a_finding_degraded_by_missing_data(window):
+    rows = {r["check_id"]: r for r in window.current["rows"]}
+    plain = window.finding_detail(rows["CHK-002"], window.current)
+    assert "MOTIVO DEL RESULTADO" not in plain
+    degraded = {
+        **rows["CHK-002"],
+        "status": "indeterminate",
+        "status_reason": "Datos no disponibles: el endpoint `admins` no pudo leerse.",
+        "reported_status": "pass",
+    }
+    detail = window.finding_detail(degraded, window.current)
+    assert "MOTIVO DEL RESULTADO" in detail
+    assert "el endpoint `admins` no pudo leerse" in detail
+    assert "Estado informado por el script: Aprobado" in detail
+    assert detail.index("MOTIVO DEL RESULTADO") < detail.index("EVIDENCIA")
+
+
 def test_narrow_window_reflows_cards(window, app):
     window.resize(790, 720)
     app.processEvents()

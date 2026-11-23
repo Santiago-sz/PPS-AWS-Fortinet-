@@ -145,6 +145,16 @@ aplicó ningún cambio en el dispositivo». `summary` es informativo: la GUI sig
 recalculando sus métricas sobre el par completo; `with_remediation` cuenta hallazgos
 con propuesta con contenido, sin importar el estado.
 
+Un `finding` puede traer además tres claves aditivas, presentes solo cuando el
+executor dejó el control en `indeterminate` porque dependía de un dato ausente,
+ilegible o imposiblemente vacío: `status_reason` (texto que nombra el endpoint y,
+si corresponde, el campo), `reported_status` (el estado que había informado el
+script) y `data_gaps` (lista de `{"endpoint", "kind", "field"?}`, con `kind` en
+`unreadable`, `empty_not_possible`, `missing_field` o `not_read`; nunca valores del
+equipo). Los cuatro valores de `status` no cambian. La GUI muestra el motivo en el
+detalle del control y no presenta la propuesta de remediación de un hallazgo con
+`data_gaps`; un consumidor que ignore estas claves sigue funcionando.
+
 Estados de auditoría: además de los terminales y `pending`/`running`, el servicio puede
 informar `awaiting_approval` cuando el pipeline generó los controles y espera la
 aprobación humana para ejecutarlos; la GUI lo trata como no terminal.

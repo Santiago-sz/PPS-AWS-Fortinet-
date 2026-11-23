@@ -184,9 +184,18 @@ def normalize(manifest, report, context=None):
                 "finding_id": finding.get("id"),
                 "definitions": redact([c for c in checks if c["check_id"] == cid]),
                 "follow_up": finding.get("follow_up", {}),
-                "remediation": normalize_remediation(
-                    finding.get("remediation") or check.get("remediation")
-                ),
+                # Un hallazgo que el executor dejó en `indeterminate` por un dato
+                # ausente trae `data_gaps`: sin evidencia no se presenta la
+                # propuesta del manifest.
+                "remediation": None
+                if finding.get("data_gaps")
+                else normalize_remediation(finding.get("remediation") or check.get("remediation")),
+                "status_reason": redact(str(finding["status_reason"]))
+                if finding.get("status_reason")
+                else None,
+                "reported_status": str(finding["reported_status"])
+                if finding.get("reported_status")
+                else None,
             }
         )
     unknown = [redact(f) for f in findings if f["check_id"] not in expected]
