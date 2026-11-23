@@ -1,0 +1,14 @@
+# Terraform state
+*.tfstate
+*.tfstate.*
+
+# Terraform provider binaries
+.terraform/
+
+# Variable files with real values (account id, VPC id)
+*.tfvars
+*.tfvars.json
+
+# Plan output
+tfplan
+*.tfplan
