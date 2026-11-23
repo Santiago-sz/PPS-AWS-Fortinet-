@@ -1,4 +1,5 @@
 import argparse
+import atexit
 import json
 from pathlib import Path
 import sys
@@ -31,7 +32,7 @@ from PySide6.QtWidgets import (
     QSpinBox,
 )
 
-from . import api, demo
+from . import api, demo, local_server
 from .domain import (
     ACTIONABLE,
     REMEDIATION_DISCLAIMER,
@@ -155,7 +156,7 @@ class UploadDialog(QDialog):
 
 
 class Window(QMainWindow):
-    def __init__(self, demo_mode=False, settings=None):
+    def __init__(self, demo_mode=False, settings=None, local_server=None):
         super().__init__()
         self.setWindowTitle("PostureGuard")
         self.setWindowIcon(QIcon(str(Path(__file__).parent / "assets" / "FaviconPostureGuard.png")))
@@ -183,6 +184,12 @@ class Window(QMainWindow):
         self.timer = QTimer(self)
         self.timer.setSingleShot(True)
         self.timer.timeout.connect(self.refresh)
+        # Proceso de la API local que administra la aplicación; None = no administrar.
+        self.local_server = local_server
+        self.local_server_attempts = 0
+        self.local_server_timer = QTimer(self)
+        self.local_server_timer.setInterval(300)
+        self.local_server_timer.timeout.connect(self._poll_local_server)
         self._build()
         if demo_mode:
             self.load_demo()
@@ -580,6 +587,9 @@ class Window(QMainWindow):
         self.local_api_ca.setPlaceholderText("Archivo CA PEM para HTTPS local (opcional)")
         self.local_api_ca.setAccessibleName("Certificado CA de API local")
         box.addWidget(self.local_api_ca)
+        self.local_server_status = label("", "subtitle", True)
+        self.local_server_status.setAccessibleName("Estado de la API local")
+        box.addWidget(self.local_server_status)
         layout.addWidget(frame)
         frame, box = card("Preferencias locales")
         self.font_size = QSpinBox()
@@ -742,7 +752,54 @@ class Window(QMainWindow):
             self.cache.clear()
         self.settings.remove("cache_identity")
 
+    LOCAL_SERVER_MESSAGES = {
+        "starting": "Iniciando la API local…",
+        "external": "La API local ya estaba en ejecución; no se inició otra.",
+        "running": "API local iniciada por la aplicación; se cierra al salir.",
+        "running_without_bridge": "API local iniciada por la aplicación, sin envío automático: "
+        "falta la configuración de AWS en .env.",
+        "unavailable": "Esta instalación no puede iniciar la API local. Iniciala a mano con "
+        "«python local-api/launch.py serve».",
+        "failed": "La API local no pudo iniciarse. Comprobá que el puerto 8765 esté libre.",
+    }
+
+    def _show_local_server(self, state):
+        if state == "running" and not self.local_server.bridge:
+            state = "running_without_bridge"
+        message = self.LOCAL_SERVER_MESSAGES.get(state, "")
+        self.local_server_status.setText(message)
+        self.statusBar().showMessage(message)
+
     def connect_local(self):
+        """Conecta con la API local; si nadie responde en la dirección habitual, la inicia."""
+        managed = (
+            self.local_server is not None
+            and self.local_api_url.text().strip() == local_server.DEFAULT_URL
+        )
+        if managed:
+            state = self.local_server.ensure_started()
+            self._show_local_server(state)
+            if state == "starting":
+                self.local_server_attempts = 0
+                self.local_server_timer.start()
+                return
+        self._connect_local_now()
+
+    def _poll_local_server(self):
+        state = self.local_server.poll()
+        self.local_server_attempts += 1
+        if state == "starting" and self.local_server_attempts < 100:
+            return
+        self.local_server_timer.stop()
+        if state == "starting":
+            # 30 segundos sin respuesta: se deja de esperar y se termina el proceso.
+            self.local_server.stop()
+            state = "failed"
+        self._show_local_server(state)
+        if state == "running":
+            self._connect_local_now()
+
+    def _connect_local_now(self):
         try:
             client = api.ApiClient(
                 self.local_api_url.text().strip(),
@@ -910,7 +967,11 @@ class Window(QMainWindow):
         notice = notices[self.mode]
         if session.get("development"):
             notice = "DESARROLLO LOCAL · Sin login. " + (
-                "API conectada; el procesamiento AWS requiere el comando de envío."
+                (
+                    "API conectada. Envío automático a AWS activo."
+                    if session.get("capabilities", {}).get("automatic_dispatch")
+                    else "API conectada; el procesamiento AWS requiere el comando de envío."
+                )
                 if self.online
                 else "Sin conexión al servicio; datos sin actualizar."
             )
@@ -1623,12 +1684,20 @@ class Window(QMainWindow):
             event.ignore()
             return
         self.timer.stop()
+        self.local_server_timer.stop()
+        if self.local_server is not None:
+            self.local_server.stop()
         event.accept()
 
 
 def main():
     parser = argparse.ArgumentParser(description="PPS · consola de auditoría FortiGate")
     parser.add_argument("--demo", action="store_true", help="Abrir datos ficticios sin red")
+    parser.add_argument(
+        "--no-local-api",
+        action="store_true",
+        help="No iniciar ni conectar la API local al abrir la aplicación",
+    )
     parser.add_argument("--smoke-test", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
     app = QApplication(sys.argv[:1])
@@ -1644,8 +1713,19 @@ def main():
         preferences = QSettings(
             str(Path(temporary.name) / "settings.ini"), QSettings.Format.IniFormat
         )
-    window = Window(demo_mode=args.demo or args.smoke_test, settings=preferences)
+    server = None
+    if not (args.demo or args.smoke_test or args.no_local_api):
+        data = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppLocalDataLocation)
+        server = local_server.LocalApiProcess(log_path=Path(data) / "local-api.log")
+        # Red de seguridad si la ventana no llega a cerrarse por el camino normal.
+        atexit.register(server.stop)
+    window = Window(
+        demo_mode=args.demo or args.smoke_test, settings=preferences, local_server=server
+    )
     window.show()
+    if server is not None and window.mode == "empty":
+        # Con una sesión institucional guardada no se cambia de fuente al abrir.
+        QTimer.singleShot(0, window.connect_local)
     if args.smoke_test:
         assert window.current["counts"]["expected"] == 12
         assert window.coverage_bar.value() == 75
