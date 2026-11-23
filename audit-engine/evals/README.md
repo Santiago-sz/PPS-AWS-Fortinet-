@@ -73,7 +73,9 @@ Por normativa:
 |---|---|
 | `status` | `ok`, `generation_failed`, `no_verifiable_controls` o `error` (fallo de transporte/parseo). |
 | `first_attempt_pass` | `status == ok` y el validador aceptó el script en el intento 1. |
-| `attempts_used` | Intentos de reduce consumidos (`MAX_GENERATION_ATTEMPTS` = 3 por defecto). |
+| `attempts_used` | Intento de reduce que produjo el script entregado (`MAX_GENERATION_ATTEMPTS` = 3 por defecto). Sin correcciones de campos coincide con los intentos consumidos. |
+| `unknown_field_references` / `unknown_fields` | Cantidad y nombres de los campos que el script entregado lee y el catálogo de campos no lista (`field_catalog.find_unknown_field_references`; decisión 13). Es un aviso, no un rechazo: no tiene umbral. |
+| `reduce_calls` / `reduce_calls_unanswered` | Llamadas de reduce respondidas, y llamadas pedidas que no tuvieron respuesta. La segunda es mayor que cero cuando un intento de corrección de campos falla; en offline, cuando la fixture no trae ese intento. |
 | `validator_ok_final` | `script_validator.validate(script, manifest).valid` re-ejecutado sobre el script final. |
 | `checks_count` / `checks_in_range` | Cantidad de `PolicyCheck` producidos por el map y si cae en `[min_checks, max_checks]`. |
 | `check_recall` | Fracción de checks esperados que matchean algún check producido: para cada grupo de `keywords` al menos un sinónimo aparece en `title + intent + clause_ref.quote` (minúsculas, sin tildes). |
@@ -84,12 +86,49 @@ Por normativa:
 
 Agregadas: `first_attempt_pass_rate`, `generation_success_rate`,
 `mean_check_recall`, `mean_endpoint_precision`,
-`mean_remediation_coverage`, totales de tokens y latencia.
+`mean_remediation_coverage`, totales de tokens y latencia,
+`total_unknown_field_references` y `reduce_calls_unanswered`.
+
+`first_attempt_pass` conserva su definición: el validador aceptó el primer
+intento, aunque después se entregue una corrección de nombres de campo de un
+intento posterior.
 
 Umbrales actuales (`thresholds.json`): por normativa `check_recall ≥ 0.6`,
 `endpoint_precision ≥ 0.8`, `remediation_coverage ≥ 0.8`,
 `checks_in_range`, `validator_ok_final`; agregado
 `first_attempt_pass_rate ≥ 0.5` y `generation_success_rate = 1.0`.
+
+## Estado de las fixtures frente al catálogo de campos (2026-11-22)
+
+Las tres fixtures de `recorded/` son anteriores al catálogo de campos
+(decisión 13) y **no se regrabaron**: hacerlo exige Bedrock. Desde ese cambio
+el system prompt de reduce incluye el catálogo y un script válido que lee un
+campo no listado dispara un intento de corrección. Consecuencias en modo
+offline, que el runner informa en su salida y en `results/`:
+
+- Los tres scripts grabados leen campos que el catálogo no lista (6 en total:
+  `admintimeout`; `min-length`, `must-contain`, `password-expire`; `event`,
+  `forward-traffic`).
+- Cada normativa pide una llamada de corrección que la fixture no trae. El
+  transporte offline responde «fixture agotada», el ciclo conserva el script
+  válido anterior y la normativa termina `ok`. Son 3 llamadas sin respuesta.
+- El código de salida sigue siendo 0 y las métricas con umbral no cambian,
+  pero las fixtures ya no representan lo que el modelo responde al prompt
+  actual. Las cifras de tokens y latencia grabadas tampoco.
+
+Para regrabar (lo ejecuta el dueño; contacta Bedrock):
+
+```bash
+cd audit-engine
+AWS_PROFILE=pps-tesis AWS_REGION=us-east-1 ../.venv/Scripts/python.exe evals/run_evals.py --mode live --record
+```
+
+Costo: tres normativas, cada una con 1 llamada de map y entre 1 y 3 de
+reduce, es decir entre 6 y 12 llamadas a Converse. El runner imprime antes de
+llamar su estimación de peor caso, unos 113.000 tokens en total con el
+catálogo (4 caracteres por token; no es una medición). Con la cuota de 10
+pedidos por minuto, 12 llamadas seguidas pueden alcanzar el límite; el cliente
+reintenta. Revisar el diff de `recorded/` antes de commitear.
 
 ## Qué cubren las fixtures offline
 
@@ -144,8 +183,10 @@ anidamiento ≤ 3.
 
 `--mode live --record` reemplaza `recorded/<nombre>.json` con las
 respuestas reales (texto crudo, tokens, latencia, `model_id`,
-`recorded_at`). Hacerlo cuando cambie el prompt de map/reduce, el modelo o
-el catálogo de endpoints, y revisar el diff antes de commitear: la fixture
+`recorded_at`). Hacerlo cuando cambie el prompt de map/reduce, el modelo, el
+catálogo de endpoints o el catálogo de campos
+(`generator/fortios_field_catalog.py`, que forma parte del prompt de reduce),
+y revisar el diff antes de commitear: la fixture
 es lo que CI considera "comportamiento de referencia". Si la nueva grabación
 baja alguna métrica por debajo del umbral, el run live ya sale con código 1.
 

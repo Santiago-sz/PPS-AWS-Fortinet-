@@ -32,7 +32,7 @@ permiten revisar los resultados sin credenciales AWS.
 | `infrastructure/knowledge-base/` | Módulo Terraform aislado (provider aws 6.x, estado propio) de la Knowledge Base administrada de Bedrock: bucket de documentos, rol de servicio, base `MANAGED` y data source S3. No desplegado; ver su `README.md`. | Canónico, opcional |
 | `local-api/` | Servidor HTTP/HTTPS local (`pps_api/server`), servicios y SQLite; puente separado en `pps_api/aws` (`pps-api aws dispatch|sync|list-pending|approve`); ciclo automático opcional de envío y recuperación solo con `serve --aws-bridge` (apagado por defecto). | Canónico |
 | `audit-engine/evals/` | Harness de evaluación del generador (normativas sintéticas, fixtures grabadas, métricas, umbrales) y de la recuperación de la Knowledge Base (`--suite retrieval`, fixture sintética). | Canónico |
-| `audit-engine/scripts/` | `build_layer.py` / `build_layer.sh` (Lambda Layer pypdf+python-docx+lxml y, desde el 2026-11-18, boto3 con versión fija). `run_executor_local.py` (2026-11-21): ejecución local de la etapa del executor para la primera prueba por VPN de usuario; no se empaqueta en la Lambda. `stig_to_markdown.py` (2026-11-21): convierte un benchmark XCCDF de DISA a Markdown para el corpus de la Knowledge Base ([manifiesto](docs/context/rag/corpus.md)); tampoco se empaqueta. `diagnose_fortigate_local.py` (2026-11-22): diagnóstico de solo lectura de la forma de las respuestas del FortiGate, sin valores del equipo y sin acceso a AWS; comparte `local_run_common.py` con la ejecución local. Ninguno se empaqueta. | Canónico |
+| `audit-engine/scripts/` | `build_layer.py` / `build_layer.sh` (Lambda Layer pypdf+python-docx+lxml y, desde el 2026-11-18, boto3 con versión fija). `run_executor_local.py` (2026-11-21): ejecución local de la etapa del executor para la primera prueba por VPN de usuario; no se empaqueta en la Lambda. `stig_to_markdown.py` (2026-11-21): convierte un benchmark XCCDF de DISA a Markdown para el corpus de la Knowledge Base ([manifiesto](docs/context/rag/corpus.md)); tampoco se empaqueta. `diagnose_fortigate_local.py` (2026-11-22): diagnóstico de solo lectura de la forma de las respuestas del FortiGate, sin valores del equipo y sin acceso a AWS; comparte `local_run_common.py` con la ejecución local. `build_field_catalog.py` (2026-11-22): construye `generator/fortios_field_catalog.py` a partir de las salidas del diagnóstico, sin red. Ninguno se empaqueta. | Canónico |
 | `gui/` | App de escritorio PySide6 (consola de auditorías; sin credenciales AWS). Si no hay una API local en ejecución, la inicia como proceso hijo y la termina al salir. | Canónico |
 | `infrastructure/fortigate-lab/` | Terraform de un laboratorio desechable en AWS (cuenta separada, `us-east-1`): FortiGate-VM 7.6.8 con zonas wan/lan/dmz y un host Ubuntu detrás, para la demostración. Estado local propio; aplicado el 2026-11-22. Acepta de forma opcional el emparejamiento de VPC con `executor-network`. Ver su `README.md`. | Independiente |
 | `infrastructure/executor-network/` | Módulo Terraform aislado (provider aws 6.x, estado propio) de la cuenta del pipeline: VPC privada para `audit_executor`, puntos de enlace de S3, Secrets Manager y SNS, y emparejamiento con la VPC del laboratorio. Entrega los valores de `executor_subnet_ids` y `executor_security_group_ids`; no modifica `infrastructure/pipeline/`. No desplegado al 2026-11-22; ver su `README.md`. | Canónico, opcional |
@@ -92,9 +92,12 @@ permiten revisar los resultados sin credenciales AWS.
 | `assessor` legacy (`handler.lambda_handler`) | `FORTIGATE_HOST`, `FORTIGATE_SECRET_ARN`, `S3_BUCKET`, `SNS_TOPIC_ARN` | `BEDROCK_MODEL_ID`, `ENVIRONMENT`, `FORTIGATE_VERIFY_SSL`, `LOG_LEVEL` | secret FortiGate, Bedrock, `s3:PutObject` reports, `sns:Publish`, logs |
 
 Observabilidad: eventos JSON por stdout (`llm_call`, `generation_result`,
-`generator_result`, `awaiting_approval`, `executor_result`; con la Knowledge
-Base habilitada, `kb_retrieve` por consulta y `kb_references` con el resumen
-de la corrida) y métricas EMF en el namespace `PPS/AuditPipeline`. Logging de
+`generator_result`, `awaiting_approval`, `executor_result`; en la fase reduce,
+`generation_attempt_rejected` por intento que el validador rechaza,
+`field_catalog_check` por intento aceptado y `field_correction_abandoned`; con
+la Knowledge Base habilitada, `kb_retrieve` por consulta y `kb_references` con
+el resumen de la corrida) y métricas EMF en el namespace `PPS/AuditPipeline`.
+Ningún evento lleva el cuerpo de un script. Logging de
 invocaciones de Bedrock (`bedrock_logging.tf`) es **account-wide por región**.
 
 Ejecución local (`scripts/run_executor_local.py`, primera prueba por VPN de
@@ -128,7 +131,11 @@ incluye el id de cuenta y no debe llegar a prompts, manifest, reportes,
 eventos ni fixtures. El manifest gana el bloque aditivo `knowledge_base`
 (fuentes y puntajes por `check_id`, sin texto) y el executor lo lee para
 agregar `references` a cada hallazgo; no importa `knowledge_retriever` ni
-`reference_context`. Diseño en
+`reference_context`. Cada referencia del manifest declara `kind`
+(`contracts/reference_kinds.py`: `technical` para las claves bajo `propio/` y
+`fortinet/`, `normative` para el resto) y el reporte lista las técnicas en la
+sección «Referencias técnicas (no normativas)»; una carpeta técnica nueva del
+bucket se agrega a `TECHNICAL_PREFIXES`. Diseño en
 [la decisión 11](docs/context/decisions/11-referencias-en-generacion.md).
 
 Datos ausentes (toolkit): el estado final de un hallazgo lo decide
@@ -142,13 +149,26 @@ y de campo, nunca valores). No mover esa garantía al script ni al prompt, y no
 agregar un tercer elemento a las tuplas de `ENDPOINTS`. Diseño y límites en
 [la decisión 12](docs/context/decisions/12-datos-ausentes-indeterminate.md).
 
+Catálogo de campos (generador): el system prompt de reduce lleva siempre
+`llm_client.FIELD_CATALOG_SYSTEM_NOTE`, armado desde
+`generator/fortios_field_catalog.py` (archivo generado: nombres de campo por
+endpoint de un equipo con FortiOS 7.6.8, nunca valores; no editarlo a mano,
+regenerarlo con `scripts/build_field_catalog.py`). Un script válido que lee un
+campo no listado recibe una pista de corrección dentro del mismo ciclo de
+`MAX_GENERATION_ATTEMPTS`; **esa revisión nunca rechaza un script** ni puede
+producir `generation_failed`, y el executor no usa el catálogo. El manifest
+gana el bloque aditivo e informativo `field_catalog`. No convertir el aviso en
+compuerta ni trasladar al prompt la garantía de la decisión 12. Diseño y
+límites en
+[la decisión 13](docs/context/decisions/13-catalogo-de-campos-generador.md).
+
 ## 5. Comandos
 
 Todo desde `audit-engine/` con el venv de la raíz (`../.venv`), detalle en
 `audit-engine/TESTING.md`:
 
 ```bash
-../.venv/Scripts/python.exe -m pytest -q -p no:cacheprovider        # 620 passed, 1 skipped (Windows)
+../.venv/Scripts/python.exe -m pytest -q -p no:cacheprovider        # 755 passed, 1 skipped (Windows)
 ../.venv/Scripts/python.exe -m ruff check generator/ executor/ contracts/ legacy/ tests/ evals/ scripts/
 ../.venv/Scripts/python.exe -m ruff format --check generator/ executor/ contracts/ legacy/ tests/ evals/ scripts/
 ../.venv/Scripts/python.exe scripts/build_layer.py                    # layers/pps-doc-parsers.zip
@@ -161,6 +181,7 @@ PYTHONUTF8=1 ../.venv/Scripts/python.exe -m checkov.main -d ../infrastructure/pi
 ../.venv/Scripts/python.exe evals/run_evals.py --suite retrieval --mode offline   # fixture sintética
 ../.venv/Scripts/python.exe scripts/run_executor_local.py <run_id>   # ejecución local; contacta AWS y el FortiGate: solo por pedido explícito
 ../.venv/Scripts/python.exe scripts/diagnose_fortigate_local.py      # forma de las respuestas; contacta el FortiGate (solo GET): solo por pedido explícito
+../.venv/Scripts/python.exe scripts/build_field_catalog.py <shapes.json> [...]   # regenera generator/fortios_field_catalog.py; sin red
 ```
 
 API y desktop: `pip install -e "local-api[dev]"` + `pytest` en

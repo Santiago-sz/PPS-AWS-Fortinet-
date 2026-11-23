@@ -140,6 +140,35 @@ La rama y el árbol de trabajo actuales se obtienen de Git, no de ese relato.
   - No resuelto por este cambio: criterios incorrectos sobre datos leídos
     (NTP, cobertura de antivirus e IPS) y nombres de campo que el modelo
     inventa. El prompt del generador no se modificó.
+- **Catálogo de campos para el generador (2026-11-22): implementado y
+  verificado solo con tests; sin desplegar, sin invocar al modelo y sin
+  ejecutar contra un equipo.** Rama `feature/generator-field-catalog`, sin
+  merge. Motivo (informado en el encargo): en dos corridas contra el
+  laboratorio, entre 4 y 8 de 14 a 17 controles terminaron en `indeterminate`
+  porque el script pidió campos que la respuesta no trae (`ssl-min-proto-ver`,
+  `admin`, `event`, `status`, `update-schedule`, `update-schedule-frequency`,
+  `zone`). Con el cambio, el prompt de reduce lleva un catálogo de nombres de
+  campo por endpoint construido a partir de dos diagnósticos del laboratorio
+  (FortiOS 7.6.8; 27 endpoints observados y 4 sin verificar), y un script
+  válido que lee un campo no listado recibe una pista de corrección dentro del
+  ciclo de reintento, sin ser rechazado. El system prompt de reduce pasa de
+  3.336 a 39.583 caracteres (estimado: 9.000 a 10.500 tokens más por llamada).
+  Cada rechazo del validador se registra ahora con regla, línea y mensaje.
+  Detalle y límites en la
+  [decisión 13](decisions/13-catalogo-de-campos-generador.md) y en
+  [el handoff](handoffs/2026-11-22-generator-field-catalog.md).
+  - Las fixtures grabadas de evals son anteriores al catálogo. El modo offline
+    sigue saliendo con código 0, pero informa 6 campos no listados en los tres
+    scripts grabados y 3 llamadas de corrección sin respuesta grabada. Falta
+    regrabar en vivo.
+  - No medido: si el modelo respeta la lista y cuánto bajan los
+    `indeterminate`. `dhcp_servers`, `snmp_sysinfo`, `vpn_ipsec` y
+    `radius_servers` no tienen campos en el catálogo.
+  - En la misma rama: el manifest marca cada referencia de la base de
+    conocimientos como técnica (`propio/`, `fortinet/`) o normativa, y el
+    reporte lista las técnicas bajo «Referencias técnicas (no normativas)».
+    La recuperación no cambió. Detalle en la
+    [decisión 11](decisions/11-referencias-en-generacion.md#actualización-del-2026-11-22-referencias-técnicas-y-normativas).
 - **Demostración de la tesis (decisión de los dos autores, 2026-11-22):** se
   hará con un FortiGate de laboratorio dentro de AWS, no con el equipo
   institucional, para que la Lambda ejecutora alcance el equipo y todo el flujo
@@ -225,6 +254,8 @@ por el agente que lo registró.
 | 2026-11-22 | Diagnóstico ejecutado contra un equipo de laboratorio (FortiOS 7.6.8, usuario de API `super_admin_readonly`): `system/admin` y `system/api-user` devuelven HTTP 200 con lista vacía, también con `scope=global`; `system/dhcp/server` y `system/snmp/sysinfo` devuelven HTTP 400 | Informado en el encargo; no observado por el agente que lo registró |
 | 2026-11-22 | El toolkit guarda `indeterminate` ante datos ausentes, ilegibles o imposiblemente vacíos (decisión 12) y el catálogo usa `system.dhcp/server` y `system.snmp/sysinfo`. Suites en Windows: motor 620 aprobados y 1 omitido, API local 38, aplicación 51 | Rama `fix/toolkit-absent-data` y [handoff](handoffs/2026-11-22-toolkit-absent-data.md); corrida local con respuestas simuladas, sin AWS ni FortiGate |
 | 2026-11-22 | Camino privado aplicado en las dos cuentas (red del executor, emparejamiento de VPC activo, executor dentro de la VPC apuntando al laboratorio, código con el arreglo de datos ausentes). Una auditoría enviada desde la API local terminó `completed` con 17 hallazgos leídos del laboratorio: 9 `pass`, 3 `fail`, 4 `indeterminate`, 1 `not_applicable`. Un intento previo terminó `generation_failed` por rechazo del validador en los tres intentos; el reintento fue aceptado. Pendiente: probar el arranque automático desde la aplicación y completar el `.env` de la estación | `terraform apply` en `executor-network`, `fortigate-lab` y `pipeline`; `aws dispatch` y `aws sync` del 2026-11-22; [handoff](handoffs/2026-11-22-gui-driven-lab-audits.md) |
+| 2026-11-22 | Dos corridas contra el laboratorio dejaron entre 4 y 8 de 14 a 17 controles en `indeterminate` por campos que el script pidió y la respuesta no trae | Informado en el encargo; no observado por el agente que lo registró |
+| 2026-11-22 | El generador incluye un catálogo de campos de FortiOS 7.6.8 en el prompt de reduce, avisa de campos no listados dentro del ciclo de reintento y registra el detalle de cada rechazo del validador (decisión 13). En la misma rama, cada referencia de la base de conocimientos declara si es técnica o normativa y el reporte lista las técnicas (`propio/`, `fortinet/`) en una sección aparte. Suites en Windows: motor 755 aprobados y 1 omitido, API local 53, aplicación 67. Evals offline (generación y recuperación): código de salida 0 | Rama `feature/generator-field-catalog` y [handoff](handoffs/2026-11-22-generator-field-catalog.md); corrida local con el modelo simulado, sin AWS ni FortiGate |
 
 Con 10 pedidos por minuto, una corrida live hace pocas llamadas por normativa
 (una por grupo de map y hasta tres de reduce), pero varias corridas seguidas o

@@ -21,8 +21,8 @@ confiar en cada paso:
    el entorno virtual: [sección 3](#3-instalación-desde-cero-en-windows).
 2. Configurar el perfil de AWS y comprobar que los recursos existen, solo con
    lecturas: [sección 4](#4-acceso-a-aws).
-3. Correr los tests: [sección 5](#5-tests-y-linters). Resultado esperado: 620,
-   38 y 51 aprobados.
+3. Correr los tests: [sección 5](#5-tests-y-linters). Resultado esperado: 755,
+   53 y 67 aprobados.
 4. Hacer la demostración que no necesita FortiGate:
    [sección 6](#6-guion-de-demostración).
 5. Leer el estado y lo que sigue: [sección 9](#9-estado-actual-defectos-conocidos-y-próximos-pasos).
@@ -267,12 +267,12 @@ cd ..
 
 | Comprobación | Resultado esperado [V] |
 |---|---|
-| `pytest` en `audit-engine` | `620 passed, 1 skipped` |
+| `pytest` en `audit-engine` | `755 passed, 1 skipped` |
 | `ruff check` en `audit-engine` | `All checks passed!` |
-| `ruff format --check` | `53 files already formatted` |
+| `ruff format --check` | `60 files already formatted` |
 | Evaluaciones offline (ambas) | Código de salida 0 |
-| `pytest` en `local-api` | `38 passed` |
-| `pytest` en `gui` | `51 passed` |
+| `pytest` en `local-api` | `53 passed` |
+| `pytest` en `gui` | `67 passed` |
 | `ruff check` en `gui` | `All checks passed!` |
 
 Los comandos se ejecutaron desde Git Bash con las mismas rutas; en PowerShell
