@@ -1,6 +1,6 @@
 # RAG con Amazon Bedrock: resumen de trabajo
 
-Fecha: 2026-11-17; actualizado el 2026-11-18 y el 2026-11-21. Rama:
+Fecha: 2026-11-17; actualizado el 2026-11-18, el 2026-11-21 y el 2026-11-22. Rama:
 `feature/bedrock-knowledge-base`, creada desde `master` en `32e0ac5`. Estado:
 implementado, desplegado y con el corpus cargado e indexado (ver las dos
 secciones de estado que siguen). Revisión y merge pendientes.
@@ -17,6 +17,85 @@ el trabajo. El detalle vive en una sola fuente por tema:
 | Evaluación de la calidad de recuperación | [README de evals](../../../audit-engine/evals/README.md) |
 | Estado de la tarea, pruebas y pendientes | [Handoff](../handoffs/2026-11-17-bedrock-knowledge-base.md) |
 | Contrato de entorno e IAM | [AGENTS.md](../../../AGENTS.md), sección 4 |
+
+## Estado al 2026-11-22: referencias técnicas propias de FortiOS 7.6.8
+
+A pedido del dueño del repositorio se agregaron siete documentos propios al
+bucket de conocimiento, bajo `propio/`, y se ejecutó una ingesta. Fueron las
+únicas escrituras en AWS: no se borró ni modificó ningún objeto existente, no
+se cambió la Knowledge Base ni el origen de datos y no se ejecutó Terraform.
+Donde la sección siguiente indique 25 documentos, vale lo que se indica aquí.
+
+**Qué se agregó.** Seis documentos con los nombres de campo reales que la API
+REST de FortiOS 7.6.8 devuelve en cada endpoint del catálogo, y uno con las
+lecciones del laboratorio. Son referencias técnicas, no normativas, y lo
+declaran al comienzo. Detalle, generación y límites en el
+[manifiesto del corpus](corpus.md), secciones 2 y 4.5.
+
+**Corpus.** 31 documentos y 9 archivos de metadatos, 23,77 MB.
+
+**Ingesta.** Trabajo `U36DLBRGFV`, iniciado el 2026-11-23 a las 02:44 UTC
+(2026-11-22 en hora local):
+
+| Dato | Valor |
+|---|---|
+| Estado final | `COMPLETE`, a las 02:46 UTC (2 minutos) |
+| Documentos examinados | 31 |
+| Archivos de metadatos examinados | 9 |
+| Documentos nuevos indexados | 7 |
+| Documentos modificados indexados | 0 |
+| Archivos de metadatos modificados | 0 |
+| Documentos quitados del índice | 0 |
+| Documentos fallidos | 0 |
+| Documentos omitidos | 0 |
+
+El estado por documento (`list-knowledge-base-documents`) muestra 30
+documentos `INDEXED`, entre ellos los siete nuevos, y
+`nist/NIST.CSWP.29-CSF-2.0.pdf` como `IGNORED` (ya indexado, sin cambios).
+Las cuatro claves retiradas en fechas anteriores siguen listadas como
+`NOT_FOUND`.
+
+**Recuperación comprobada** con consultas `Retrieve` de solo lectura (cinco
+resultados pedidos; se anota el mejor puntaje de cada documento):
+
+| Consulta | Documentos devueltos |
+|---|---|
+| «campos reales de system/ntp FortiOS 7.6.8» | `propio/fortios-7.6.8-campos-api-rest-sistema-administracion.md` (0,74), `propio/fortios-7.6.8-campos-api-rest-red.md` (0,44) |
+| «password policy minimum length field name FortiOS REST API» | `propio/fortios-7.6.8-campos-api-rest-sistema-administracion.md` (0,87), `fortinet/FortiOS-7.6.8-CLI_Reference-extracto.pdf` (0,56) |
+| «system/admin lista vacía super_admin_readonly» | `propio/notas-auditoria-laboratorio-2026-11-22.md` (0,91), `propio/fortios-7.6.8-campos-api-rest-sistema-administracion.md` (0,91) |
+
+**Consultas normativas, sin degradación visible.** Tres consultas de la tabla
+del 2026-11-21 devolvieron los mismos documentos normativos en primer lugar y
+con el mismo puntaje: la de la Decisión Administrativa 641/2021
+(`argentina/DA-641-2021.html`, 0,85), la de bloqueo de cuenta de la STIG
+(`disa/DISA-STIG-FortiGate-Firewall-NDM-V1R6.md`, 0,92) y la del punto B.2.3
+(`argentina/Res-AAIP-47-2018-Anexos-I-II.pdf`, 0,91). Ninguna devolvió un
+documento de los nuevos.
+
+**Límite observado: las consultas con forma de control no traen las listas de
+campos.** El generador consulta con el título y la intención de cada control,
+no con nombres de endpoint. Dos consultas de ese estilo no devolvieron ninguno
+de los documentos nuevos entre los cinco resultados:
+
+| Consulta | Documentos devueltos |
+|---|---|
+| «Sincronización horaria: el equipo debe sincronizar su reloj con servidores NTP confiables» | `espana/BOE-A-2022-7191-RD-311-2022-ENS.pdf` (0,78), `propio/catalogo-endpoints-fortigate.md` (0,74), `disa/DISA-STIG-FortiGate-Firewall-NDM-V1R6.md` (0,59) |
+| «Política de contraseñas: exigir longitud mínima y complejidad en las contraseñas de los administradores» | `propio/catalogo-endpoints-fortigate.md` (0,63), `espana/BOE-A-2022-7191-RD-311-2022-ENS.pdf` (0,62), `nist/NIST.SP.800-63B-4-Authentication.pdf` (0,58) |
+
+Los documentos están indexados y se recuperan cuando la consulta nombra el
+endpoint o el campo, pero con la consulta actual del generador no hay
+evidencia de que lleguen al prompt. No se ajustó nada.
+
+**No verificado en esta sesión:** el efecto sobre los scripts generados (no
+se disparó el generador), la consulta con el filtro `fortios_version` después
+de agregar estos documentos y la evaluación de recuperación en vivo.
+
+**Riesgo abierto: una referencia técnica mostrada junto a un control.** El
+reporte lista por control las fuentes recuperadas en la sección
+«Documentación de referencia», sin distinguir normas de material técnico. Si
+un fragmento de `propio/` entra en un control, su clave aparecerá allí. El
+aviso de esa sección ya dice que es material de consulta y no reemplaza la
+cláusula fuente, pero no hay una separación por tipo de documento.
 
 ## Estado al 2026-11-21: corpus ampliado e índice sincronizado
 

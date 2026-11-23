@@ -1,6 +1,7 @@
 # Corpus de la Knowledge Base: manifiesto y procedimiento
 
-Fecha: 2026-11-21. Rama: `feature/bedrock-knowledge-base`. Este documento
+Fecha: 2026-11-21; actualizado el 2026-11-22 (referencias técnicas propias,
+ingesta `U36DLBRGFV`). Rama: `feature/bedrock-knowledge-base`. Este documento
 lista los documentos de referencia cargados en el bucket de conocimiento, su
 origen, sus condiciones de uso y las conversiones aplicadas, y describe cómo
 repetir la carga. El estado del RAG y el resultado de la ingesta están en el
@@ -35,7 +36,9 @@ con la misma estructura de carpetas. Aquí solo se registran sus datos.
 
 ## 2. Documentos cargados
 
-25 documentos y 3 archivos de metadatos; 24,45 MB en total. La columna
+31 documentos y 9 archivos de metadatos; 23,77 MB en total (23.766.209
+bytes) al 2026-11-22, después de retirar la guía de FortiOS 8.0.0 y de agregar
+las siete referencias técnicas propias. La columna
 «Conversión» remite a la sección 4; «ninguna» significa que el objeto es
 idéntico byte a byte al archivo publicado por el emisor.
 
@@ -125,17 +128,34 @@ verificaron en esta tarea.
 | Clave | Título | Versión y fecha | Fuente | Conversión |
 |---|---|---|---|---|
 | `propio/catalogo-endpoints-fortigate.md` | Catálogo de los 31 endpoints de FortiGate y qué se revisa en cada uno | Cargado el 2026-11-18 | Este proyecto | Ninguna |
+| `propio/fortios-7.6.8-campos-api-rest-sistema-administracion.md` | FortiOS 7.6.8, campos reales de la API REST (cmdb) por endpoint: sistema y administración (`system_global`, `admins`, `admin_profiles`, `api_users`, `password_policy`, `ntp`, `dns`, `snmp_sysinfo`, `central_management`, `fortiguard`) | FortiOS 7.6.8 build 3744; 2026-11-22 | Este proyecto, equipo de laboratorio | 4.5 |
+| `propio/fortios-7.6.8-campos-api-rest-red.md` | Ídem: red, alta disponibilidad y VDOM (`interfaces`, `vdom_settings`, `ha`, `static_routes`, `sdwan`, `dhcp_servers`) | Ídem | Ídem | 4.5 |
+| `propio/fortios-7.6.8-campos-api-rest-registro.md` | Ídem: registro (`log_settings`, `log_syslogd`, `log_fortianalyzer`, `log_memory`) | Ídem | Ídem | 4.5 |
+| `propio/fortios-7.6.8-campos-api-rest-firewall.md` | Ídem: políticas y direcciones (`firewall_policies`, `firewall_addresses`) | Ídem | Ídem | 4.5 |
+| `propio/fortios-7.6.8-campos-api-rest-perfiles-seguridad.md` | Ídem: perfiles de seguridad (`ips_sensors`, `av_profiles`, `webfilter_profiles`, `ssl_ssh_profiles`) | Ídem | Ídem | 4.5 |
+| `propio/fortios-7.6.8-campos-api-rest-vpn-usuarios.md` | Ídem: VPN y usuarios (`vpn_ipsec`, `vpn_ssl`, `local_users`, `ldap_servers`, `radius_servers`) | Ídem | Ídem | 4.5 |
+| `propio/notas-auditoria-laboratorio-2026-11-22.md` | Notas de auditoría de PostureGuard: lecciones del laboratorio (lista vacía con `super_admin_readonly`, nombres de campo inexistentes, convención de rutas cmdb, tablas que pueden o no estar vacías, objeto frente a lista) | FortiOS 7.6.8 build 3744; 2026-11-22 | Este proyecto, equipo de laboratorio | 4.5 |
+
+Los siete documentos del 2026-11-22 son **referencias técnicas, no
+normativas**: cada uno lo declara en un aviso al comienzo, con la versión de
+FortiOS y la fecha. No contienen valores de configuración, direcciones ni
+datos de ninguna organización. Se cargaron con la ingesta `U36DLBRGFV` (ver
+el [resumen de trabajo](README.md)).
 
 ## 3. Metadatos
 
-Los tres documentos de Fortinet tienen un archivo
-`<documento>.metadata.json` junto a ellos, con el atributo `fortios_version`
-que usa el filtro opcional del generador (`KNOWLEDGE_BASE_FORTIOS_VERSION`):
+Los documentos de Fortinet (tres al 2026-11-21; dos desde el retiro de la
+guía de 8.0.0) y, desde el 2026-11-22, las siete referencias técnicas propias
+de FortiOS 7.6.8 tienen un archivo `<documento>.metadata.json` junto a ellos,
+con el atributo `fortios_version` que usa el filtro opcional del generador
+(`KNOWLEDGE_BASE_FORTIOS_VERSION`):
 
 | Documento | `fortios_version` |
 |---|---|
 | `fortinet/FortiOS-7.6.0-Best_Practices.pdf` | `7.6` |
 | `fortinet/FortiOS-7.6.8-CLI_Reference-extracto.pdf` | `7.6` |
+| `propio/fortios-7.6.8-campos-api-rest-*.md` (seis documentos) | `7.6` |
+| `propio/notas-auditoria-laboratorio-2026-11-22.md` | `7.6` |
 
 El valor es la rama de versión, no la versión exacta, para que un solo valor
 de filtro alcance a los dos documentos de 7.6. Formato del archivo, según la
@@ -151,8 +171,9 @@ documentación del conector S3 administrado:
 
 Los demás documentos no llevan el atributo. El filtro es una igualdad: con
 `KNOWLEDGE_BASE_FORTIOS_VERSION=7.6` la consulta devuelve solo los dos
-documentos de Fortinet 7.6 y deja fuera las normas, las guías de NIST y las
-STIG. Antes de habilitarlo en el pipeline hay que decidir si ese es el
+documentos de Fortinet 7.6 y las siete referencias técnicas propias, y deja
+fuera las normas, las guías de NIST y las STIG. La consulta con filtro no se
+volvió a probar después de agregar las referencias propias. Antes de habilitarlo en el pipeline hay que decidir si ese es el
 comportamiento buscado.
 
 ## 4. Conversiones aplicadas
@@ -247,6 +268,46 @@ los anexos no fue transcripto: su recuperación depende de la extracción de
 imágenes de la Knowledge Base (ver el resultado en el
 [resumen de trabajo](README.md)).
 
+### 4.5 Referencias técnicas propias de FortiOS 7.6.8 (2026-11-22)
+
+No son una conversión de un documento de terceros: se generaron a partir de
+dos salidas `shapes.json` del diagnóstico de solo lectura
+(`audit-engine/scripts/diagnose_fortigate_local.py`) contra el FortiGate-VM
+del laboratorio, FortiOS 7.6.8 build 3744. Esas salidas contienen solo nombres
+de campo y tipos, sin valores del equipo. La primera cubre los 31 endpoints
+con un usuario de API de perfil `super_admin_readonly`; la segunda cubre
+`admins` y `api_users` con un usuario de perfil `super_admin`, porque con el
+perfil de solo lectura esas dos tablas llegan vacías.
+
+Los seis documentos de campos se generan de forma mecánica con
+`_herramientas/build_fortios_fields.py`, guardado en la copia local del corpus
+(no en este repositorio y no en el bucket). Por cada endpoint hay una sección
+cuyo encabezado lleva la etiqueta y la ruta cmdb, con el tipo de respuesta
+(objeto o lista) y la lista completa de campos; los campos de objetos anidados
+y de elementos de listas se indican a un nivel de profundidad. Las listas
+largas se parten en bloques de 40 campos y cada bloque repite el endpoint,
+para que un fragmento conserve el nombre del endpoint junto a sus campos. El
+mismo script escribe las notas de auditoría y comprueba contra las capturas
+cada nombre de campo que las notas declaran inexistente o real.
+
+```bash
+# Con las dos capturas fuera del repositorio versionado
+python -I <carpeta-del-corpus>/_herramientas/build_fortios_fields.py   <carpeta-del-corpus>/propio <shapes-31-endpoints.json> <shapes-admins.json>
+```
+
+Límites de estos documentos:
+
+- `dhcp_servers` y `snmp_sysinfo` figuran con campos desconocidos: la consulta
+  falló en la captura por una ruta mal escrita, corregida después a
+  `system.dhcp/server` y `system.snmp/sysinfo`. Falta repetir la captura.
+- `vpn_ipsec` y `radius_servers` figuran con campos desconocidos: el equipo de
+  laboratorio no tenía entradas en esas tablas.
+- En `interfaces`, `local_users`, `log_fortianalyzer` y `fortiguard` la
+  herramienta de diagnóstico omitió un nombre de clave por no tener forma de
+  nombre de campo.
+- Reflejan un solo equipo (FortiGate-VM) y una sola versión. Un campo que
+  depende del modelo o de una función no habilitada puede faltar.
+
 ## 5. Documentos evaluados y excluidos
 
 | Documento | Motivo |
@@ -284,8 +345,9 @@ outputs del módulo `infrastructure/knowledge-base`.
 
 ```bash
 # 1. Subir solo lo nuevo o modificado desde la copia local del corpus.
-#    Sin --delete: nada se borra del bucket.
-aws s3 sync <carpeta-del-corpus>/ "s3://<knowledge_bucket>/" --size-only
+#    Sin --delete: nada se borra del bucket. La carpeta _herramientas/ guarda
+#    scripts de generación y no se sube.
+aws s3 sync <carpeta-del-corpus>/ "s3://<knowledge_bucket>/" --size-only   --exclude "_herramientas/*"
 
 # 2. Iniciar la ingesta (no es automática) y esperar a COMPLETE
 aws bedrock-agent start-ingestion-job \
