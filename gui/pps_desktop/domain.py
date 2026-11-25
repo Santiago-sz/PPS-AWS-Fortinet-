@@ -59,6 +59,30 @@ def local_time(value):
         return "Fecha inválida"
 
 
+def newest_first(items, field):
+    """Copia ordenada de la más reciente a la más antigua según `field`.
+
+    Los elementos sin fecha válida quedan al final. Ante fechas iguales, va
+    primero el que el servicio entregó después.
+    """
+
+    def moment(item):
+        try:
+            date = datetime.fromisoformat(str(item.get(field) or "").replace("Z", "+00:00"))
+            return date.timestamp() if date.tzinfo else None
+        except ValueError:
+            return None
+
+    dated = [(moment(item), index, item) for index, item in enumerate(items)]
+    known = sorted(
+        (entry for entry in dated if entry[0] is not None),
+        key=lambda entry: entry[:2],
+        reverse=True,
+    )
+    unknown = sorted((entry for entry in dated if entry[0] is None), key=lambda entry: entry[1])
+    return [entry[2] for entry in known + unknown]
+
+
 def redact(value):
     """Defense in depth; the remote service must also sanitize evidence."""
     if isinstance(value, dict):

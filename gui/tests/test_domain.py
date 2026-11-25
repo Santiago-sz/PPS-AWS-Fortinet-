@@ -8,6 +8,7 @@ from pps_desktop.domain import (
     normalize_remediation,
     inspect_policy,
     load_pair,
+    newest_first,
     redact,
 )
 
@@ -194,3 +195,24 @@ def test_redaction():
         "nested": {"password": "[OCULTO]"},
     }
     assert "abc" not in redact("token=abc Bearer abc")
+
+
+def test_newest_first_orders_by_date_and_keeps_undated_items_last():
+    items = [
+        {"id": "old", "started_at": "2026-11-22T00:18:01Z"},
+        {"id": "undated"},
+        {"id": "new", "started_at": "2026-11-25T00:30:11Z"},
+        {"id": "invalid", "started_at": "not-a-date"},
+        {"id": "middle", "started_at": "2026-11-23T02:07:33+00:00"},
+    ]
+    ordered = newest_first(items, "started_at")
+    assert [item["id"] for item in ordered] == ["new", "middle", "old", "undated", "invalid"]
+    assert [item["id"] for item in items][0] == "old"  # the input list is not modified
+
+
+def test_newest_first_puts_the_later_item_first_when_dates_tie():
+    items = [
+        {"id": "first", "started_at": "2026-11-23T03:05:57Z"},
+        {"id": "second", "started_at": "2026-11-23T03:05:57Z"},
+    ]
+    assert [item["id"] for item in newest_first(items, "started_at")] == ["second", "first"]

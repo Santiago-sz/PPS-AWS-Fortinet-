@@ -41,6 +41,7 @@ from .domain import (
     TERMINAL,
     PHASES,
     local_time,
+    newest_first,
     normalize,
     load_pair,
     inspect_policy,
@@ -948,6 +949,9 @@ class Window(QMainWindow):
         self.local_connect_button.setEnabled(not self.busy)
 
     def render(self):
+        # Lo más reciente arriba en todas las listas, sea cual sea el origen de los datos.
+        self.snapshot["audits"] = newest_first(self.snapshot["audits"], "started_at")
+        self.snapshot["policies"] = newest_first(self.snapshot["policies"], "uploaded_at")
         session = self.snapshot["session"]
         organization = session.get("organization", {}).get("name", "Sin organización autenticada")
         user = session.get("user", {}).get("name", "Sesión local")
