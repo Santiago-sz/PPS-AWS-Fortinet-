@@ -177,6 +177,7 @@ class Window(QMainWindow):
         self.mode = "empty"
         self.online = False
         self.busy = False
+        self.pending_audit = None
         self.workers = set()
         self.generation = 0
         self.snapshot = {"session": {}, "policies": [], "audits": [], "results": {}}
@@ -453,6 +454,23 @@ class Window(QMainWindow):
             "Análisis del sistema",
             "Fases confirmadas por el servicio. La consulta a FortiGate se realiza desde AWS.",
         )
+        layout.addWidget(label("Nuevo análisis", "cardTitle", True))
+        self.analyze_device = QComboBox()
+        self.analyze_device.setAccessibleName("FortiGate a analizar")
+        self.analyze_policy = QComboBox()
+        self.analyze_policy.setAccessibleName("Normativa a analizar")
+        self.analyze_policy.setMinimumContentsLength(24)
+        self.analyze_policy.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+        )
+        for choice in (self.analyze_device, self.analyze_policy):
+            choice.currentIndexChanged.connect(lambda *_: self.update_permissions())
+        self.analyze_button = button("Analizar", self.start_analysis)
+        self.analyze_button.setMaximumWidth(160)
+        layout.addWidget(row(self.analyze_device, self.analyze_policy, self.analyze_button))
+        self.analyze_notice = label("", "subtitle", True)
+        layout.addWidget(self.analyze_notice)
+        layout.addWidget(label("Ejecuciones", "cardTitle", True))
         self.audit_table = table(["POLÍTICA / VERSIÓN", "DISPOSITIVO", "ESTADO", "INICIO"])
         self.audit_table.setColumnWidth(0, 300)
         self.audit_table.setColumnWidth(1, 210)
@@ -491,6 +509,14 @@ class Window(QMainWindow):
             "Seleccioná una evaluación en Resumen o Análisis.", "notice", True
         )
         layout.addWidget(self.result_context)
+        self.result_audit = QComboBox()
+        self.result_audit.setAccessibleName("Análisis a mostrar")
+        self.result_audit.setMinimumContentsLength(24)
+        self.result_audit.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+        )
+        self.result_audit.currentIndexChanged.connect(self.choose_result_audit)
+        layout.addWidget(row(label("Análisis a mostrar", "subtitle"), self.result_audit))
         self.result_search = QLineEdit()
         self.result_search.setAccessibleName("Buscar controles")
         self.result_search.setPlaceholderText("Buscar control, requisito o evidencia…")
@@ -944,6 +970,14 @@ class Window(QMainWindow):
         self.reaudit_button.setToolTip(
             "Disponible solo si el servicio declara un disparador de reanálisis."
         )
+        self.analyze_button.setEnabled(
+            self.reaudit_button.isEnabled()
+            and bool(self.analyze_device.currentData())
+            and bool(self.analyze_policy.currentData())
+        )
+        self.analyze_button.setToolTip(
+            "Analiza la normativa elegida en el FortiGate elegido. Requiere conexión al servicio."
+        )
         self.refresh_button.setEnabled(bool(self.client) and not self.busy)
         self.login_button.setEnabled(not self.busy)
         self.local_connect_button.setEnabled(not self.busy)
@@ -1003,6 +1037,41 @@ class Window(QMainWindow):
             max(0, self.policy_device.findData(previous_policy_device))
         )
         self.policy_device.blockSignals(False)
+        self.fill_choice(
+            self.analyze_device,
+            [(device["name"], device["id"]) for device in session.get("devices", [])],
+        )
+        # Solo las normativas ya cargadas y confirmadas pueden volver a analizarse.
+        self.fill_choice(
+            self.analyze_policy,
+            [
+                (p.get("name", "Política") + " · v" + p.get("version_label", "—"), p["version_id"])
+                for p in self.snapshot["policies"]
+                if p.get("version_id") and p.get("status") != "pendiente"
+            ],
+        )
+        self.analyze_notice.setText(
+            ""
+            if self.analyze_policy.count()
+            else "Todavía no hay normativas cargadas. Subí una desde Políticas."
+        )
+        self.fill_choice(
+            self.result_audit,
+            [
+                (
+                    " · ".join(
+                        [
+                            a.get("policy_name", "Política"),
+                            "v" + a.get("policy_version", "—"),
+                            local_time(a.get("started_at")),
+                            RUN_STATUSES.get(a["status"], a["status"]),
+                        ]
+                    ),
+                    a["id"],
+                )
+                for a in self.snapshot["audits"]
+            ],
+        )
         self.filter_audits()
         self.render_policies()
         selected_row = self.audit_table.currentRow()
@@ -1025,7 +1094,8 @@ class Window(QMainWindow):
         self.update_permissions()
 
     def filter_audits(self, *_):
-        previous = self.audit_filter.currentData()
+        previous = self.pending_audit or self.audit_filter.currentData()
+        self.pending_audit = None
         self.audit_filter.blockSignals(True)
         self.audit_filter.clear()
         did = self.device_filter.currentData()
@@ -1044,8 +1114,42 @@ class Window(QMainWindow):
         self.audit_filter.blockSignals(False)
         self.select_audit()
 
+    @staticmethod
+    def fill_choice(choice, items):
+        """Recarga un selector sin emitir señales y conserva la opción elegida si sigue."""
+        previous = choice.currentData()
+        choice.blockSignals(True)
+        choice.clear()
+        for text, data in items:
+            choice.addItem(text, data)
+        choice.setCurrentIndex(max(0, choice.findData(previous)) if choice.count() else -1)
+        choice.blockSignals(False)
+
+    def choose_result_audit(self, *_):
+        """Muestra en Resultados el análisis elegido, aunque el resumen lo esté filtrando."""
+        aid = self.result_audit.currentData()
+        if not aid or aid == self.audit_filter.currentData():
+            return
+        index = self.audit_filter.findData(aid)
+        if index != -1:
+            self.audit_filter.setCurrentIndex(index)
+            return
+        # Quita los filtros del resumen en un solo paso, para que la selección
+        # pase directo al análisis elegido sin detenerse en el anterior.
+        for control in (self.device_filter, self.use_dates):
+            control.blockSignals(True)
+        self.device_filter.setCurrentIndex(0)
+        self.use_dates.setChecked(False)
+        for control in (self.device_filter, self.use_dates):
+            control.blockSignals(False)
+        self.pending_audit = aid
+        self.filter_audits()
+
     def select_audit(self, *_):
         aid = self.audit_filter.currentData()
+        self.result_audit.blockSignals(True)
+        self.result_audit.setCurrentIndex(self.result_audit.findData(aid))
+        self.result_audit.blockSignals(False)
         self.current = self.snapshot["results"].get(aid)
         self.render_dashboard()
         self.section_filter.blockSignals(True)
@@ -1619,6 +1723,20 @@ class Window(QMainWindow):
             self.refresh()
 
         self.run_task(operation, success, failure)
+
+    def start_analysis(self):
+        """Inicia un análisis de una normativa ya cargada sobre el FortiGate elegido."""
+        device, version = self.analyze_device.currentData(), self.analyze_policy.currentData()
+        if not self.analyze_button.isEnabled() or not self.client or not device or not version:
+            return
+        client = self.client
+        key = str(uuid.uuid4())
+        self.run_task(
+            lambda: client.call(
+                "/api/audits", "POST", {"policy_version_id": version, "device_id": device}, key
+            ),
+            lambda _: self.refresh(),
+        )
 
     def reaudit(self):
         index = self.audit_table.currentRow()

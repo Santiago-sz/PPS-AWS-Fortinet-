@@ -238,3 +238,95 @@ def test_late_worker_cannot_restore_data_after_logout(window, app):
     wait_task(window, app)
     assert calls == []
     assert window.mode == "empty"
+
+
+def writable(window, monkeypatch, calls):
+    """Deja la ventana de demostración con un cliente simulado y permisos de analista."""
+
+    class Client:
+        def call(self, path, method="GET", payload=None, key=None):
+            calls.append((path, method, payload))
+            return {}
+
+    window.client = Client()
+    window.online = True
+    window.snapshot["session"]["capabilities"]["reaudit"] = True
+    monkeypatch.setattr(window, "run_task", lambda operation, success: success(operation()))
+    monkeypatch.setattr(window, "refresh", lambda: calls.append("refresh"))
+    window.render()
+
+
+def test_analysis_tab_starts_an_audit_for_the_chosen_device_and_policy(window, monkeypatch):
+    calls = []
+    window.snapshot["policies"].append(
+        {
+            **window.snapshot["policies"][0],
+            "id": "other-policy",
+            "name": "Norma interna",
+            "version_label": "1.0",
+            "version_id": "other-version",
+            "uploaded_at": "2026-09-20T10:00:00Z",
+        }
+    )
+    writable(window, monkeypatch, calls)
+    assert window.analyze_device.count() == 1
+    assert window.analyze_device.currentData() == "demo-fgt"
+    assert [window.analyze_policy.itemData(i) for i in range(window.analyze_policy.count())] == [
+        "demo-version",
+        "other-version",
+    ]
+    assert window.analyze_button.isEnabled()
+    window.analyze_policy.setCurrentIndex(1)
+    window.analyze_button.click()
+    assert calls == [
+        ("/api/audits", "POST", {"policy_version_id": "other-version", "device_id": "demo-fgt"}),
+        "refresh",
+    ]
+
+
+def test_analysis_tab_offers_only_uploaded_policies_and_needs_permission(window, monkeypatch):
+    window.snapshot["policies"].append(
+        {**window.snapshot["policies"][0], "version_id": "pending-version", "status": "pendiente"}
+    )
+    window.render()
+    assert window.analyze_policy.findData("pending-version") == -1
+    assert not window.analyze_button.isEnabled()  # demostración: sin servicio conectado
+    calls = []
+    writable(window, monkeypatch, calls)
+    window.snapshot["session"]["role"] = "reader"
+    window.update_permissions()
+    assert not window.analyze_button.isEnabled()
+    window.analyze_button.click()
+    window.start_analysis()
+    assert calls == []
+
+
+def test_results_tab_lets_you_choose_which_audit_to_show(window):
+    first = window.snapshot["audits"][0]
+    second = {**first, "id": "newer-audit", "started_at": "2026-09-29T09:00:00Z"}
+    window.snapshot["audits"].append(second)
+    window.snapshot["results"]["newer-audit"] = {
+        **window.snapshot["results"]["demo-audit"],
+        "audit_id": "newer-audit",
+    }
+    window.render()
+    choices = [window.result_audit.itemData(i) for i in range(window.result_audit.count())]
+    assert choices == ["newer-audit", "demo-audit"]  # la más reciente primero
+    assert window.result_audit.currentData() == window.audit_filter.currentData()
+    window.result_audit.setCurrentIndex(window.result_audit.findData("demo-audit"))
+    assert window.audit_filter.currentData() == "demo-audit"
+    assert window.current is window.snapshot["results"]["demo-audit"]
+    window.audit_filter.setCurrentIndex(window.audit_filter.findData("newer-audit"))
+    assert window.result_audit.currentData() == "newer-audit"
+
+
+def test_results_selector_reaches_an_audit_hidden_by_the_summary_filters(window):
+    window.snapshot["audits"].append(
+        {**window.snapshot["audits"][0], "id": "old-audit", "started_at": "2020-01-01T00:00:00Z",
+         "finished_at": "2020-01-01T00:05:00Z"}
+    )
+    window.render()
+    window.use_dates.setChecked(True)  # el filtro de fechas del resumen deja afuera la de 2020
+    assert window.audit_filter.findData("old-audit") == -1
+    window.result_audit.setCurrentIndex(window.result_audit.findData("old-audit"))
+    assert window.audit_filter.currentData() == "old-audit"
